@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/haloydev/haloy/internal/config"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
+	"github.com/haloydev/haloy/internal/config"
 )
 
 func GetRegistryServer(imageConfig *config.Image) string {

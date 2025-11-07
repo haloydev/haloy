@@ -7,11 +7,11 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/docker/docker/client"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/helpers"
-	"github.com/docker/docker/client"
 )
 
 type DeploymentInstance struct {

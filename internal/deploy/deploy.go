@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/docker/docker/client"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/storage"
-	"github.com/docker/docker/client"
 )
 
 func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, targetConfig config.TargetConfig, rawAppConfig config.AppConfig, logger *slog.Logger) error {

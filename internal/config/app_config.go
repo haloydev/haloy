@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/haloydev/haloy/internal/helpers"
 )
 
 type AppConfig struct {

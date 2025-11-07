@@ -20,13 +20,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/haloydev/haloy/internal/constants"
-	"github.com/haloydev/haloy/internal/helpers"
-	"github.com/haloydev/haloy/internal/logging"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge/http01"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
+	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
+	"github.com/haloydev/haloy/internal/logging"
 )
 
 const (

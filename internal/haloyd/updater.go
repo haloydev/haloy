@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/client"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/helpers"
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/client"
 )
 
 type Updater struct {

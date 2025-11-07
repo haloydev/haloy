@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/helpers"
-	"github.com/docker/docker/api/types/container"
 )
 
 func (s *APIServer) handleAppStatus() http.HandlerFunc {

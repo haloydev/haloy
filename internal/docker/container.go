@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/haloydev/haloy/internal/config"
-	"github.com/haloydev/haloy/internal/constants"
-	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
+	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
 )
 
 type ContainerRunResult struct {

@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"sort"
 
+	"github.com/docker/docker/client"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/deploytypes"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/storage"
-	"github.com/docker/docker/client"
 )
 
 // RollbackApp is basically a wrapper around DeployApp that allows rolling back to a previous deployment.

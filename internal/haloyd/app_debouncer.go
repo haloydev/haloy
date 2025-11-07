@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/haloydev/haloy/internal/config"
 	"github.com/docker/docker/api/types/events"
+	"github.com/haloydev/haloy/internal/config"
 )
 
 type debouncedAppEvent struct {
