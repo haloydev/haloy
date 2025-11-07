@@ -1,0 +1,175 @@
+name: Release (Tag)
+
+on:
+  # Automatic trigger for new version tags (e.g., v0.1.0, v0.2.0-alpha.1)
+  push:
+    tags: [ 'v*' ]
+
+  # Manual trigger from the GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The tag to build and release (e.g., v0.1.1). Must be a valid Git tag.'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Run tests
+        run: go test -v ./...
+
+  build-and-publish:
+    name: Build and Publish
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: get_version
+        run: |
+          # If triggered by a tag push, use the tag name.
+          # If triggered manually, use the input version.
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+          fi
+
+      - name: Checkout specific tag for manual runs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git fetch --depth=1 origin tags/${{ env.VERSION }}
+          git checkout ${{ env.VERSION }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/${{ github.repository }}-haloyd
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.VERSION }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.VERSION }}
+            type=raw,value=latest,enable=${{ !contains(env.VERSION, 'alpha') && !contains(env.VERSION, 'beta') && !contains(env.VERSION, 'rc') }}
+
+      - name: Build and push haloyd image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./build/haloyd/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build CLI tools for multiple platforms
+        run: |
+          mkdir -p dist
+
+          # haloy CLI - cross-platform (developers use various OSes)
+          HALOY_PLATFORMS=("linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64" "windows/amd64" "windows/arm64")
+
+          for platform in "${HALOY_PLATFORMS[@]}"; do
+            IFS="/" read -r -a parts <<< "$platform"
+            GOOS="${parts[0]}"
+            GOARCH="${parts[1]}"
+
+            OUTPUT_NAME="haloy-${GOOS}-${GOARCH}"
+            if [ "$GOOS" == "windows" ]; then
+              OUTPUT_NAME+=".exe"
+            fi
+
+            echo "Building haloy for $GOOS/$GOARCH..."
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloy
+          done
+
+          # haloyadm - Linux only (server administration tool)
+          HALOYADM_PLATFORMS=("linux/amd64" "linux/arm64")
+
+          for platform in "${HALOYADM_PLATFORMS[@]}"; do
+            IFS="/" read -r -a parts <<< "$platform"
+            GOOS="${parts[0]}"
+            GOARCH="${parts[1]}"
+
+            OUTPUT_NAME="haloyadm-${GOOS}-${GOARCH}"
+
+            echo "Building haloyadm for $GOOS/$GOARCH..."
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloyadm
+          done
+
+          # Create checksums for all built artifacts
+          cd dist
+          sha256sum * > checksums.txt
+          cd ..
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: haloy-binaries
+          path: dist/
+
+  release:
+    name: Create Release
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine Version  # Add this step
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+          fi
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: haloy-binaries
+          path: dist/
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION }}
+          files: |
+            dist/haloy-linux-amd64
+            dist/haloy-linux-arm64
+            dist/haloy-darwin-amd64
+            dist/haloy-darwin-arm64
+            dist/haloy-windows-amd64.exe
+            dist/haloy-windows-arm64.exe
+            dist/haloyadm-linux-amd64
+            dist/haloyadm-linux-arm64
+            dist/checksums.txt
+          draft: false
+          prerelease: ${{ contains(env.VERSION, 'alpha') || contains(env.VERSION, 'beta') || contains(env.VERSION, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

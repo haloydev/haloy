@@ -1,0 +1,38 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@latest
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Run linting
+        run: |
+          go vet ./...
+          # Check if code is properly formatted with gofumpt
+          if [ "$(gofumpt -l .)" != "" ]; then
+            echo "The following files are not properly formatted:"
+            gofumpt -l .
+            echo "Run 'gofumpt -w .' to fix formatting issues"
+            exit 1
+          fi
