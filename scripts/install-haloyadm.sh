@@ -50,13 +50,22 @@ esac
 
 # --- Fetch the latest version from GitHub ---
 echo "Finding the latest version of Haloy..."
-GITHUB_API_URL="https://api.github.com/repos/haloydev/haloy/releases/latest"
-GITHUB_LATEST_VERSION=$(curl -sL -H 'Accept: application/json' "$GITHUB_API_URL" | grep '"tag_name":' | sed -e 's/.*"tag_name":"\([^"]*\)".*/\1/')
+
+# Try to get the latest stable release first
+GITHUB_LATEST_VERSION=$(curl -sL -H 'Accept: application/json' "https://api.github.com/repos/haloydev/haloy/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' || echo "")
+
+# If no stable release found, get the most recent release (including prereleases)
+if [ -z "$GITHUB_LATEST_VERSION" ]; then
+    echo "No stable release found, checking for prereleases..."
+    GITHUB_LATEST_VERSION=$(curl -sL -H 'Accept: application/json' "https://api.github.com/repos/haloydev/haloy/releases" | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -1)
+fi
 
 if [ -z "$GITHUB_LATEST_VERSION" ]; then
     echo "Error: Could not determine the latest Haloy version from GitHub." >&2
     exit 1
 fi
+
+echo "Found version: $GITHUB_LATEST_VERSION"
 
 # --- Download and Install ---
 BINARY_NAME="haloyadm-${PLATFORM}-${ARCH}"
