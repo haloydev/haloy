@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for tags
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -40,6 +42,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for tags
 
       - name: Determine Version
         id: get_version
@@ -55,7 +59,6 @@ jobs:
       - name: Checkout specific tag for manual runs
         if: github.event_name == 'workflow_dispatch'
         run: |
-          git fetch --depth=1 origin tags/${{ env.VERSION }}
           git checkout ${{ env.VERSION }}
 
       - name: Log in to GitHub Container Registry
@@ -76,7 +79,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}},value=${{ env.VERSION }}
             type=semver,pattern={{major}}.{{minor}},value=${{ env.VERSION }}
-            type=raw,value=latest,enable=${{ !contains(env.VERSION, 'alpha') && !contains(env.VERSION, 'beta') && !contains(env.VERSION, 'rc') }}
+            type=raw,value=latest,enable=${{ !contains(env.VERSION, 'alpha') && !contains(env.VERSION, 'rc') }}
 
       - name: Build and push haloyd image
         uses: docker/build-push-action@v5
@@ -141,7 +144,7 @@ jobs:
     needs: build-and-publish
     runs-on: ubuntu-latest
     steps:
-      - name: Determine Version  # Add this step
+      - name: Determine Version
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
             echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
@@ -172,4 +175,3 @@ jobs:
           prerelease: ${{ contains(env.VERSION, 'alpha') || contains(env.VERSION, 'beta') || contains(env.VERSION, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
