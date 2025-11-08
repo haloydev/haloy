@@ -21,7 +21,7 @@ The `haloy` CLI tool will trigger deployments from your local machine.
 
 1. Install `haloy`
 ```bash
-curl -fsSL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloy.sh | bash
+curl -fsSL https://sh.haloy.dev/install-haloy.sh | bash
 ```
 
 2. Ensure `~/.local/bin` is in your PATH by adding the following to your `~/.bashrc`, `~/.zshrc`, or equivalent shell profile:
@@ -34,7 +34,7 @@ The next step is to install `haloyd` on your server.
 
 1. Install `haloyadm` (requires sudo access):
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyadm.sh | sudo bash
+    curl -fsSL https://sh.haloy.dev/install-haloyadm.sh | sudo bash
     ```
 
 2. Initialize `haloyd` and `HAProxy`:
@@ -1023,17 +1023,17 @@ acme_email: "you@email.com"
 
 ### Remove Client Only
 ```bash
-curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/uninstall-haloy.sh | bash
+curl -sL https://sh.haloy.dev/uninstall-haloy.sh | bash
 ```
 
 ### Remove Admin Tool Only
 ```bash
-curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/uninstall-haloyadm.sh | bash
+curl -sL https://sh.haloy.dev/uninstall-haloyadm.sh | sudo bash
 ```
 
 ### Complete Server Removal
 ```bash
-curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/uninstall-server.sh | bash
+curl -sL https://sh.haloy.dev/uninstall-server.sh | sudo bash
 ```
 
 ## Directory Structure
