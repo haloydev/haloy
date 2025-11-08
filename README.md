@@ -608,7 +608,7 @@ volumes:
 
 **Why No Relative Paths?**
 
-`haloyd` (the Haloy daemon) runs inside a Docker container, relative paths in volume mounts are resolved relative to the daemon container's filesystem, not your local machine. This leads to unexpected behavior where:
+Since `haloyd` (the Haloy daemon) runs inside a Docker container, relative paths in volume mounts are resolved relative to the daemon container's filesystem, not your local machine. This leads to unexpected behavior where:
 - `./data` creates a directory inside the daemon container
 - Your actual local `./data` directory is never mounted
 - Data appears to be lost or inaccessible
