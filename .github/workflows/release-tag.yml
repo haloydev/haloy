@@ -56,6 +56,16 @@ jobs:
             echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
           fi
 
+      - name: Generate Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: ".github/changelog-config.json"
+          fromTag: ${{ env.PREVIOUS_TAG }}
+          toTag: ${{ env.VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Checkout specific tag for manual runs
         if: github.event_name == 'workflow_dispatch'
         run: |

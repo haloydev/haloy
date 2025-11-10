@@ -1,0 +1,22 @@
+{
+  "categories": [
+    {
+      "title": "## Features",
+      "labels": ["feature", "feat"]
+    },
+    {
+      "title": "## Fixes",
+      "labels": ["fix", "bug"]
+    },
+    {
+      "title": "## Documentation",
+      "labels": ["documentation", "docs"]
+    },
+    {
+      "title": "## Maintenance",
+      "labels": ["chore", "dependencies"]
+    }
+  ],
+  "template": "#{{CHANGELOG}}\n\n**Full Changelog**: https://github.com/${{OWNER}}/${{REPO}}/compare/${{FROM_TAG}}...${{TO_TAG}}",
+  "pr_template": "- #{{TITLE}} (#{{NUMBER}})"
+}
