@@ -94,30 +94,7 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		return fmt.Errorf("failed to build deployments: %w", err)
 	}
 
-	if len(excludedContainers) > 0 {
-		for _, excluded := range excludedContainers {
-			switch excluded.Reason {
-			case ExclusionReasonInspectionFailed, ExclusionReasonLabelParsingFailed, ExclusionReasonIPExtractionFailed:
-				if excluded.Labels != nil {
-					logger.Info("Container failed to start - verify configuration and label settings",
-						"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
-						"app", excluded.Labels.AppName,
-						"deployment_id", excluded.Labels.DeploymentID,
-						"reason", excluded.Reason.String())
-				} else {
-					logger.Info("Container failed to start - no label info available",
-						"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
-						"reason", excluded.Reason.String())
-				}
-
-			case ExclusionReasonNoDomains, ExclusionReasonNotDefaultNetwork:
-				logger.Debug("Container excluded from further processing",
-					"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
-					"reason", excluded.Reason.String(),
-					"app", excluded.Labels.AppName)
-			}
-		}
-	}
+	logExcludedContainerReasons(excludedContainers, logger)
 
 	// Skip further processing if no changes were detected and the reason is not an initial update.
 	// We'll still want to continue on the initial update to ensure the API domain is set up correctly.
@@ -199,4 +176,31 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	}
 
 	return nil
+}
+
+func logExcludedContainerReasons(containers []ExcludedContainerInfo, logger *slog.Logger) {
+	if len(containers) == 0 {
+		return
+	}
+	for _, excluded := range containers {
+		switch excluded.Reason {
+		case ExclusionReasonInspectionFailed, ExclusionReasonLabelParsingFailed, ExclusionReasonIPExtractionFailed, ExclusionReasonPortMismatch:
+			if excluded.Labels != nil {
+				logger.Info(fmt.Sprintf("Failed to process container: %v", excluded.Error),
+					"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
+					"app", excluded.Labels.AppName,
+					"deployment_id", excluded.Labels.DeploymentID,
+					"reason", excluded.Reason.String())
+			} else {
+				logger.Info("Container failed to start - no label info available",
+					"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
+					"reason", excluded.Reason.String())
+			}
+		case ExclusionReasonNoDomains, ExclusionReasonNotDefaultNetwork:
+			logger.Debug("Container excluded from further processing",
+				"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
+				"reason", excluded.Reason.String(),
+				"app", excluded.Labels.AppName)
+		}
+	}
 }

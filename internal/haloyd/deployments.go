@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"strings"
 	"sync"
 
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/docker"
@@ -33,6 +35,7 @@ const (
 	ExclusionReasonNoDomains
 	ExclusionReasonNotDefaultNetwork
 	ExclusionReasonIPExtractionFailed
+	ExclusionReasonPortMismatch
 )
 
 func (r ContainerExclusionReason) String() string {
@@ -47,6 +50,8 @@ func (r ContainerExclusionReason) String() string {
 		return "not on haloy docker network"
 	case ExclusionReasonIPExtractionFailed:
 		return "IP extraction failed"
+	case ExclusionReasonPortMismatch:
+		return "label port does not match exposed container ports"
 	default:
 		return "unknown reason"
 	}
@@ -119,6 +124,18 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 				ContainerID: container.ID,
 				Reason:      ExclusionReasonNotDefaultNetwork,
 				Error:       "",
+				Labels:      labels,
+			})
+			continue
+		}
+
+		labelPortString := labels.Port.String()
+		if !validateContainerPort(container.Config.ExposedPorts, labelPortString) {
+			exposedPortsStr := exposedPortsAsString(container.Config.ExposedPorts)
+			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
+				ContainerID: container.ID,
+				Reason:      ExclusionReasonPortMismatch,
+				Error:       fmt.Sprintf("configured port %s does not match exposed ports %s", labelPortString, exposedPortsStr),
 				Labels:      labels,
 			})
 			continue
@@ -326,4 +343,34 @@ func instancesEqual(a, b []DeploymentInstance) bool {
 	}
 
 	return true
+}
+
+// validateContainerPort checks if the port specified in labels matches any exposed port on the container
+func validateContainerPort(exposedPorts nat.PortSet, labelPort string) bool {
+	if labelPort == "" {
+		labelPort = constants.DefaultContainerPort
+	}
+
+	// Check if the label port exists in the exposed ports
+	for exposedPort := range exposedPorts {
+		if exposedPort.Port() == labelPort {
+			return true
+		}
+	}
+
+	return false
+}
+
+// getExposedPortsAsString returns a string representation of exposed ports for logging
+func exposedPortsAsString(exposedPorts nat.PortSet) string {
+	if len(exposedPorts) == 0 {
+		return "none"
+	}
+
+	ports := make([]string, 0, len(exposedPorts))
+	for port := range exposedPorts {
+		ports = append(ports, port.Port())
+	}
+
+	return fmt.Sprintf("[%s]", strings.Join(ports, ", "))
 }
