@@ -60,6 +60,22 @@ func ValidateAppConfigCmd(configPath *string) *cobra.Command {
 					}
 				}
 			}
+
+			resolvedTargets := make(map[string]config.TargetConfig)
+			if len(errors) == 0 {
+				resolvedAppConfig, err := appconfigloader.ResolveSecrets(ctx, rawAppConfig)
+				if err != nil {
+					errors = append(errors, fmt.Errorf("Unable to resolve secrets: %w", err))
+				} else {
+					resolvedTargets, err = appconfigloader.ExtractTargets(resolvedAppConfig, format)
+					if err != nil {
+						errors = append(errors, err)
+					}
+
+				}
+			}
+
+			// Print all errors
 			if len(errors) > 0 {
 				for _, error := range errors {
 					ui.Error("%v", error)
@@ -68,22 +84,11 @@ func ValidateAppConfigCmd(configPath *string) *cobra.Command {
 			}
 
 			if showResolvedConfigFlag {
-				resolvedAppConfig, err := appconfigloader.ResolveSecrets(ctx, rawAppConfig)
-				if err != nil {
-					ui.Error("Unable to resolve secrets: %v", err)
-					return
-				}
-				resolvedTargets, err := appconfigloader.ExtractTargets(resolvedAppConfig, format)
-				if err != nil {
-					ui.Error("Unable to resolve targets for config: %v", err)
-					return
-				}
 				for _, resolvedTarget := range resolvedTargets {
 					if err := displayResolvedConfig(resolvedTarget); err != nil {
 						ui.Error("Failed to display resolved config: %v", err)
 					}
 				}
-
 			}
 
 			ui.Success("Config file '%s' is valid!", filepath.Base(configFileName))

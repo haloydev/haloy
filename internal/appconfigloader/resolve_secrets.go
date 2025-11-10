@@ -210,7 +210,11 @@ func extractValues(sources []*config.ValueSource, cache map[groupKey]map[string]
 		}
 
 		if vs.From.Env != "" {
-			vs.Value = os.Getenv(vs.From.Env)
+			envValue := os.Getenv(vs.From.Env)
+			if envValue == "" {
+				return fmt.Errorf("environment variable '%s' not found", vs.From.Env)
+			}
+			vs.Value = envValue
 		} else if vs.From.Secret != "" {
 			parts := strings.SplitN(vs.From.Secret, ":", 2)
 			provider, ref := parts[0], parts[1]
