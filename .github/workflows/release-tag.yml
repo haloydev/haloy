@@ -60,6 +60,7 @@ jobs:
         id: changelog
         uses: mikepenz/release-changelog-builder-action@v4
         with:
+          mode: "HYBRID"
           configuration: ".github/changelog-config.json"
           fromTag: ${{ env.PREVIOUS_TAG }}
           toTag: ${{ env.VERSION }}
