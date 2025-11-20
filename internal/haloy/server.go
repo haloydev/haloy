@@ -108,7 +108,10 @@ func ServerAddCmd() *cobra.Command {
 				clientConfig = &config.ClientConfig{}
 			}
 
-			clientConfig.AddServer(normalizedURL, tokenEnv, force)
+			if err := clientConfig.AddServer(normalizedURL, tokenEnv, force); err != nil {
+				ui.Error("Failed to add server: %v", err)
+				return
+			}
 
 			if err := config.SaveClientConfig(clientConfig, clientConfigPath); err != nil {
 				ui.Error("Failed to save client config: %v", err)
@@ -186,7 +189,12 @@ func ServerDeleteCmd() *cobra.Command {
 					ui.Info("Please remove the token %s from %s manually", serverConfig.TokenEnv, envFile)
 				}
 			}
-			clientConfig.DeleteServer(normalizedURL)
+
+			if err := clientConfig.DeleteServer(normalizedURL); err != nil {
+				ui.Error("Failed to delete server: %v", err)
+				return
+			}
+
 			if err := config.SaveClientConfig(clientConfig, clientConfigPath); err != nil {
 				ui.Error("Failed to save client config: %v", err)
 				return
