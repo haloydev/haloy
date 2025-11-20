@@ -59,7 +59,7 @@ func Load(
 	return rawAppConfig, "", nil
 }
 
-func MergeImage(targetConfig config.TargetConfig, images map[string]*config.Image, baseImage *config.Image) (*config.Image, error) {
+func mergeImage(targetConfig config.TargetConfig, images map[string]*config.Image, baseImage *config.Image) (*config.Image, error) {
 	// Priority: target.Image > target.ImageKey > base.Image
 	if targetConfig.Image != nil {
 		// If base image exists, merge the override with the base
@@ -107,6 +107,46 @@ func MergeImage(targetConfig config.TargetConfig, images map[string]*config.Imag
 	return nil, nil
 }
 
+func mergeEnvArrays(appConfigEnv, targetConfigEnv []config.EnvVar) []config.EnvVar {
+	if len(targetConfigEnv) == 0 {
+		return appConfigEnv
+	}
+
+	if len(appConfigEnv) == 0 {
+		return targetConfigEnv
+	}
+
+	mergedMap := make(map[string]config.EnvVar)
+
+	for _, envVar := range appConfigEnv {
+		mergedMap[envVar.Name] = envVar
+	}
+
+	for _, envVar := range targetConfigEnv {
+		mergedMap[envVar.Name] = envVar // override appConfig if exists
+	}
+
+	mergedEnv := make([]config.EnvVar, 0, len(mergedMap))
+
+	// Preserve order defined in appConfigEnv (base)
+	for _, envVar := range appConfigEnv {
+		if mergedEnvVar, exists := mergedMap[envVar.Name]; exists {
+			mergedEnv = append(mergedEnv, mergedEnvVar)
+			delete(mergedMap, envVar.Name)
+		}
+	}
+
+	// Add remaining env vars from targetConfigEnv in their original order
+	for _, envVar := range targetConfigEnv {
+		if mergedEnvVar, exists := mergedMap[envVar.Name]; exists {
+			mergedEnv = append(mergedEnv, mergedEnvVar)
+			delete(mergedMap, envVar.Name)
+		}
+	}
+
+	return mergedEnv
+}
+
 func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig, targetName, format string) (config.TargetConfig, error) {
 	var tc config.TargetConfig
 	if err := copier.Copy(&tc, &targetConfig); err != nil {
@@ -124,7 +164,7 @@ func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig,
 		}
 	}
 
-	mergedImage, err := MergeImage(targetConfig, appConfig.Images, appConfig.Image)
+	mergedImage, err := mergeImage(targetConfig, appConfig.Images, appConfig.Image)
 	if err != nil {
 		return config.TargetConfig{}, fmt.Errorf("failed to resolve image for target '%s': %w", targetName, err)
 	}
@@ -150,7 +190,15 @@ func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig,
 		tc.ACMEEmail = appConfig.ACMEEmail
 	}
 
-	if tc.Env == nil {
+	// Merge Env arrays if the target has an explicit Env block, otherwise inherit (which is handled by copier)
+	// Only merge if both base and target have elements. If target.Env is nil (copied from targetConfig, which is nil),
+	// it will inherit the base config value. If target.Env is non-nil (meaning it was set explicitly in the target block,
+	// even if empty), we proceed to merge with the base.
+	if len(targetConfig.Env) > 0 || len(appConfig.Env) > 0 {
+		mergedEnv := mergeEnvArrays(appConfig.Env, targetConfig.Env)
+		tc.Env = mergedEnv
+	} else if tc.Env == nil {
+		// Fallback to base config if nothing was explicitly set on target
 		tc.Env = appConfig.Env
 	}
 

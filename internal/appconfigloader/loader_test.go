@@ -39,6 +39,7 @@ func TestMergeToTarget(t *testing.T) {
 		expectedName    string
 		expectedServer  string
 		expectedImage   config.Image
+		expectedEnv     []config.EnvVar
 		expectNilTarget bool
 	}{
 		{
@@ -213,6 +214,78 @@ func TestMergeToTarget(t *testing.T) {
 			expectedName:   "target-override-name",
 			expectedServer: "test.haloy.dev",
 		},
+		{
+			name: "merge env with override and new item",
+			appConfig: config.AppConfig{
+				TargetConfig: config.TargetConfig{
+					Name: "myapp",
+					Image: &config.Image{
+						Repository: "base-repo",
+						Tag:        "base-tag",
+					},
+					Server: "default.haloy.dev",
+					Env: []config.EnvVar{ // Base Env (ORDER: A, B)
+						{Name: "VAR_A", ValueSource: config.ValueSource{Value: "base-value-A"}},
+						{Name: "VAR_B", ValueSource: config.ValueSource{Value: "base-value-B"}},
+					},
+				},
+			},
+			targetConfig: config.TargetConfig{
+				Server: "override.haloy.dev",
+				Env: []config.EnvVar{ // Target Env (ORDER: C, A)
+					{Name: "VAR_C", ValueSource: config.ValueSource{Value: "target-value-C"}}, // New
+					{Name: "VAR_A", ValueSource: config.ValueSource{Value: "target-value-A"}}, // Override
+				},
+			},
+			targetName:     "test-target",
+			expectedName:   "myapp",
+			expectedServer: "override.haloy.dev",
+			expectedImage: config.Image{
+				Repository: "base-repo",
+				Tag:        "base-tag",
+			},
+			expectedEnv: []config.EnvVar{ // Expected Final Env (ORDER: A, B, C)
+				{Name: "VAR_A", ValueSource: config.ValueSource{Value: "target-value-A"}}, // Overridden, kept base position (1st)
+				{Name: "VAR_B", ValueSource: config.ValueSource{Value: "base-value-B"}},   // Inherited, kept base position (2nd)
+				{Name: "VAR_C", ValueSource: config.ValueSource{Value: "target-value-C"}}, // New, appended last (preserved target's internal order relative to other new items)
+			},
+		},
+		{
+			name: "merge env with all new items preserves target order",
+			appConfig: config.AppConfig{
+				TargetConfig: config.TargetConfig{
+					Name: "myapp",
+					Image: &config.Image{
+						Repository: "base-repo",
+						Tag:        "base-tag",
+					},
+					Server: "default.haloy.dev",
+					Env: []config.EnvVar{
+						{Name: "VAR_A", ValueSource: config.ValueSource{Value: "base-value-A"}},
+					},
+				},
+			},
+			targetConfig: config.TargetConfig{
+				Env: []config.EnvVar{
+					{Name: "VAR_C", ValueSource: config.ValueSource{Value: "target-value-C"}},
+					{Name: "VAR_B", ValueSource: config.ValueSource{Value: "target-value-B"}},
+					{Name: "VAR_D", ValueSource: config.ValueSource{Value: "target-value-D"}},
+				},
+			},
+			targetName:     "test-target",
+			expectedName:   "myapp",
+			expectedServer: "default.haloy.dev",
+			expectedImage: config.Image{
+				Repository: "base-repo",
+				Tag:        "base-tag",
+			},
+			expectedEnv: []config.EnvVar{
+				{Name: "VAR_A", ValueSource: config.ValueSource{Value: "base-value-A"}},   // From base
+				{Name: "VAR_C", ValueSource: config.ValueSource{Value: "target-value-C"}}, // New, in target order
+				{Name: "VAR_B", ValueSource: config.ValueSource{Value: "target-value-B"}}, // New, in target order
+				{Name: "VAR_D", ValueSource: config.ValueSource{Value: "target-value-D"}}, // New, in target order
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -260,6 +333,19 @@ func TestMergeToTarget(t *testing.T) {
 						if result.Image.RegistryAuth.Server != tt.expectedImage.RegistryAuth.Server {
 							t.Errorf("MergeToTarget() Image.RegistryAuth.Server = %s, expected %s",
 								result.Image.RegistryAuth.Server, tt.expectedImage.RegistryAuth.Server)
+						}
+					}
+				}
+			}
+
+			if len(tt.expectedEnv) > 0 {
+				if len(result.Env) != len(tt.expectedEnv) {
+					t.Errorf("MergeToTarget() Env length mismatch. Got %d, expected %d. Got: %v", len(result.Env), len(tt.expectedEnv), result.Env)
+				} else {
+					for i, expectedEnvVar := range tt.expectedEnv {
+						actualEnvVar := result.Env[i]
+						if actualEnvVar.Name != expectedEnvVar.Name || actualEnvVar.ValueSource.Value != expectedEnvVar.ValueSource.Value {
+							t.Errorf("MergeToTarget() Env[%d] mismatch. Got %+v, Expected %+v", i, actualEnvVar, expectedEnvVar)
 						}
 					}
 				}
@@ -393,31 +479,31 @@ func TestMergeImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := MergeImage(tt.targetConfig, tt.images, tt.baseImage)
+			result, err := mergeImage(tt.targetConfig, tt.images, tt.baseImage)
 
 			if tt.expectError {
 				if err == nil {
-					t.Errorf("MergeImage() expected error but got none")
+					t.Errorf("mergeImage() expected error but got none")
 				} else if tt.errMsg != "" && !helpers.Contains(err.Error(), tt.errMsg) {
-					t.Errorf("MergeImage() error = %v, expected to contain %v", err, tt.errMsg)
+					t.Errorf("mergeImage() error = %v, expected to contain %v", err, tt.errMsg)
 				}
 			} else {
 				if err != nil {
-					t.Errorf("MergeImage() unexpected error = %v", err)
+					t.Errorf("mergeImage() unexpected error = %v", err)
 				}
 				if result != nil && result.Repository != tt.expected.Repository {
-					t.Errorf("MergeImage() Repository = %s, expected %s",
+					t.Errorf("mergeImage() Repository = %s, expected %s",
 						result.Repository, tt.expected.Repository)
 				}
 				if result != nil && result.Tag != tt.expected.Tag {
-					t.Errorf("MergeImage() Tag = %s, expected %s",
+					t.Errorf("mergeImage() Tag = %s, expected %s",
 						result.Tag, tt.expected.Tag)
 				}
 				if result != nil && tt.expected.History != nil {
 					if result.History == nil {
-						t.Errorf("MergeImage() History should not be nil")
+						t.Errorf("mergeImage() History should not be nil")
 					} else if result.History.Strategy != tt.expected.History.Strategy {
-						t.Errorf("MergeImage() History.Strategy = %s, expected %s",
+						t.Errorf("mergeImage() History.Strategy = %s, expected %s",
 							result.History.Strategy, tt.expected.History.Strategy)
 					}
 				}
