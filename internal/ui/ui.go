@@ -94,30 +94,38 @@ func printStyledLines(output *os.File, prefix string, style lipgloss.Style, form
 	}
 }
 
+func stylePrefix(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+
+	return lipgloss.NewStyle().Bold(true).Foreground(White).Render(fmt.Sprintf("%s ", prefix))
+}
+
 type PrefixedUI struct {
 	Prefix string
 }
 
-func (p *PrefixedUI) Info(format string, a ...any) {
+func (p *PrefixedUI) call(fn func(string, ...any), format string, a ...any) {
 	if p.Prefix != "" {
-		format = "%s" + format
-		a = append([]any{p.Prefix}, a...)
+		format = "%s " + format
+		a = append([]any{stylePrefix(p.Prefix)}, a...)
 	}
-	Info(format, a...)
+	fn(format, a...)
+}
+
+func (p *PrefixedUI) Info(format string, a ...any) {
+	p.call(Info, format, a...)
+}
+
+func (p *PrefixedUI) Warn(format string, a ...any) {
+	p.call(Warn, format, a...)
 }
 
 func (p *PrefixedUI) Error(format string, a ...any) {
-	if p.Prefix != "" {
-		format = "%s" + format
-		a = append([]any{p.Prefix}, a...)
-	}
-	Error(format, a...)
+	p.call(Error, format, a...)
 }
 
 func (p *PrefixedUI) Success(format string, a ...any) {
-	if p.Prefix != "" {
-		format = "%s" + format
-		a = append([]any{p.Prefix}, a...)
-	}
-	Success(format, a...)
+	p.call(Success, format, a...)
 }

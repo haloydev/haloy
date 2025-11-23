@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/appconfigloader"
@@ -12,6 +11,7 @@ import (
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func LogsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
@@ -24,41 +24,36 @@ func LogsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 
 The logs are streamed in real-time and will continue until interrupted (Ctrl+C).`,
 		Args: cobra.NoArgs,
-		Run: func(cmd *cobra.Command, _ []string) {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if serverFlag != "" {
-				streamLogs(ctx, nil, serverFlag)
-			} else {
-				rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
-				if err != nil {
-					ui.Error("%v", err)
-					return
-				}
-
-				targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
-				if err != nil {
-					ui.Error("Unable to create deploy targets: %v", err)
-					return
-				}
-
-				servers := appconfigloader.TargetsByServer(targets)
-
-				var wg sync.WaitGroup
-				for server, targetNames := range servers {
-					targetConfig, exists := targets[targetNames[0]]
-					if !exists {
-						ui.Error("Failed to find target config for server")
-						return
-					}
-					wg.Add(1)
-					go func(server string, targetConfig config.TargetConfig) {
-						defer wg.Done()
-						streamLogs(ctx, &targetConfig, server)
-					}(server, targetConfig)
-				}
-
-				wg.Wait()
+				return streamLogs(ctx, nil, serverFlag)
 			}
+
+			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			if err != nil {
+				return fmt.Errorf("unable to load config: %w", err)
+			}
+
+			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			if err != nil {
+				return err
+			}
+
+			servers := appconfigloader.TargetsByServer(targets)
+
+			g, ctx := errgroup.WithContext(ctx)
+			for server, targetNames := range servers {
+				targetConfig, exists := targets[targetNames[0]]
+				if !exists {
+					return fmt.Errorf("failed to find target config for server")
+				}
+				g.Go(func() error {
+					return streamLogs(ctx, &targetConfig, server)
+				})
+			}
+
+			return g.Wait()
 		},
 	}
 
@@ -73,7 +68,7 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 func streamLogs(ctx context.Context, targetConfig *config.TargetConfig, targetServer string) error {
 	token, err := getToken(targetConfig, targetServer)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get token: %w", err)
 	}
 
 	ui.Info("Connecting to haloy server at %s", targetServer)
@@ -81,7 +76,7 @@ func streamLogs(ctx context.Context, targetConfig *config.TargetConfig, targetSe
 
 	api, err := apiclient.New(targetServer, token)
 	if err != nil {
-		return fmt.Errorf("Failed to create API client: %w", err)
+		return fmt.Errorf("failed to create API client: %w", err)
 	}
 	streamHandler := func(data string) bool {
 		var logEntry logging.LogEntry

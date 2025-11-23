@@ -22,19 +22,17 @@ func ValidateAppConfigCmd(configPath *string) *cobra.Command {
 		Long:  "Validate a haloy configuration file.",
 
 		Args: cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			configFileName, err := appconfigloader.FindConfigFile(*configPath)
 			if err != nil {
-				ui.Error("%v", err)
-				return
+				return err
 			}
 
 			rawAppConfig, format, err := appconfigloader.LoadRawAppConfig(*configPath)
 			if err != nil {
-				ui.Error("Unable to load config file from %s: %v", *configPath, err)
-				return
+				return fmt.Errorf("unable to load config file from %s: %w", *configPath, err)
 			}
 
 			errors := make([]error, 0)
@@ -65,7 +63,7 @@ func ValidateAppConfigCmd(configPath *string) *cobra.Command {
 			if len(errors) == 0 {
 				resolvedAppConfig, err := appconfigloader.ResolveSecrets(ctx, rawAppConfig)
 				if err != nil {
-					errors = append(errors, fmt.Errorf("Unable to resolve secrets: %w", err))
+					errors = append(errors, fmt.Errorf("unable to resolve secrets: %w", err))
 				} else {
 					resolvedTargets, err = appconfigloader.ExtractTargets(resolvedAppConfig, format)
 					if err != nil {
@@ -75,23 +73,26 @@ func ValidateAppConfigCmd(configPath *string) *cobra.Command {
 				}
 			}
 
-			// Print all errors
+			// Return all errors
 			if len(errors) > 0 {
-				for _, error := range errors {
-					ui.Error("%v", error)
+				// Print all validation errors to provide complete feedback
+				for _, validationErr := range errors {
+					ui.Error("%v", validationErr)
 				}
-				return
+				// Return the first error to trigger non-zero exit code
+				return errors[0]
 			}
 
 			if showResolvedConfigFlag {
 				for _, resolvedTarget := range resolvedTargets {
 					if err := displayResolvedConfig(resolvedTarget); err != nil {
-						ui.Error("Failed to display resolved config: %v", err)
+						return fmt.Errorf("failed to display resolved config: %w", err)
 					}
 				}
 			}
 
 			ui.Success("Config file '%s' is valid!", filepath.Base(configFileName))
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&showResolvedConfigFlag, "show-resolved-config", false, "Print the resolved configuration with all fields and secrets resolved and visible in plain text (WARNING: sensitive data will be displayed)")

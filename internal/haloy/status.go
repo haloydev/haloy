@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/haloydev/haloy/internal/apiclient"
@@ -14,6 +13,7 @@ import (
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func StatusAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
@@ -22,59 +22,57 @@ func StatusAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		Short: "Show status for an application",
 		Long:  "Show current status of a deployed application using a haloy configuration file.",
 		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, _ []string) {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+
 			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
-				ui.Error("%v", err)
-				return
+				return fmt.Errorf("unable to load config: %w", err)
 			}
 
 			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
 			if err != nil {
-				ui.Error("Unable to create deploy targets: %v", err)
-				return
+				return err
 			}
 
-			var wg sync.WaitGroup
+			g, ctx := errgroup.WithContext(ctx)
 			for _, target := range targets {
-				wg.Add(1)
-				go func(target config.TargetConfig) {
-					defer wg.Done()
-					getAppStatus(ctx, &target, target.Server, target.Name)
-				}(target)
+				g.Go(func() error {
+					prefix := ""
+					if len(targets) > 1 {
+						prefix = target.TargetName
+					}
+					return getAppStatus(ctx, &target, target.Server, target.Name, prefix)
+				})
 			}
 
-			wg.Wait()
+			return g.Wait()
 		},
 	}
 
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Show status for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Show status for all targets")
+
 	return cmd
 }
 
-func getAppStatus(ctx context.Context, targetConfig *config.TargetConfig, targetServer, appName string) {
+func getAppStatus(ctx context.Context, targetConfig *config.TargetConfig, targetServer, appName, prefix string) error {
+	ui.Info("Getting status for application: %s using server %s", appName, targetServer)
+
 	token, err := getToken(targetConfig, targetServer)
 	if err != nil {
-		ui.Error("%v", err)
-		return
+		return &PrefixedError{Err: fmt.Errorf("unable to get token: %w", err), Prefix: prefix}
 	}
-
-	ui.Info("Getting status for application: %s using server %s", appName, targetServer)
 
 	api, err := apiclient.New(targetServer, token)
 	if err != nil {
-		ui.Error("Failed to create API client: %v", err)
-		return
+		return &PrefixedError{Err: fmt.Errorf("unable to create API client: %w", err), Prefix: prefix}
 	}
 	path := fmt.Sprintf("status/%s", appName)
 	var response apitypes.AppStatusResponse
 	if err := api.Get(ctx, path, &response); err != nil {
-		ui.Error("Failed to get app status: %v", err)
-		return
-
+		return &PrefixedError{Err: fmt.Errorf("failed to get status: %w", err), Prefix: prefix}
 	}
 
 	containerIDs := make([]string, 0, len(response.ContainerIDs))
@@ -96,6 +94,8 @@ func getAppStatus(ctx context.Context, targetConfig *config.TargetConfig, target
 	}
 
 	ui.Section(fmt.Sprintf("Status for %s", appName), formattedOutput)
+
+	return nil
 }
 
 func displayState(state string) string {

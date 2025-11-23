@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +35,7 @@ func (f *appCmdFlags) validateTargetFlags() error {
 	return nil
 }
 
-func NewRootCmd() *cobra.Command {
+func RootCmd() *cobra.Command {
 	appFlags := &appCmdFlags{}
 	resolvedConfigPath := "."
 
@@ -82,4 +83,19 @@ func NewRootCmd() *cobra.Command {
 	)
 
 	return cmd
+}
+
+func Execute() int {
+	rootCmd := RootCmd()
+	if err := rootCmd.Execute(); err != nil {
+		var prefixedErr *PrefixedError
+		if errors.As(err, &prefixedErr) {
+			pui := &ui.PrefixedUI{Prefix: prefixedErr.GetPrefix()}
+			pui.Error("%v", err)
+		} else {
+			ui.Error("%v", err)
+		}
+		return getExitCode(err)
+	}
+	return 0
 }

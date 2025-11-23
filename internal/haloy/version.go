@@ -2,7 +2,7 @@ package haloy
 
 import (
 	"context"
-	"sync"
+	"fmt"
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
@@ -11,6 +11,7 @@ import (
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func VersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
@@ -21,34 +22,34 @@ func VersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		Short: "Show the current version of haloyd and HAProxy",
 		Long:  "Display the current version of haloyd and the HAProxy version it is using.",
 		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, _ []string) {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
 			if serverFlag != "" {
-				getVersion(context.Background(), nil, serverFlag)
-			} else {
-				ctx := cmd.Context()
-				rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
-				if err != nil {
-					ui.Error("%v", err)
-					return
-				}
-
-				targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
-				if err != nil {
-					ui.Error("Unable to create deploy targets: %v", err)
-					return
-				}
-
-				var wg sync.WaitGroup
-				for _, target := range targets {
-					wg.Add(1)
-					go func(target config.TargetConfig) {
-						defer wg.Done()
-						getVersion(ctx, &target, target.Server)
-					}(target)
-				}
-
-				wg.Wait()
+				return getVersion(ctx, nil, serverFlag, "")
 			}
+
+			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			if err != nil {
+				return fmt.Errorf("unable to load config: %w", err)
+			}
+
+			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			if err != nil {
+				return err
+			}
+
+			g, ctx := errgroup.WithContext(ctx)
+			for _, target := range targets {
+				g.Go(func() error {
+					prefix := ""
+					if len(targets) > 1 {
+						prefix = target.TargetName
+					}
+					return getVersion(ctx, &target, target.Server, prefix)
+				})
+			}
+
+			return g.Wait()
 		},
 	}
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
@@ -57,24 +58,21 @@ func VersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	return cmd
 }
 
-func getVersion(ctx context.Context, targetConfig *config.TargetConfig, targetServer string) {
+func getVersion(ctx context.Context, targetConfig *config.TargetConfig, targetServer, prefix string) error {
 	token, err := getToken(targetConfig, targetServer)
 	if err != nil {
-		ui.Error("%v", err)
-		return
+		return &PrefixedError{Err: fmt.Errorf("unable to get token: %w", err), Prefix: prefix}
 	}
 	ui.Info("Getting version using server %s", targetServer)
 
 	cliVersion := constants.Version
 	api, err := apiclient.New(targetServer, token)
 	if err != nil {
-		ui.Error("Failed to create API client: %v", err)
-		return
+		return &PrefixedError{Err: fmt.Errorf("unable to create API client: %w", err), Prefix: prefix}
 	}
 	var response apitypes.VersionResponse
 	if err := api.Get(ctx, "version", &response); err != nil {
-		ui.Error("Failed to get version from API: %v", err)
-		return
+		return &PrefixedError{Err: fmt.Errorf("failed to get version from API: %w", err), Prefix: prefix}
 	}
 
 	if cliVersion == response.Version {
@@ -83,4 +81,5 @@ func getVersion(ctx context.Context, targetConfig *config.TargetConfig, targetSe
 		ui.Warn("haloy version %s does not match haloyd (server) version %s", cliVersion, response.Version)
 		ui.Warn("HAProxy version: %s", response.HAProxyVersion)
 	}
+	return nil
 }

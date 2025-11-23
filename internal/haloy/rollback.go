@@ -3,10 +3,9 @@ package haloy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"sync"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/appconfigloader"
@@ -16,6 +15,7 @@ import (
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func RollbackAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
@@ -28,52 +28,54 @@ func RollbackAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 
 Use 'haloy rollback-targets' to list available deployment IDs.`,
 		Args: cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+
 			targetDeploymentID := args[0]
 
 			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
-				ui.Error("%v", err)
-				return
+				return fmt.Errorf("unable to load config: %w", err)
 			}
 
 			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
 			if err != nil {
-				ui.Error("Unable to create deploy targets: %v", err)
-				return
+				return err
 			}
 
 			newDeploymentID := createDeploymentID()
 
 			servers := appconfigloader.TargetsByServer(targets)
 
-			var wg sync.WaitGroup
-			for server, targetNames := range servers {
-				wg.Add(1)
-				go func(server string, targetNames []string, targets map[string]config.TargetConfig) {
-					defer wg.Done()
+			g, ctx := errgroup.WithContext(ctx)
+			for _, targetNames := range servers {
+				g.Go(func() error {
 					for _, targetName := range targetNames {
+
 						targetConfig, exists := targets[targetName]
 						if !exists {
-							ui.Error("Could not find target for %s", targetName)
+							return fmt.Errorf("could not find target for %s", targetName)
 						}
+
+						server := targetConfig.Server
+						prefix := ""
+						if len(targets) > 1 {
+							prefix = targetName
+						}
+
 						token, err := getToken(&targetConfig, server)
 						if err != nil {
-							ui.Error("%v", err)
-							return
+							return &PrefixedError{Err: fmt.Errorf("unable to get token: %w", err), Prefix: prefix}
 						}
-						ui.Info("Starting rollback for application: %s using server %s", targetConfig.Name, server)
 
 						api, err := apiclient.New(server, token)
 						if err != nil {
-							ui.Error("Failed to create API client: %v", err)
-							return
+							return &PrefixedError{Err: fmt.Errorf("unable to create API client: %w", err), Prefix: prefix}
 						}
+
 						rollbackTargetsResponse, err := getRollbackTargets(ctx, api, targetConfig.Name)
 						if err != nil {
-							ui.Error("Failed to get available rollback targets for %s: %v", targetName, err)
-							return
+							return &PrefixedError{Err: fmt.Errorf("failed to get available rollback targets: %w", err), Prefix: prefix}
 						}
 						var availableTarget deploytypes.RollbackTarget
 						for _, at := range rollbackTargetsResponse.Targets {
@@ -82,32 +84,30 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 							}
 						}
 						if availableTarget.DeploymentID == "" {
-							ui.Error("Deployment ID %s not available not found available rollback targets", targetDeploymentID)
-							return
+							return &PrefixedError{Err: fmt.Errorf("deployment ID %s not found in available rollback targets", targetDeploymentID), Prefix: prefix}
 						}
 
 						if availableTarget.RawAppConfig == nil {
-							ui.Error("Unable to find configuration for rollback")
-							return
+							return &PrefixedError{Err: errors.New("unable to find configuration for rollback"), Prefix: prefix}
 						}
 						newResolvedAppConfig, err := appconfigloader.ResolveSecrets(ctx, *availableTarget.RawAppConfig)
 						if err != nil {
-							ui.Error("Unable to resolve secrets for the app config. This usually occurs when secrets names have been changed or deleted between deployments: %v", err)
-							return
+							return &PrefixedError{Err: fmt.Errorf("unable to resolve secrets for the app config. This usually occurs when secrets names have been changed or deleted between deployments: %w", err), Prefix: prefix}
 						}
 						newResolvedTargetConfig, err := appconfigloader.MergeToTarget(newResolvedAppConfig, config.TargetConfig{}, newResolvedAppConfig.Name, format)
 						if err != nil {
-							ui.Error("Failed to merge to target")
-							return
+							return &PrefixedError{Err: fmt.Errorf("failed to merge to target: %w", err), Prefix: prefix}
 						}
 						request := apitypes.RollbackRequest{
 							TargetDeploymentID: targetDeploymentID,
 							NewDeploymentID:    newDeploymentID,
 							NewTargetConfig:    newResolvedTargetConfig,
 						}
+
+						ui.Info("Starting rollback for application: %s using server %s", targetConfig.Name, server)
+
 						if err := api.Post(ctx, "rollback", request, nil); err != nil {
-							ui.Error("Rollback failed: %v", err)
-							return
+							return &PrefixedError{Err: fmt.Errorf("rollback failed: %w", err), Prefix: prefix}
 						}
 
 						if !noLogsFlag {
@@ -116,7 +116,7 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 							streamHandler := func(data string) bool {
 								var logEntry logging.LogEntry
 								if err := json.Unmarshal([]byte(data), &logEntry); err != nil {
-									ui.Error("failed to ummarshal json: %v", err)
+									ui.Warn("failed to unmarshal json: %v", err)
 									return false // we don't stop on errors.
 								}
 
@@ -130,17 +130,19 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 						}
 
 					}
-				}(server, targetNames, targets)
+
+					return nil
+				})
 			}
 
-			wg.Wait()
+			return g.Wait()
 		},
 	}
 
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
-	cmd.Flags().BoolVar(&noLogsFlag, "no-logs", false, "Don't stream deployment logs")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Deploy to specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Deploy to all targets")
+	cmd.Flags().BoolVar(&noLogsFlag, "no-logs", false, "Don't stream deployment logs")
 
 	return cmd
 }
@@ -151,60 +153,53 @@ func RollbackTargetsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		Short: "List available rollback targets for an application",
 		Long:  `List available rollback targets for an application using a haloy configuration file.`,
 		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
-				ui.Error("%v", err)
-				return
+				return fmt.Errorf("unable to load config: %w", err)
 			}
 
 			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
 			if err != nil {
-				ui.Error("Unable to create deploy targets: %v", err)
-				return
+				return err
 			}
 
-			var wg sync.WaitGroup
+			g, ctx := errgroup.WithContext(ctx)
 
 			for _, target := range targets {
-				wg.Add(1)
-
-				go func(target config.TargetConfig) {
-					defer wg.Done()
+				g.Go(func() error {
 					prefix := ""
 					if len(targets) > 1 {
-						prefix = lipgloss.NewStyle().Bold(true).Foreground(ui.White).Render(fmt.Sprintf("%s ", target.TargetName))
+						prefix = target.TargetName
 					}
-					pui := &ui.PrefixedUI{Prefix: prefix}
 
 					token, err := getToken(&target, target.Server)
 					if err != nil {
-						pui.Error("%v", err)
-						return
+						return &PrefixedError{Err: fmt.Errorf("unable to get token: %w", err), Prefix: prefix}
 					}
 
 					api, err := apiclient.New(target.Server, token)
 					if err != nil {
-						pui.Error("Failed to create API client: %v", err)
-						return
+						return &PrefixedError{Err: fmt.Errorf("unable to create API client: %w", err), Prefix: prefix}
 					}
 					rollbackTargets, err := getRollbackTargets(ctx, api, target.Name)
 					if err != nil {
-						pui.Error("Failed to get rollback targets: %v", err)
-						return
+						return &PrefixedError{Err: fmt.Errorf("failed to get rollback targets: %w", err), Prefix: prefix}
 					}
 					if len(rollbackTargets.Targets) == 0 {
+						pui := &ui.PrefixedUI{Prefix: prefix}
 						pui.Info("No rollback targets available for app '%s'", target.Name)
-						return
+						return nil
 					}
 
 					displayRollbackTargets(target.Name, rollbackTargets.Targets, *configPath, target.TargetName)
-				}(target)
+					return nil
+				})
 			}
 
-			wg.Wait()
+			return g.Wait()
 		},
 	}
 
