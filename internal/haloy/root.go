@@ -2,7 +2,6 @@ package haloy
 
 import (
 	"errors"
-	"os"
 	"slices"
 
 	"github.com/haloydev/haloy/internal/config"
@@ -35,30 +34,29 @@ func (f *appCmdFlags) validateTargetFlags() error {
 	return nil
 }
 
-func RootCmd() *cobra.Command {
+func NewRootCmd() *cobra.Command {
 	appFlags := &appCmdFlags{}
 	resolvedConfigPath := "."
 
 	cmd := &cobra.Command{
 		Use:   "haloy",
 		Short: "haloy builds and runs Docker containers based on a YAML config",
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if slices.Contains(targetFlagCommands, cmd.Name()) {
 				if err := appFlags.validateTargetFlags(); err != nil {
-					cmd.PrintErrln("Error:", err.Error())
-					cmd.Usage()
-					os.Exit(1)
+					return err
 				}
 			}
 			config.LoadEnvFiles(appFlags.targets) // load environment variables in .env for all commands.
 
 			if cmd.Name() == "completion" || cmd.Parent().Name() == "server" {
-				return
+				return nil
 			}
 
 			if appFlags.configPath != "" {
 				resolvedConfigPath = appFlags.configPath
 			}
+			return nil
 		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -86,7 +84,7 @@ func RootCmd() *cobra.Command {
 }
 
 func Execute() int {
-	rootCmd := RootCmd()
+	rootCmd := NewRootCmd()
 	if err := rootCmd.Execute(); err != nil {
 		var prefixedErr *PrefixedError
 		if errors.As(err, &prefixedErr) {
@@ -95,7 +93,7 @@ func Execute() int {
 		} else {
 			ui.Error("%v", err)
 		}
-		return getExitCode(err)
+		return 1
 	}
 	return 0
 }
