@@ -2,6 +2,7 @@ package haloy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -72,6 +73,15 @@ func getAppStatus(ctx context.Context, targetConfig *config.TargetConfig, target
 	path := fmt.Sprintf("status/%s", appName)
 	var response apitypes.AppStatusResponse
 	if err := api.Get(ctx, path, &response); err != nil {
+
+		// Handle 404 specifically - app not deployed/running
+		if errors.Is(err, apiclient.ErrNotFound) {
+			return &PrefixedError{
+				Err:    fmt.Errorf("application '%s' is not currently deployed or running", appName),
+				Prefix: prefix,
+			}
+		}
+
 		return &PrefixedError{Err: fmt.Errorf("failed to get status: %w", err), Prefix: prefix}
 	}
 

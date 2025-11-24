@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -18,6 +19,8 @@ import (
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
 )
+
+var ErrNotFound = errors.New("resource not found")
 
 // APIClient handles communication with the haloy API
 type APIClient struct {
@@ -96,6 +99,11 @@ func (c *APIClient) Get(ctx context.Context, path string, v any) error {
 		if resp.StatusCode == http.StatusUnauthorized {
 			return fmt.Errorf("authentication failed - check your %s", constants.EnvVarAPIToken)
 		}
+
+		if resp.StatusCode == http.StatusNotFound {
+			return ErrNotFound
+		}
+
 		return fmt.Errorf("GET request failed with status %d", resp.StatusCode)
 	}
 
