@@ -60,7 +60,7 @@ func (r ContainerExclusionReason) String() string {
 type ExcludedContainerInfo struct {
 	ContainerID string
 	Reason      ContainerExclusionReason
-	Error       string
+	Message     string
 	Labels      *config.ContainerLabels
 }
 
@@ -99,7 +99,7 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 				ExcludedContainerInfo{
 					ContainerID: containerSummary.ID,
 					Reason:      ExclusionReasonInspectionFailed,
-					Error:       err.Error(),
+					Message:     err.Error(),
 					Labels:      nil,
 				})
 			continue
@@ -112,7 +112,7 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 				ExcludedContainerInfo{
 					ContainerID: container.ID,
 					Reason:      ExclusionReasonLabelParsingFailed,
-					Error:       err.Error(),
+					Message:     err.Error(),
 					Labels:      nil,
 				})
 			continue
@@ -123,7 +123,7 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
 				ContainerID: container.ID,
 				Reason:      ExclusionReasonNotDefaultNetwork,
-				Error:       "",
+				Message:     "",
 				Labels:      labels,
 			})
 			continue
@@ -135,7 +135,7 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
 				ContainerID: container.ID,
 				Reason:      ExclusionReasonPortMismatch,
-				Error:       fmt.Sprintf("configured port %s does not match exposed ports %s", labelPortString, exposedPortsStr),
+				Message:     fmt.Sprintf("configured port %s does not match exposed ports %s", labelPortString, exposedPortsStr),
 				Labels:      labels,
 			})
 			continue
@@ -145,7 +145,7 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
 				ContainerID: container.ID,
 				Reason:      ExclusionReasonNoDomains,
-				Error:       "",
+				Message:     "",
 				Labels:      labels,
 			})
 			continue
@@ -157,7 +157,7 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
 				ContainerID: container.ID,
 				Reason:      ExclusionReasonIPExtractionFailed,
-				Error:       err.Error(),
+				Message:     err.Error(),
 				Labels:      labels,
 			})
 			continue
@@ -349,6 +349,12 @@ func instancesEqual(a, b []DeploymentInstance) bool {
 func validateContainerPort(exposedPorts nat.PortSet, labelPort string) bool {
 	if labelPort == "" {
 		labelPort = constants.DefaultContainerPort
+	}
+
+	// If no ports are exposed, we cannot validate but assume it's valid
+	// The health check will catch actual connectivity issues
+	if len(exposedPorts) == 0 {
+		return true
 	}
 
 	// Check if the label port exists in the exposed ports

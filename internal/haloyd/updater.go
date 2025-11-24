@@ -186,7 +186,7 @@ func logExcludedContainerReasons(containers []ExcludedContainerInfo, logger *slo
 		switch excluded.Reason {
 		case ExclusionReasonInspectionFailed, ExclusionReasonLabelParsingFailed, ExclusionReasonIPExtractionFailed, ExclusionReasonPortMismatch:
 			if excluded.Labels != nil {
-				logger.Info(fmt.Sprintf("Failed to process container: %v", excluded.Error),
+				logger.Info(fmt.Sprintf("Failed to process container: %v", excluded.Message),
 					"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
 					"app", excluded.Labels.AppName,
 					"deployment_id", excluded.Labels.DeploymentID,
