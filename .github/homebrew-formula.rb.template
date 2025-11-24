@@ -1,0 +1,32 @@
+class Haloy < Formula
+  desc "CLI for haloy deployments"
+  homepage "https://github.com/haloydev/haloy"
+  version "{{VERSION}}"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/haloydev/haloy/releases/download/{{VERSION_TAG}}/haloy-darwin-arm64"
+      sha256 "{{ARM64_SHA}}"
+    end
+    on_intel do
+      url "https://github.com/haloydev/haloy/releases/download/{{VERSION_TAG}}/haloy-darwin-amd64"
+      sha256 "{{AMD64_SHA}}"
+    end
+  end
+
+  def install
+    binary_name =
+      if OS.mac? && Hardware::CPU.arm?
+        "haloy-darwin-arm64"
+      else
+        "haloy-darwin-amd64"
+      end
+    bin.install binary_name => "haloy"
+    generate_completions_from_executable(bin/"haloy", "completion", shells: [:bash, :zsh, :fish])
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/haloy version")
+  end
+end
