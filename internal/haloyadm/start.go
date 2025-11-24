@@ -23,31 +23,27 @@ func StartCmd() *cobra.Command {
 		Short: "Start the haloy services",
 		Long:  "Start the haloy services, including HAProxy and haloyd.",
 		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			dataDir, err := config.DataDir()
 			if err != nil {
-				ui.Error("Failed to determine data directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine data directory: %w", err)
 			}
 
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				ui.Error("Failed to determine config directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine config directory: %w", err)
 			}
 
 			if err := ensureNetwork(ctx); err != nil {
-				ui.Error("Failed to ensure Docker network exists: %v", err)
 				ui.Info("You can manually create it with:")
 				ui.Info("docker network create --driver bridge --attachable %s", constants.DockerNetwork)
-				return
+				return fmt.Errorf("failed to ensure Docker network exists: %w", err)
 			}
 
 			if err := startServices(ctx, dataDir, configDir, devMode, false, debug); err != nil {
-				ui.Error("%s", err)
-				return
+				return err
 			}
 
 			waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -55,27 +51,23 @@ func StartCmd() *cobra.Command {
 
 			ui.Info("Waiting for HAProxy to become available...")
 			if err := waitForHAProxy(waitCtx); err != nil {
-				ui.Error("HAProxy failed to become ready: %v", err)
-				return
+				return fmt.Errorf("HAProxy failed to become ready: %w", err)
 			}
 
 			if !noLogs {
 				apiToken := os.Getenv(constants.EnvVarAPIToken)
 				if apiToken == "" {
-					ui.Error("Failed to get API token")
-					return
+					return fmt.Errorf("failed to get API token")
 				}
 
 				apiURL := fmt.Sprintf("http://localhost:%s", constants.APIServerPort)
 				api, err := apiclient.New(apiURL, apiToken)
 				if err != nil {
-					ui.Error("Failed to create API client: %v", err)
-					return
+					return fmt.Errorf("failed to create API client: %w", err)
 				}
 				ui.Info("Waiting for haloyd API to become available...")
 				if err := waitForAPI(waitCtx, api); err != nil {
-					ui.Error("Haloyd API not available: %v", err)
-					return
+					return fmt.Errorf("haloyd API not available: %w", err)
 				}
 
 				ui.Info("Streaming haloyd initialization logs...")
@@ -84,6 +76,8 @@ func StartCmd() *cobra.Command {
 					ui.Info("haloyd is starting in the background. Check logs with: docker logs haloyd")
 				}
 			}
+
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&devMode, "dev", false, "Start in development mode using the local haloyd image")

@@ -54,7 +54,7 @@ This command will:
 The data directory can be customized by setting the %s environment variable.`,
 			constants.EnvVarDataDir,
 		),
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			if localInstall {
@@ -77,46 +77,37 @@ The data directory can be customized by setting the %s environment variable.`,
 
 			// Check if Docker is installed and available in PATH.
 			if _, err := exec.LookPath("docker"); err != nil {
-				ui.Error("Docker executable not found.\n" +
-					"Please ensure Docker is installed and in your PATH.\n" +
-					"Download from: https://www.docker.com/get-started")
-				return
+				return fmt.Errorf("docker executable not found: %w\nPlease ensure Docker is installed and in your PATH.\nDownload from: https://www.docker.com/get-started", err)
 			}
 
 			dataDir, err := config.DataDir()
 			if err != nil {
-				ui.Error("Failed to determine data directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine data directory: %w", err)
 			}
 
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				ui.Error("Failed to determine haloyd config directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine haloyd config directory: %w", err)
 			}
 
 			if err := validateAndPrepareDirectory(configDir, "Haloyd Config", override); err != nil {
-				ui.Error("%v\n", err)
-				return
+				return err
 			}
 			createdDirs = append(createdDirs, configDir)
 
 			if err := validateAndPrepareDirectory(dataDir, "Data", override); err != nil {
-				ui.Error("%v\n", err)
-				return
+				return err
 			}
 			createdDirs = append(createdDirs, dataDir)
 
 			apiToken, err := generateAPIToken()
 			if err != nil {
-				ui.Error("Failed to generate API token: %v\n", err)
-				return
+				return fmt.Errorf("failed to generate API token: %w", err)
 			}
 
 			// Use createdDirs for cleanup if later steps fail
 			if err := createConfigFiles(apiToken, apiDomain, acmeEmail, configDir); err != nil {
-				ui.Error("Failed to create config files: %v\n", err)
-				return
+				return fmt.Errorf("failed to create config files: %w", err)
 			}
 
 			emptyDirs := []string{
@@ -124,15 +115,14 @@ The data directory can be customized by setting the %s environment variable.`,
 				filepath.Base(constants.DBDir),
 			}
 			if err := copyDataFiles(dataDir, emptyDirs); err != nil {
-				ui.Error("Failed to create configuration files: %v\n", err)
-				return
+				return fmt.Errorf("failed to create configuration files: %w", err)
 			}
 
 			// Ensure default Docker network exists.
 			if err := ensureNetwork(ctx); err != nil {
-				ui.Warn("Failed to ensure Docker network exists: %v\n", err)
-				ui.Warn("You can manually create it with:\n")
-				ui.Warn("docker network create --driver bridge %s", constants.DockerNetwork)
+				ui.Info("You can manually create it with:")
+				ui.Info("docker network create --driver bridge --attachable %s", constants.DockerNetwork)
+				return fmt.Errorf("failed to ensure Docker network exists: %w", err)
 			}
 
 			successMsg := "Haloy initialized successfully!\n\n"
@@ -149,8 +139,7 @@ The data directory can be customized by setting the %s environment variable.`,
 			if !skipServices {
 				ui.Info("Starting Haloy services...")
 				if err := startServices(ctx, dataDir, configDir, devMode, override, debug); err != nil {
-					ui.Error("%s", err)
-					return
+					return err
 				}
 
 				waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -158,21 +147,18 @@ The data directory can be customized by setting the %s environment variable.`,
 
 				ui.Info("Waiting for HAProxy to become available...")
 				if err := waitForHAProxy(waitCtx); err != nil {
-					ui.Error("HAProxy failed to become ready: %v", err)
-					return
+					return fmt.Errorf("HAProxy failed to become ready: %w", err)
 				}
 
 				if !noLogs {
 					apiURL := fmt.Sprintf("http://localhost:%s", constants.APIServerPort)
 					api, err := apiclient.New(apiURL, apiToken)
 					if err != nil {
-						ui.Error("Failed to create API client: %v", err)
-						return
+						return fmt.Errorf("failed to create API client: %w", err)
 					}
 					ui.Info("Waiting for haloyd API to become available...")
 					if err := waitForAPI(waitCtx, api); err != nil {
-						ui.Error("Haloyd API not available: %v", err)
-						return
+						return fmt.Errorf("Haloyd API not available: %w", err)
 					}
 
 					ui.Info("Streaming haloyd initialization logs...")
@@ -189,6 +175,8 @@ The data directory can be customized by setting the %s environment variable.`,
 			}
 			ui.Info("You can now add this server to the haloy cli with:")
 			ui.Info(" haloy server add %s %s", apiDomainMessage, apiToken)
+
+			return nil
 		},
 	}
 

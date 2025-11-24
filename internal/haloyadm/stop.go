@@ -1,6 +1,8 @@
 package haloyadm
 
 import (
+	"fmt"
+
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
@@ -12,20 +14,19 @@ func StopCmd() *cobra.Command {
 		Short: "Stop the haloy services",
 		Long:  "Stop the haloy services, including HAProxy and haloyd.",
 		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			if err := stopContainer(ctx, config.HaloydLabelRole); err != nil {
-				ui.Error("Failed to stop haloyd: %v", err)
-				return
+				return fmt.Errorf("failed to stop haloyd: %w", err)
 			}
 
 			if err := stopContainer(ctx, config.HAProxyLabelRole); err != nil {
-				ui.Error("Failed to stop HAProxy: %v", err)
-				return
+				return fmt.Errorf("failed to stop HAProxy: %w", err)
 			}
 
 			ui.Success("Haloy services stopped successfully")
+			return nil
 		},
 	}
 	return cmd

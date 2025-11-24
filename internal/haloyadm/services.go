@@ -273,7 +273,7 @@ func streamHaloydInitLogs(ctx context.Context, api *apiclient.APIClient) error {
 	streamHandler := func(data string) bool {
 		var logEntry logging.LogEntry
 		if err := json.Unmarshal([]byte(data), &logEntry); err != nil {
-			ui.Error("failed to parse log entry: %v", err)
+			// Skip malformed log entries and continue streaming
 			return false
 		}
 

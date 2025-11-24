@@ -2,6 +2,7 @@ package haloyadm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,57 +33,49 @@ func APIDomainCmd() *cobra.Command {
 			}
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			if err := checkDirectoryAccess(RequiredAccess{
 				Config: true,
 				Data:   true,
 			}); err != nil {
-				ui.Error("%s", err)
-				return
+				return err
 			}
 
 			url := args[0]
 			email := args[1]
 
 			if url == "" {
-				ui.Error("Domain URL cannot be empty")
-				return
+				return errors.New("domain URL cannot be empty")
 			}
 
 			if email == "" {
-				ui.Error("Email cannot be empty")
-				return
+				return errors.New("email cannot be empty")
 			}
 
 			normalizedURL, err := helpers.NormalizeServerURL(url)
 			if err != nil {
-				ui.Error("Invalid domain URL: %v", err)
-				return
+				return fmt.Errorf("invalid domain URL: %w", err)
 			}
 
 			if err := helpers.IsValidDomain(normalizedURL); err != nil {
-				ui.Error("Invalid domain URL: %v", err)
-				return
+				return fmt.Errorf("invalid domain URL: %w", err)
 			}
 
 			if !helpers.IsValidEmail(email) {
-				ui.Error("Invalid email format: %s", email)
-				return
+				return fmt.Errorf("invalid email format: %s", email)
 			}
 
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				ui.Error("Failed to determine config directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine config directory: %w", err)
 			}
 
 			haloydConfigPath := filepath.Join(configDir, constants.HaloydConfigFileName)
 			haloydConfig, err := config.LoadHaloydConfig(haloydConfigPath)
 			if err != nil {
-				ui.Error("Failed to load haloyd configuration: %v\n", err)
-				return
+				return fmt.Errorf("failed to load haloyd configuration: %w", err)
 			}
 
 			if haloydConfig == nil {
@@ -95,8 +88,7 @@ func APIDomainCmd() *cobra.Command {
 
 			// Save the updated haloyd configuration
 			if err := config.SaveHaloydConfig(haloydConfig, haloydConfigPath); err != nil {
-				ui.Error("Failed to save haloyd configuration: %v\n", err)
-				return
+				return fmt.Errorf("failed to save haloyd configuration: %w", err)
 			}
 
 			ui.Info("Updated configuration:")
@@ -106,37 +98,32 @@ func APIDomainCmd() *cobra.Command {
 
 			dataDir, err := config.DataDir()
 			if err != nil {
-				ui.Error("Failed to determine data directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine data directory: %w", err)
 			}
 
 			haloydExists, err := containerExists(ctx, config.HaloydLabelRole)
 			if err != nil {
-				ui.Error("Failed to determine if haloyd is already running, check out the logs with docker logs haloyd")
-				return
+				return errors.New("failed to determine if haloyd is already running, check out the logs with docker logs haloyd")
 			}
 
 			if haloydExists {
 				if err := stopContainer(ctx, config.HaloydLabelRole); err != nil {
-					ui.Error("failed to stop existing haloyd: %s", err)
+					ui.Warn("failed to stop existing haloyd: %s", err)
 				}
 			}
 
 			if err := startHaloyd(ctx, dataDir, configDir, devMode, debug); err != nil {
-				ui.Error("%s", err)
-				return
+				return err
 			}
 
 			apiToken := os.Getenv(constants.EnvVarAPIToken)
 			if apiToken == "" {
-				ui.Error("Failed to get API token")
-				return
+				return errors.New("failed to get API token")
 			}
 			apiURL := fmt.Sprintf("http://localhost:%s", constants.APIServerPort)
 			api, err := apiclient.New(apiURL, apiToken)
 			if err != nil {
-				ui.Error("Failed to create API client: %v", err)
-				return
+				return fmt.Errorf("failed to create API client: %w", err)
 			}
 			if err := streamHaloydInitLogs(ctx, api); err != nil {
 				ui.Warn("Failed to stream haloyd initialization logs: %v", err)
@@ -144,6 +131,7 @@ func APIDomainCmd() *cobra.Command {
 			}
 
 			ui.Success("API domain and email set successfully")
+			return nil
 		},
 	}
 
@@ -161,34 +149,18 @@ func APITokenCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				if raw {
-					fmt.Fprintln(os.Stderr, err)
-				} else {
-					ui.Error("Failed to determine config directory: %v\n", err)
-				}
-				return err
+				return fmt.Errorf("failed to determine config directory: %w", err)
 			}
 
 			envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
 			env, err := godotenv.Read(envFile)
 			if err != nil {
-				if raw {
-					fmt.Fprintln(os.Stderr, err)
-				} else {
-					ui.Error("Failed to read environment variables from %s: %v", envFile, err)
-				}
-				return err
+				return fmt.Errorf("failed to read environment variables from %s: %w", envFile, err)
 			}
 
 			token, exists := env[constants.EnvVarAPIToken]
 			if !exists || token == "" {
-				err := fmt.Errorf("API token not found in %s", envFile)
-				if raw {
-					fmt.Fprintln(os.Stderr, err)
-				} else {
-					ui.Error("API token not found in %s", envFile)
-				}
-				return err
+				return fmt.Errorf("API token not found in %s", envFile)
 			}
 
 			if raw {
@@ -211,33 +183,17 @@ func APIURLCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				if raw {
-					fmt.Fprintln(os.Stderr, err)
-				} else {
-					ui.Error("Failed to determine config directory: %v\n", err)
-				}
-				return err
+				return fmt.Errorf("failed to determine config directory: %w", err)
 			}
 
 			configFilePath := filepath.Join(configDir, constants.HaloydConfigFileName)
 			haloydConfig, err := config.LoadHaloydConfig(configFilePath)
 			if err != nil {
-				if raw {
-					fmt.Fprintln(os.Stderr, err)
-				} else {
-					ui.Error("Failed to load configuration file: %v", err)
-				}
-				return err
+				return fmt.Errorf("failed to load configuration file: %w", err)
 			}
 
 			if haloydConfig == nil || haloydConfig.API.Domain == "" {
-				err := fmt.Errorf("API URL not found")
-				if raw {
-					fmt.Fprintln(os.Stderr, err)
-				} else {
-					ui.Error("API URL not found in %s", configFilePath)
-				}
-				return err
+				return fmt.Errorf("API URL not found in %s", configFilePath)
 			}
 
 			if raw {
@@ -262,50 +218,44 @@ func APINewTokenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate-token",
 		Short: "Generate a new API token and restart the haloyd",
-		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel := context.WithTimeout(context.Background(), newTokenTimeout)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := context.WithTimeout(cmd.Context(), newTokenTimeout)
 			defer cancel()
 
 			token, err := generateAPIToken()
 			if err != nil {
-				ui.Error("Failed to generate API token: %v\n", err)
-				return
+				return fmt.Errorf("failed to generate API token: %w", err)
 			}
 			dataDir, err := config.DataDir()
 			if err != nil {
-				ui.Error("Failed to determine data directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine data directory: %w", err)
 			}
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				ui.Error("Failed to determine config directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to determine config directory: %w", err)
 			}
 
 			envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
 			env, err := godotenv.Read(envFile)
 			if err != nil {
-				ui.Error("Failed to read environment variables from %s: %v", envFile, err)
-				return
+				return fmt.Errorf("failed to read environment variables from %s: %w", envFile, err)
 			}
 			env[constants.EnvVarAPIToken] = token
 			if err := godotenv.Write(env, envFile); err != nil {
-				ui.Error("Failed to write environment variables to %s: %v", envFile, err)
-				return
+				return fmt.Errorf("failed to write environment variables to %s: %w", envFile, err)
 			}
 
 			// Restart haloyd
 			if err := stopContainer(ctx, config.HaloydLabelRole); err != nil {
-				ui.Error("Failed to stop haloyd container: %v", err)
-				return
+				return fmt.Errorf("failed to stop haloyd container: %w", err)
 			}
 			if err := startHaloyd(ctx, dataDir, configDir, devMode, debug); err != nil {
-				ui.Error("Failed to restart haloyd: %v", err)
-				return
+				return fmt.Errorf("failed to restart haloyd: %w", err)
 			}
 
 			ui.Success("Generated new API token and restarted haloyd")
 			ui.Info("New API token: %s\n", token)
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&devMode, "dev", false, "Restart in development mode using the local haloyd image")
