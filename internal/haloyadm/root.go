@@ -11,7 +11,7 @@ func NewRootCmd() *cobra.Command {
 		Use:   "haloyadm",
 		Short: "Commands to manage the haloy services",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			config.LoadEnvFiles([]string{}) // load environment variables in .env for all commands.
+			config.LoadEnvFiles()
 		},
 		SilenceErrors: true, // Don't print errors automatically
 		SilenceUsage:  true, // Don't show usage on error
