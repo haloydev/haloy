@@ -29,7 +29,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache: false
 
       - name: Run tests
@@ -39,6 +39,9 @@ jobs:
     name: Build and Publish
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,9 +54,23 @@ jobs:
           # If triggered by a tag push, use the tag name.
           # If triggered manually, use the input version.
           if [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+            VERSION="${{ github.ref_name }}"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get Previous Tag
+        id: get_previous_tag
+        run: |
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${{ env.VERSION }}$" | head -n 1)
+          if [[ -z "$PREVIOUS_TAG" ]]; then
+            echo "PREVIOUS_TAG=" >> $GITHUB_OUTPUT
+            echo "No previous tag found"
+          else
+            echo "PREVIOUS_TAG=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+            echo "Previous tag: $PREVIOUS_TAG"
           fi
 
       - name: Generate Changelog
@@ -62,8 +79,9 @@ jobs:
         with:
           mode: "HYBRID"
           configuration: ".github/changelog-config.json"
-          fromTag: ${{ env.PREVIOUS_TAG }}
+          fromTag: ${{ steps.get_previous_tag.outputs.PREVIOUS_TAG }}
           toTag: ${{ env.VERSION }}
+          failOnError: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -125,7 +143,7 @@ jobs:
             GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloy
           done
 
-          # haloyadm - Linux only (server administration tool)
+          # haloyadm CLI - server administration tool (typically used on Linux servers)
           HALOYADM_PLATFORMS=("linux/amd64" "linux/arm64")
 
           for platform in "${HALOYADM_PLATFORMS[@]}"; do
@@ -155,13 +173,6 @@ jobs:
     needs: build-and-publish
     runs-on: ubuntu-latest
     steps:
-      - name: Determine Version
-        run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
-          fi
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -171,7 +182,8 @@ jobs:
       - name: Create or Update Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.VERSION }}
+          tag_name: ${{ needs.build-and-publish.outputs.version }}
+          body: ${{ needs.build-and-publish.outputs.changelog }}
           files: |
             dist/haloy-linux-amd64
             dist/haloy-linux-arm64
@@ -183,6 +195,6 @@ jobs:
             dist/haloyadm-linux-arm64
             dist/checksums.txt
           draft: false
-          prerelease: ${{ contains(env.VERSION, 'alpha') || contains(env.VERSION, 'beta') || contains(env.VERSION, 'rc') }}
+          prerelease: ${{ contains(needs.build-and-publish.outputs.version, 'alpha') || contains(needs.build-and-publish.outputs.version, 'beta') || contains(needs.build-and-publish.outputs.version, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

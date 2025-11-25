@@ -15,8 +15,41 @@
     {
       "title": "## Maintenance",
       "labels": ["chore", "dependencies"]
+    },
+    {
+      "title": "## ⚠️ Breaking Changes",
+      "labels": ["breaking", "breaking-change"]
     }
   ],
   "template": "#{{CHANGELOG}}\n\n**Full Changelog**: https://github.com/${{OWNER}}/${{REPO}}/compare/${{FROM_TAG}}...${{TO_TAG}}",
-  "pr_template": "- #{{TITLE}} (#{{NUMBER}})"
+  "pr_template": "- #{{TITLE}} (#{{NUMBER}})",
+  "empty_template": "No changes in this release",
+  "label_extractor": [
+    {
+      "pattern": "^(feat|feature)(\\(.+\\))?:",
+      "target": "feature"
+    },
+    {
+      "pattern": "^fix(\\(.+\\))?:",
+      "target": "fix"
+    },
+    {
+      "pattern": "^docs?(\\(.+\\))?:",
+      "target": "documentation"
+    },
+    {
+      "pattern": "^chore(\\(.+\\))?:",
+      "target": "chore"
+    },
+    {
+      "pattern": "!:",
+      "target": "breaking",
+      "on_property": "title"
+    },
+    {
+      "pattern": "BREAKING CHANGE",
+      "target": "breaking",
+      "on_property": "body"
+    }
+  ]
 }

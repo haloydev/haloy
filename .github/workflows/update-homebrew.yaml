@@ -20,25 +20,49 @@ jobs:
           echo "VERSION_NO_V=$VERSION_NO_V" >> $GITHUB_ENV
           echo "Updating to version: $VERSION ($VERSION_NO_V)"
 
+      - name: Wait for release assets
+        run: |
+          echo "Waiting 30 seconds for release assets to be fully uploaded..."
+          sleep 30
+
       - name: Download release assets
         run: |
           mkdir -p dist
           cd dist
 
-          # Download the checksums file
-          curl -L -o checksums.txt \
-            "https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/checksums.txt"
+          # Download the checksums file with retry logic
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if curl -f -L -o checksums.txt \
+              "https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/checksums.txt"; then
+              echo "Successfully downloaded checksums.txt"
+              break
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Download failed, retrying in 10 seconds... (Attempt $RETRY_COUNT/$MAX_RETRIES)"
+              sleep 10
+            else
+              echo "Failed to download checksums.txt after $MAX_RETRIES attempts"
+              exit 1
+            fi
+          done
 
           cat checksums.txt
 
       - name: Extract checksums
         id: checksums
         run: |
-          ARM64_SHA=$(grep "haloy-darwin-arm64$" dist/checksums.txt | awk '{print $1}')
-          AMD64_SHA=$(grep "haloy-darwin-amd64$" dist/checksums.txt | awk '{print $1}')
+          ARM64_SHA=$(grep -E "^[a-f0-9]+[[:space:]]+haloy-darwin-arm64$" dist/checksums.txt | awk '{print $1}')
+          AMD64_SHA=$(grep -E "^[a-f0-9]+[[:space:]]+haloy-darwin-amd64$" dist/checksums.txt | awk '{print $1}')
 
           if [[ -z "$ARM64_SHA" || -z "$AMD64_SHA" ]]; then
             echo "Error: Could not extract checksums"
+            echo "Contents of checksums.txt:"
+            cat dist/checksums.txt
             exit 1
           fi
 
@@ -81,4 +105,3 @@ jobs:
           git add haloy.rb
           git commit -m "Update haloy to ${{ env.VERSION }}"
           git push
-
