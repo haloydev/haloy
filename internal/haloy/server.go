@@ -2,6 +2,7 @@ package haloy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,7 @@ func ServerCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 
 func ServerAddCmd() *cobra.Command {
 	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "add <url> <token>",
 		Short: "Add a new Haloy server",
@@ -47,40 +49,34 @@ func ServerAddCmd() *cobra.Command {
 			}
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			url := args[0]
 			token := strings.Join(args[1:], " ")
 
 			if url == "" {
-				ui.Error("URL is required")
-				return
+				return errors.New("URL is required")
 			}
 
 			if token == "" {
-				ui.Error("Token is required")
-				return
+				return errors.New("token is required")
 			}
 
 			normalizedURL, err := helpers.NormalizeServerURL(url)
 			if err != nil {
-				ui.Error("Invalid URL: %v", err)
-				return
+				return fmt.Errorf("invalid URL: %w", err)
 			}
 
 			if err := helpers.IsValidDomain(normalizedURL); err != nil {
-				ui.Error("Invalid domain: %v", err)
-				return
+				return fmt.Errorf("invalid domain: %w", err)
 			}
 
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				ui.Error("Failed to get config dir: %v", err)
-				return
+				return fmt.Errorf("failed to get config dir: %w", err)
 			}
 
 			if err = helpers.EnsureDir(configDir); err != nil {
-				ui.Error("Failed to create config dir: %v", err)
-				return
+				return fmt.Errorf("failed to create config dir: %w", err)
 			}
 
 			envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
@@ -93,21 +89,18 @@ func ServerAddCmd() *cobra.Command {
 					// Create empty map if file doesn't exist
 					env = make(map[string]string)
 				} else {
-					ui.Error("Failed to read env file: %v", err)
-					return
+					return fmt.Errorf("failed to read env file: %w", err)
 				}
 			}
 			env[tokenEnv] = token
 			if err := godotenv.Write(env, envFile); err != nil {
-				ui.Error("Failed to write env file: %v", err)
-				return
+				return fmt.Errorf("failed to write env file: %w", err)
 			}
 
 			clientConfigPath := filepath.Join(configDir, constants.ClientConfigFileName)
 			clientConfig, err := config.LoadClientConfig(clientConfigPath)
 			if err != nil {
-				ui.Error("Failed to load client config: %v", err)
-				return
+				return fmt.Errorf("failed to load client config: %w", err)
 			}
 
 			if clientConfig == nil {
@@ -115,17 +108,17 @@ func ServerAddCmd() *cobra.Command {
 			}
 
 			if err := clientConfig.AddServer(normalizedURL, tokenEnv, force); err != nil {
-				ui.Error("Failed to add server: %v", err)
-				return
+				return fmt.Errorf("failed to add server: %w", err)
 			}
 
 			if err := config.SaveClientConfig(clientConfig, clientConfigPath); err != nil {
-				ui.Error("Failed to save client config: %v", err)
-				return
+				return fmt.Errorf("failed to save client config: %w", err)
 			}
 
 			ui.Success("Server %s added successfully", normalizedURL)
 			ui.Info("API token stored as: %s", tokenEnv)
+
+			return nil
 		},
 	}
 
@@ -143,47 +136,40 @@ func ServerDeleteCmd() *cobra.Command {
 		Use:   "delete <url>",
 		Short: "Delete a Haloy server",
 		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			url := args[0]
 
 			if url == "" {
-				ui.Error("URL is required")
-				return
+				return errors.New("URL is required")
 			}
 
 			normalizedURL, err := helpers.NormalizeServerURL(url)
 			if err != nil {
-				ui.Error("Invalid URL: %v", err)
-				return
+				return fmt.Errorf("invalid URL: %w", err)
 			}
 
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				ui.Error("Failed to get config dir: %v", err)
-				return
+				return fmt.Errorf("failed to get config dir: %w", err)
 			}
 
 			clientConfigPath := filepath.Join(configDir, constants.ClientConfigFileName)
 			clientConfig, err := config.LoadClientConfig(clientConfigPath)
 			if err != nil {
-				ui.Error("Failed to load client config: %v", err)
-				return
+				return fmt.Errorf("failed to load client config: %w", err)
 			}
 
 			if clientConfig == nil {
-				ui.Error("No config file found in %s", clientConfigPath)
-				return
+				return fmt.Errorf("no config file found in %s", clientConfigPath)
 			}
 
 			if len(clientConfig.Servers) == 0 {
-				ui.Error("No servers found in client config")
-				return
+				return errors.New("no servers found in client config")
 			}
 
 			serverConfig, exists := clientConfig.Servers[normalizedURL]
 			if !exists {
-				ui.Error("Server %s not found in config", normalizedURL)
-				return
+				return fmt.Errorf("server %s not found in config", normalizedURL)
 			}
 
 			envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
@@ -197,16 +183,16 @@ func ServerDeleteCmd() *cobra.Command {
 			}
 
 			if err := clientConfig.DeleteServer(normalizedURL); err != nil {
-				ui.Error("Failed to delete server: %v", err)
-				return
+				return fmt.Errorf("failed to delete server: %w", err)
 			}
 
 			if err := config.SaveClientConfig(clientConfig, clientConfigPath); err != nil {
-				ui.Error("Failed to save client config: %v", err)
-				return
+				return fmt.Errorf("failed to save client config: %w", err)
 			}
 
 			ui.Success("Server %s deleted successfully", normalizedURL)
+
+			return nil
 		},
 	}
 	return cmd
@@ -216,29 +202,25 @@ func ServerListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all Haloy servers",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			configDir, err := config.ConfigDir()
 			if err != nil {
-				ui.Error("Failed to get config dir: %v", err)
-				return
+				return fmt.Errorf("failed to get config dir: %w", err)
 			}
 
 			clientConfigPath := filepath.Join(configDir, constants.ClientConfigFileName)
 			clientConfig, err := config.LoadClientConfig(clientConfigPath)
 			if err != nil {
-				ui.Error("Failed to load client config: %v", err)
-				return
+				return fmt.Errorf("failed to load client config: %w", err)
 			}
 
 			if clientConfig == nil {
-				ui.Error("No config file found in %s", clientConfigPath)
-				return
+				return fmt.Errorf("no config file found in %s", clientConfigPath)
 			}
 
 			servers := clientConfig.Servers
 			if len(servers) == 0 {
-				ui.Info("No Haloy servers found")
-				return
+				return errors.New("no Haloy servers found")
 			}
 
 			ui.Info("List of servers:")
@@ -254,6 +236,8 @@ func ServerListCmd() *cobra.Command {
 			}
 
 			ui.Table(headers, rows)
+
+			return nil
 		},
 	}
 	return cmd
@@ -263,7 +247,7 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	var serverFlag string
 
 	cmd := &cobra.Command{
-		Use:   "version <url>",
+		Use:   "version",
 		Short: "Check server version",
 		Long:  "Check the haloyd and HAProxy version running on a specific server",
 		Args:  cobra.NoArgs,
@@ -312,6 +296,7 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
+	cmd.Flags().StringVarP(&serverFlag, "server", "s", "", "Server URL (overrides config file)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Get version for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Get version for all targets")
 	return cmd
