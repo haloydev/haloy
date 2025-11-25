@@ -22,6 +22,10 @@ class Haloy < Formula
       else
         "haloy-darwin-amd64"
       end
+
+    # Make the binary executable before installing
+    chmod 0755, binary_name
+
     bin.install binary_name => "haloy"
     generate_completions_from_executable(bin/"haloy", "completion", shells: [:bash, :zsh, :fish])
   end
