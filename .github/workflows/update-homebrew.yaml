@@ -6,7 +6,7 @@ on:
       version:
         description: "Release tag (e.g. v0.1.1)"
   release:
-    types: [published]
+    types: [published, prereleased]
 
 permissions:
   contents: read
