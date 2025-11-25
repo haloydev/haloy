@@ -8,26 +8,21 @@ class Haloy < Formula
     on_arm do
       url "https://github.com/haloydev/haloy/releases/download/{{VERSION_TAG}}/haloy-darwin-arm64"
       sha256 "{{ARM64_SHA}}"
+
+      def install
+        bin.install "haloy-darwin-arm64" => "haloy"
+        generate_completions_from_executable(bin/"haloy", "completion", shells: [:bash, :zsh, :fish])
+      end
     end
     on_intel do
       url "https://github.com/haloydev/haloy/releases/download/{{VERSION_TAG}}/haloy-darwin-amd64"
       sha256 "{{AMD64_SHA}}"
-    end
-  end
 
-  def install
-    binary_name =
-      if OS.mac? && Hardware::CPU.arm?
-        "haloy-darwin-arm64"
-      else
-        "haloy-darwin-amd64"
+      def install
+        bin.install "haloy-darwin-amd64" => "haloy"
+        generate_completions_from_executable(bin/"haloy", "completion", shells: [:bash, :zsh, :fish])
       end
-
-    # Make the binary executable before installing
-    chmod 0755, binary_name
-
-    bin.install binary_name => "haloy"
-    generate_completions_from_executable(bin/"haloy", "completion", shells: [:bash, :zsh, :fish])
+    end
   end
 
   test do
