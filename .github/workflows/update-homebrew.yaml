@@ -2,6 +2,9 @@ name: Update Homebrew Tap
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (e.g. v0.1.1)"
   release:
     types: [published]
 
@@ -15,7 +18,11 @@ jobs:
     steps:
       - name: Set version variables
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
           VERSION_NO_V="${VERSION#v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION_NO_V=$VERSION_NO_V" >> $GITHUB_ENV
