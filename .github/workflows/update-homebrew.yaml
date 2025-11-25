@@ -105,11 +105,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet haloy.rb; then
+          git add haloy.rb
+          if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
 
-          git add haloy.rb
           git commit -m "Update haloy to ${{ env.VERSION }}"
           git push
