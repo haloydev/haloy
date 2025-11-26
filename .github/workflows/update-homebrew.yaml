@@ -5,8 +5,13 @@ on:
     inputs:
       version:
         description: "Release tag (e.g. v0.1.1)"
-  release:
-    types: [published, prereleased]
+        required: true
+  workflow_call:
+    inputs:
+      version:
+        description: "Release tag (e.g. v0.1.1)"
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -18,11 +23,7 @@ jobs:
     steps:
       - name: Set version variables
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            VERSION="${{ github.event.release.tag_name }}"
-          else
-            VERSION="${{ inputs.version }}"
-          fi
+          VERSION="${{ inputs.version }}"
           VERSION_NO_V="${VERSION#v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION_NO_V=$VERSION_NO_V" >> $GITHUB_ENV

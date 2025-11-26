@@ -202,3 +202,11 @@ jobs:
           prerelease: ${{ contains(needs.build-and-publish.outputs.version, 'alpha') || contains(needs.build-and-publish.outputs.version, 'beta') || contains(needs.build-and-publish.outputs.version, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs: [build-and-publish, release]
+    uses: ./.github/workflows/update-homebrew.yaml
+    with:
+      version: ${{ needs.build-and-publish.outputs.version }}
+    secrets: inherit
