@@ -34,6 +34,7 @@ func InitCmd() *cobra.Command {
 	var debug bool
 	var noLogs bool
 	var localInstall bool
+	var remoteInstall bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -169,12 +170,16 @@ The data directory can be customized by setting the %s environment variable.`,
 				}
 			}
 
-			apiDomainMessage := "<server-url>"
-			if apiDomain != "" {
-				apiDomainMessage = apiDomain
+			// If remote install this is taken care of automatically
+			if !remoteInstall {
+				apiDomainMessage := "<server-url>"
+				if apiDomain != "" {
+					apiDomainMessage = apiDomain
+				}
+				ui.Info("You can now add this server to the haloy cli with:")
+				ui.Info(" haloy server add %s %s", apiDomainMessage, apiToken)
+
 			}
-			ui.Info("You can now add this server to the haloy cli with:")
-			ui.Info(" haloy server add %s %s", apiDomainMessage, apiToken)
 
 			return nil
 		},
@@ -188,6 +193,7 @@ The data directory can be customized by setting the %s environment variable.`,
 	cmd.Flags().BoolVar(&debug, "debug", false, "Enable debug mode")
 	cmd.Flags().BoolVar(&noLogs, "no-logs", false, "Don't stream haloyd initialization logs")
 	cmd.Flags().BoolVar(&localInstall, "local-install", false, "Install in user directories instead of system directories")
+	cmd.Flags().BoolVar(&remoteInstall, "remote-install", false, "Indicates that this is a remote install, usually used internally")
 
 	return cmd
 }

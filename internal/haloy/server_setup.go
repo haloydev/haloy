@@ -27,7 +27,6 @@ func ServerSetupCmd() *cobra.Command {
 		noServices bool
 		noLogs     bool
 		identity   string
-		force      bool
 	)
 
 	cmd := &cobra.Command{
@@ -129,7 +128,7 @@ Examples:
 			serverURL := serverURLFromDomainOrHost(apiDomain, host)
 			ui.Info("Adding server '%s' to local haloy config...", serverURL)
 
-			if err := addServerURL(serverURL, apiToken, force); err != nil {
+			if err := addServerURL(serverURL, apiToken, true); err != nil {
 				return fmt.Errorf("failed to add server locally: %w", err)
 			}
 
@@ -146,13 +145,12 @@ Examples:
 	cmd.Flags().BoolVar(&noServices, "no-services", false, "Don't start HAProxy and haloyd containers on server")
 	cmd.Flags().BoolVar(&noLogs, "no-logs", false, "Don't stream haloyd initialization logs on server")
 	cmd.Flags().StringVar(&identity, "ssh-identity", "", "Path to SSH private key (optional; uses default ssh behavior if not set)")
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force overwrite if server already exists locally")
 
 	return cmd
 }
 
 func buildInitCommand(apiDomain, acmeEmail string, override, noServices, noLogs bool) string {
-	args := []string{"haloyadm", "init"}
+	args := []string{"haloyadm", "init", "--remote-install"}
 
 	if apiDomain != "" {
 		args = append(args, "--api-domain", apiDomain)
