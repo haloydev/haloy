@@ -11,6 +11,7 @@ class Haloy < Formula
 
       def install
         bin.install "haloy-darwin-arm64" => "haloy"
+        chmod 0755, bin/"haloy"
         generate_completions_from_executable(bin/"haloy", "completion", shells: [:bash, :zsh, :fish])
       end
     end
@@ -20,6 +21,7 @@ class Haloy < Formula
 
       def install
         bin.install "haloy-darwin-amd64" => "haloy"
+        chmod 0755, bin/"haloy"
         generate_completions_from_executable(bin/"haloy", "completion", shells: [:bash, :zsh, :fish])
       end
     end
