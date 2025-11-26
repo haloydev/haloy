@@ -30,6 +30,7 @@ func ServerCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.AddCommand(ServerAddCmd())
 	cmd.AddCommand(ServerDeleteCmd())
 	cmd.AddCommand(ServerListCmd())
+	cmd.AddCommand(ServerSetupCmd())
 	cmd.AddCommand(ServerVersionCmd(configPath, flags))
 
 	return cmd
@@ -52,79 +53,81 @@ func ServerAddCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url := args[0]
 			token := strings.Join(args[1:], " ")
-
-			if url == "" {
-				return errors.New("URL is required")
-			}
-
-			if token == "" {
-				return errors.New("token is required")
-			}
-
-			normalizedURL, err := helpers.NormalizeServerURL(url)
-			if err != nil {
-				return fmt.Errorf("invalid URL: %w", err)
-			}
-
-			if err := helpers.IsValidDomain(normalizedURL); err != nil {
-				return fmt.Errorf("invalid domain: %w", err)
-			}
-
-			configDir, err := config.ConfigDir()
-			if err != nil {
-				return fmt.Errorf("failed to get config dir: %w", err)
-			}
-
-			if err = helpers.EnsureDir(configDir); err != nil {
-				return fmt.Errorf("failed to create config dir: %w", err)
-			}
-
-			envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
-
-			tokenEnv := generateTokenEnvName(normalizedURL)
-
-			env, err := godotenv.Read(envFile)
-			if err != nil {
-				if os.IsNotExist(err) {
-					// Create empty map if file doesn't exist
-					env = make(map[string]string)
-				} else {
-					return fmt.Errorf("failed to read env file: %w", err)
-				}
-			}
-			env[tokenEnv] = token
-			if err := godotenv.Write(env, envFile); err != nil {
-				return fmt.Errorf("failed to write env file: %w", err)
-			}
-
-			clientConfigPath := filepath.Join(configDir, constants.ClientConfigFileName)
-			clientConfig, err := config.LoadClientConfig(clientConfigPath)
-			if err != nil {
-				return fmt.Errorf("failed to load client config: %w", err)
-			}
-
-			if clientConfig == nil {
-				clientConfig = &config.ClientConfig{}
-			}
-
-			if err := clientConfig.AddServer(normalizedURL, tokenEnv, force); err != nil {
-				return fmt.Errorf("failed to add server: %w", err)
-			}
-
-			if err := config.SaveClientConfig(clientConfig, clientConfigPath); err != nil {
-				return fmt.Errorf("failed to save client config: %w", err)
-			}
-
-			ui.Success("Server %s added successfully", normalizedURL)
-			ui.Info("API token stored as: %s", tokenEnv)
-
-			return nil
+			return addServerURL(url, token, force)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force overwrite if server already exists")
 
 	return cmd
+}
+
+func addServerURL(url, token string, force bool) error {
+	if url == "" {
+		return errors.New("URL is required")
+	}
+
+	if token == "" {
+		return errors.New("token is required")
+	}
+
+	normalizedURL, err := helpers.NormalizeServerURL(url)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	if err := helpers.IsValidDomain(normalizedURL); err != nil {
+		return fmt.Errorf("invalid domain: %w", err)
+	}
+
+	configDir, err := config.ConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get config dir: %w", err)
+	}
+
+	if err = helpers.EnsureDir(configDir); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+
+	envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
+
+	tokenEnv := generateTokenEnvName(normalizedURL)
+
+	env, err := godotenv.Read(envFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			env = make(map[string]string)
+		} else {
+			return fmt.Errorf("failed to read env file: %w", err)
+		}
+	}
+	env[tokenEnv] = token
+	if err := godotenv.Write(env, envFile); err != nil {
+		return fmt.Errorf("failed to write env file: %w", err)
+	}
+
+	clientConfigPath := filepath.Join(configDir, constants.ClientConfigFileName)
+	clientConfig, err := config.LoadClientConfig(clientConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load client config: %w", err)
+	}
+
+	if clientConfig == nil {
+		clientConfig = &config.ClientConfig{}
+	}
+
+	if err := clientConfig.AddServer(normalizedURL, tokenEnv, force); err != nil {
+		return fmt.Errorf("failed to add server: %w", err)
+	}
+
+	if err := config.SaveClientConfig(clientConfig, clientConfigPath); err != nil {
+		return fmt.Errorf("failed to save client config: %w", err)
+	}
+
+	ui.Success("Server %s added successfully", normalizedURL)
+	ui.Info("API token stored as: %s", tokenEnv)
+
+	return nil
 }
 
 func generateTokenEnvName(url string) string {

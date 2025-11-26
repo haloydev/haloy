@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -308,17 +309,21 @@ func waitForAPI(ctx context.Context, api *apiclient.APIClient) error {
 	}
 }
 
-// waitForHAProxy polls HAProxy until it's accepting connections on port 80
+// waitForHAProxy polls HAProxy until it's accepting connections and can route
+// ACME challenges to haloyd. This ensures the full routing path is working
+// before haloyd attempts to obtain certificates.
 func waitForHAProxy(ctx context.Context) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+
+	portReady := false
 
 	for {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("timeout waiting for HAProxy to become ready: %w", ctx.Err())
 		case <-ticker.C:
-			// Check if HAProxy container is running and healthy
+			// Check if HAProxy container is running
 			cmd := exec.CommandContext(ctx, "docker", "ps",
 				"--filter", fmt.Sprintf("label=%s=%s", config.LabelRole, config.HAProxyLabelRole),
 				"--filter", "status=running",
@@ -331,13 +336,26 @@ func waitForHAProxy(ctx context.Context) error {
 			}
 
 			// Check if port 80 is accepting connections
-			conn, err := net.DialTimeout("tcp", "127.0.0.1:80", 2*time.Second)
-			if err == nil {
+			if !portReady {
+				conn, err := net.DialTimeout("tcp", "127.0.0.1:80", 2*time.Second)
+				if err != nil {
+					continue // Port not ready yet
+				}
 				conn.Close()
-				return nil // HAProxy is ready
+				portReady = true
 			}
 
-			// Continue polling if port not ready yet
+			// Verify ACME challenge routing is working by making an HTTP request
+			// Any response (even 503) means HAProxy is routing to the acme_challenge backend
+			client := &http.Client{Timeout: 2 * time.Second}
+			resp, err := client.Get("http://127.0.0.1:80/.well-known/acme-challenge/test")
+			if err != nil {
+				continue // Routing not ready yet
+			}
+			resp.Body.Close()
+
+			// HAProxy is fully ready
+			return nil
 		}
 	}
 }
