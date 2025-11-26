@@ -13,8 +13,29 @@ BINARY_PATH="$DIR/haloy"
 # Check if binary exists
 if [ ! -f "$BINARY_PATH" ]; then
     echo "Haloy client not found at $BINARY_PATH"
+
+    # Check if installed via Homebrew
+    if command -v brew &> /dev/null; then
+        if brew list haloy &> /dev/null 2>&1; then
+            echo ""
+            echo "✓ Found haloy installed via Homebrew"
+            echo ""
+            echo "To uninstall, please run:"
+            echo "  brew uninstall haloy"
+            echo ""
+            echo "Note: This will remove the binary but not your configuration files."
+            echo "To remove configuration, also run:"
+            echo "  rm -rf ~/.config/haloy"
+            exit 0
+        fi
+    fi
+
+    echo ""
     echo "If you installed to a different directory, set the DIR environment variable:"
     echo "  DIR=/custom/path $0"
+    echo ""
+    echo "If installed via Homebrew, run:"
+    echo "  brew uninstall haloy"
     exit 1
 fi
 
