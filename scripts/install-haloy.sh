@@ -45,7 +45,16 @@ chmod +x "$INSTALL_PATH"
 echo ""
 echo "✅ Haloy client has been installed to '$INSTALL_PATH'"
 echo ""
-echo "Please ensure '$DIR' is in your system's PATH."
-echo "You can check by running: 'echo \$PATH'"
-echo "If not, add it to your shell's profile (e.g., ~/.bashrc, ~/.zshrc):"
-echo "   export PATH=\"\$HOME/.local/bin:\$PATH\""
+
+# --- Check if DIR is in PATH ---
+if [[ ":$PATH:" != *":$DIR:"* ]]; then
+    echo "⚠️  '$DIR' is not in your PATH."
+    echo ""
+    echo "Add the following line to your shell profile (~/.bashrc, ~/.zshrc, or equivalent):"
+    echo ""
+    echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+    echo ""
+    echo "Then restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
+else
+    echo "✅ You can now run 'haloy' from anywhere!"
+fi
