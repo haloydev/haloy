@@ -3,11 +3,11 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/haloydev/haloy/internal/logging"
 )
 
-// Server holds dependencies for the API handlers.
 type APIServer struct {
 	router    *http.ServeMux
 	logBroker logging.StreamPublisher
@@ -27,7 +27,13 @@ func NewServer(apiToken string, logBroker logging.StreamPublisher, logLevel slog
 	return s
 }
 
-// ListenAndServe starts the HTTP server.
 func (s *APIServer) ListenAndServe(addr string) error {
-	return http.ListenAndServe(addr, s.router)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           s.router,
+		ReadHeaderTimeout: 5 * time.Second,  // Prevent Slowloris
+		ReadTimeout:       15 * time.Second, // Limit time to read request body
+		IdleTimeout:       60 * time.Second, // Keep-alive connections
+	}
+	return srv.ListenAndServe()
 }
