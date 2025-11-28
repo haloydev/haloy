@@ -31,7 +31,7 @@ curl -fsSL https://sh.haloy.dev/install-haloy.sh | bash
 **Homebrew (macOS / Linux):**
 
 ```bash
-brew tap haloydev/tap && brew install haloy
+brew install haloydev/tap/haloy
 ```
 
 ### 2. Server Setup
