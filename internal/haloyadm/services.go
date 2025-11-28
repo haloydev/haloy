@@ -170,32 +170,33 @@ func startServices(ctx context.Context, dataDir, configDir string, devMode, rest
 	}
 
 	if !restart {
-		if haloydExists {
-			return fmt.Errorf("haloyd container already exists, use haloyadm restart instead")
-		}
 		if haproxyExists {
 			return fmt.Errorf("haloy-haproxy container already exists, use haloyadm restart instead")
+		}
+		if haloydExists {
+			return fmt.Errorf("haloyd container already exists, use haloyadm restart instead")
 		}
 	}
 
 	if restart {
-		if haloydExists {
-			if err := stopContainer(ctx, config.HaloydLabelRole); err != nil {
-				return fmt.Errorf("failed to stop existing haloyd: %w", err)
-			}
-		}
 		if haproxyExists {
 			if err := stopContainer(ctx, config.HAProxyLabelRole); err != nil {
 				return fmt.Errorf("failed to stop existing haloy-haproxy: %w", err)
 			}
 		}
-	}
 
-	if err := startHaloyd(ctx, dataDir, configDir, devMode, debug); err != nil {
-		return err
+		if haloydExists {
+			if err := stopContainer(ctx, config.HaloydLabelRole); err != nil {
+				return fmt.Errorf("failed to stop existing haloyd: %w", err)
+			}
+		}
 	}
 
 	if err := startHAProxy(ctx, dataDir); err != nil {
+		return err
+	}
+
+	if err := startHaloyd(ctx, dataDir, configDir, devMode, debug); err != nil {
 		return err
 	}
 
@@ -309,9 +310,8 @@ func waitForAPI(ctx context.Context, api *apiclient.APIClient) error {
 	}
 }
 
-// waitForHAProxy polls HAProxy until it's accepting connections and can route
-// ACME challenges to haloyd. This ensures the full routing path is working
-// before haloyd attempts to obtain certificates.
+// waitForHAProxy polls HAProxy until it's accepting connections.
+// It checks the root path "/" to ensure the container is up and the port is bound.
 func waitForHAProxy(ctx context.Context) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
@@ -345,10 +345,13 @@ func waitForHAProxy(ctx context.Context) error {
 				portReady = true
 			}
 
-			// Verify ACME challenge routing is working by making an HTTP request
-			// Any response (even 503) means HAProxy is routing to the acme_challenge backend
+			// Verify HAProxy is responding to HTTP requests.
+			// We check the root path which should return 404 (default backend) or 503
+			// if something is misconfigured, but either way it proves HAProxy is up and listening.
+			// We avoid checking the ACME path because the backend (haloyd) might not be listening
+			// on that port yet, causing connection timeouts from HAProxy.
 			client := &http.Client{Timeout: 2 * time.Second}
-			resp, err := client.Get("http://127.0.0.1:80/.well-known/acme-challenge/test")
+			resp, err := client.Get("http://127.0.0.1:80/")
 			if err != nil {
 				continue // Routing not ready yet
 			}

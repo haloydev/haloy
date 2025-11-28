@@ -143,14 +143,6 @@ The data directory can be customized by setting the %s environment variable.`,
 					return err
 				}
 
-				waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
-				defer waitCancel()
-
-				ui.Info("Waiting for HAProxy to become available...")
-				if err := waitForHAProxy(waitCtx); err != nil {
-					return fmt.Errorf("HAProxy failed to become ready: %w", err)
-				}
-
 				if !noLogs {
 					apiURL := fmt.Sprintf("http://localhost:%s", constants.APIServerPort)
 					api, err := apiclient.New(apiURL, apiToken)
@@ -158,6 +150,8 @@ The data directory can be customized by setting the %s environment variable.`,
 						return fmt.Errorf("failed to create API client: %w", err)
 					}
 					ui.Info("Waiting for haloyd API to become available...")
+					waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
+					defer waitCancel()
 					if err := waitForAPI(waitCtx, api); err != nil {
 						return fmt.Errorf("Haloyd API not available: %w", err)
 					}
