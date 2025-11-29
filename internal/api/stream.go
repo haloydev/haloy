@@ -17,14 +17,6 @@ type sseStreamConfig struct {
 
 // streamSSELogs handles the common SSE streaming logic
 func streamSSELogs(w http.ResponseWriter, r *http.Request, config sseStreamConfig) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.Header().Set("X-Buffering", "no")
-	w.Header().Set("Transfer-Encoding", "chunked")
-
 	defer config.cleanup()
 
 	flusher, ok := w.(http.Flusher)
