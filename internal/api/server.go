@@ -6,22 +6,24 @@ import (
 	"time"
 
 	"github.com/haloydev/haloy/internal/logging"
+	"golang.org/x/time/rate"
 )
 
 type APIServer struct {
-	router    *http.ServeMux
-	logBroker logging.StreamPublisher
-	logLevel  slog.Level
-	apiToken  string
+	router      *http.ServeMux
+	logBroker   logging.StreamPublisher
+	logLevel    slog.Level
+	apiToken    string
+	rateLimiter *RateLimiter
 }
 
 func NewServer(apiToken string, logBroker logging.StreamPublisher, logLevel slog.Level) *APIServer {
 	s := &APIServer{
-		router:    http.NewServeMux(),
-		logBroker: logBroker,
-		logLevel:  logLevel,
-
-		apiToken: apiToken,
+		router:      http.NewServeMux(),
+		logBroker:   logBroker,
+		logLevel:    logLevel,
+		apiToken:    apiToken,
+		rateLimiter: NewRateLimiter(rate.Limit(5), 10), // 5 req/sec, burst of 10
 	}
 	s.setupRoutes()
 	return s
