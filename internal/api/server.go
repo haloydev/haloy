@@ -34,7 +34,6 @@ func (s *APIServer) ListenAndServe(addr string) error {
 		Addr:              addr,
 		Handler:           s.router,
 		ReadHeaderTimeout: 5 * time.Second,  // Prevent Slowloris
-		ReadTimeout:       15 * time.Second, // Limit time to read request body
 		IdleTimeout:       60 * time.Second, // Keep-alive connections
 	}
 	return srv.ListenAndServe()
