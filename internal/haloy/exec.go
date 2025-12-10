@@ -40,13 +40,13 @@ Examples:
 
   # With target selection (multi-target config)
   haloy exec --targets prod -- ls -la`,
-		Args: cobra.NoArgs,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			// Get command args after '--'
 			dashIdx := cmd.ArgsLenAtDash()
-			if dashIdx == -1 {
+			if dashIdx == -1 || len(args) == 0 {
 				return fmt.Errorf("command required after '--' separator (e.g., haloy exec -- ls -la)")
 			}
 
