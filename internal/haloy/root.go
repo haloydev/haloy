@@ -74,6 +74,7 @@ func NewRootCmd() *cobra.Command {
 		LogsCmd(&resolvedConfigPath, appFlags),
 		StatusAppCmd(&resolvedConfigPath, appFlags),
 		StopAppCmd(&resolvedConfigPath, appFlags),
+		ExecCmd(&resolvedConfigPath, appFlags),
 		ServerCmd(&resolvedConfigPath, appFlags),
 
 		validateCmd,

@@ -14,5 +14,6 @@ func (s *APIServer) setupRoutes() {
 	s.router.Handle("POST /v1/rollback", headersWithAuth(s.handleRollback()))
 	s.router.Handle("GET /v1/status/{appName}", headersWithAuth(s.handleAppStatus()))
 	s.router.Handle("POST /v1/stop/{appName}", headersWithAuth(s.handleStopApp()))
+	s.router.Handle("POST /v1/exec/{appName}", headersWithAuth(s.handleExec()))
 	s.router.Handle("GET /v1/version", headersWithAuth(s.handleVersion()))
 }

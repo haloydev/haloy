@@ -48,3 +48,21 @@ type VersionResponse struct {
 	Version        string `json:"haloyd"`
 	HAProxyVersion string `json:"haproxy"`
 }
+
+type ExecRequest struct {
+	Command       []string `json:"command"`                 // Required: command to execute
+	ContainerID   string   `json:"containerId,omitempty"`   // Optional: specific container ID
+	AllContainers bool     `json:"allContainers,omitempty"` // Optional: run on all containers
+}
+
+type ExecResult struct {
+	ContainerID string `json:"containerId"`
+	ExitCode    int    `json:"exitCode"`
+	Stdout      string `json:"stdout"`
+	Stderr      string `json:"stderr"`
+	Error       string `json:"error,omitempty"` // Set if exec failed for this container
+}
+
+type ExecResponse struct {
+	Results []ExecResult `json:"results"`
+}

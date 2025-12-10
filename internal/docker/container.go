@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
@@ -467,4 +469,35 @@ func checkImagePlatformCompatibility(ctx context.Context, cli *client.Client, im
 	}
 
 	return nil
+}
+
+// ExecInContainer executes a command in a running container and returns the output.
+func ExecInContainer(ctx context.Context, cli *client.Client, containerID string, cmd []string) (stdout, stderr string, exitCode int, err error) {
+	execConfig := container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	}
+	execID, err := cli.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return "", "", 1, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	resp, err := cli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return "", "", 1, fmt.Errorf("failed to attach to exec: %w", err)
+	}
+	defer resp.Close()
+	// Read stdout and stderr using stdcopy to demultiplex the streams
+	var stdoutBuf, stderrBuf bytes.Buffer
+	_, err = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, resp.Reader)
+	if err != nil {
+		return "", "", 1, fmt.Errorf("failed to read exec output: %w", err)
+	}
+	// Get the exit code
+	inspectResp, err := cli.ContainerExecInspect(ctx, execID.ID)
+	if err != nil {
+		return stdoutBuf.String(), stderrBuf.String(), 1, fmt.Errorf("failed to inspect exec: %w", err)
+	}
+	return stdoutBuf.String(), stderrBuf.String(), inspectResp.ExitCode, nil
 }
