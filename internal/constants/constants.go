@@ -3,7 +3,7 @@ package constants
 import "os"
 
 const (
-	Version                  = "0.1.0-beta.8"
+	Version                  = "0.1.0-beta.9"
 	HAProxyVersion           = "3.2"
 	HaloydContainerName      = "haloyd"
 	HAProxyContainerName     = "haloy-haproxy"
