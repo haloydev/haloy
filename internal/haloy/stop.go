@@ -57,7 +57,7 @@ func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringVarP(&serverFlag, "server", "s", "", "Haloy server URL (overrides config)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Stop app on specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Stop app on all targets")
-	cmd.Flags().BoolVarP(&removeContainersFlag, "remove-containers", "rm", false, "Remove containers after stopping them")
+	cmd.Flags().BoolVarP(&removeContainersFlag, "remove-containers", "r", false, "Remove containers after stopping them")
 
 	return cmd
 }
