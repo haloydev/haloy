@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/client"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/helpers"
 )
@@ -114,6 +116,17 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		logger.Info("Health check completed", "apps", strings.Join(apps, ", "))
 	}
 
+	deployments := u.deploymentManager.Deployments()
+
+	// On initial startup, wait for HAProxy to be ready before requesting certificates.
+	// This is necessary because haloyd starts before HAProxy, and we need HAProxy
+	// to be accepting connections to route ACME challenges from Let's Encrypt.
+	if reason == TriggerReasonInitial {
+		if err := waitForACMERouting(ctx, logger); err != nil {
+			logger.Warn("ACME routing check failed, continuing anyway", "error", err)
+		}
+	}
+
 	// Certificates refresh logic based on trigger reason.
 	certDomains, err := u.deploymentManager.GetCertificateDomains()
 	if err != nil {
@@ -138,7 +151,8 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		if err := u.certManager.RefreshSync(logger, appCertDomains); err != nil {
 			return fmt.Errorf("failed to refresh certificates for app %s: %w", app.appName, err)
 		}
-	} else if reason == TriggerReasonInitial { // Refresh syncronously on initial update so we can log api domain setup.
+	} else if reason == TriggerReasonInitial {
+		// Refresh synchronously on initial update so we can log api domain setup.
 		if err := u.certManager.RefreshSync(logger, certDomains); err != nil {
 			return err
 		}
@@ -150,14 +164,11 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		u.certManager.CleanupExpiredCertificates(logger, certDomains)
 	}
 
-	deployments := u.deploymentManager.Deployments()
-
 	// Apply the HAProxy configuration
 	if err := u.haproxyManager.ApplyConfig(ctx, logger, deployments); err != nil {
 		return fmt.Errorf("failed to apply HAProxy config for app: %w", err)
-	} else {
-		logger.Info("HAProxy configuration applied successfully")
 	}
+	logger.Info("HAProxy configuration applied successfully")
 
 	// If an app is provided:
 	// - stop old containers, remove and log the result.
@@ -203,4 +214,47 @@ func logExcludedContainerReasons(containers []ExcludedContainerInfo, logger *slo
 				"app", excluded.Labels.AppName)
 		}
 	}
+}
+
+// waitForACMERouting waits for HAProxy to be accepting HTTP connections so that
+// ACME HTTP-01 challenges can be routed to haloyd. This is called during initial
+// startup before requesting certificates from Let's Encrypt.
+func waitForACMERouting(ctx context.Context, logger *slog.Logger) error {
+	const (
+		maxRetries    = 30
+		retryInterval = time.Second
+	)
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	// HAProxy is on the same Docker network, accessible via container name.
+	// We make a request to the root path which should return 404 from HAProxy's default backend.
+	url := fmt.Sprintf("http://%s/", constants.HAProxyContainerName)
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			return fmt.Errorf("context canceled while waiting for HAProxy: %w", ctx.Err())
+		}
+
+		resp, err := client.Get(url)
+		if err != nil {
+			logger.Debug("Waiting for HAProxy to be ready", "attempt", attempt, "error", err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retryInterval):
+				continue
+			}
+		}
+		resp.Body.Close()
+
+		// Any HTTP response means HAProxy is accepting connections.
+		// The default backend returns 404, but any response is fine.
+		logger.Debug("HAProxy is ready", "status", resp.StatusCode, "attempt", attempt)
+		return nil
+	}
+
+	return fmt.Errorf("timed out waiting for HAProxy after %d attempts", maxRetries)
 }

@@ -192,11 +192,13 @@ func startServices(ctx context.Context, dataDir, configDir string, devMode, rest
 		}
 	}
 
-	if err := startHAProxy(ctx, dataDir); err != nil {
+	// Start haloyd first so that when HAProxy starts, it can resolve the haloyd
+	// hostname via Docker DNS. This is important for ACME challenge routing.
+	if err := startHaloyd(ctx, dataDir, configDir, devMode, debug); err != nil {
 		return err
 	}
 
-	if err := startHaloyd(ctx, dataDir, configDir, devMode, debug); err != nil {
+	if err := startHAProxy(ctx, dataDir); err != nil {
 		return err
 	}
 
