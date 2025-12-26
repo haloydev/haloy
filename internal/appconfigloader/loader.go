@@ -13,6 +13,7 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/jinzhu/copier"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -38,7 +39,6 @@ func Load(
 		}
 
 		if len(targets) > 0 {
-
 			filteredTargets := make(map[string]*config.TargetConfig)
 			for _, targetName := range targets {
 				if _, exists := rawAppConfig.Targets[targetName]; exists {
@@ -147,6 +147,11 @@ func mergeEnvArrays(appConfigEnv, targetConfigEnv []config.EnvVar) []config.EnvV
 	return mergedEnv
 }
 
+// MergeToTarget merges the global AppConfig into a specific TargetConfig.
+// The configuration hierarchy is (from highest to lowest specificity):
+// 1. Target Config (explicitly set in the 'targets' map)
+// 2. Preset Defaults (applied if fields are empty)
+// 3. Global AppConfig (applied if fields are still empty)
 func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig, targetName, format string) (config.TargetConfig, error) {
 	var tc config.TargetConfig
 	if err := copier.Copy(&tc, &targetConfig); err != nil {
@@ -162,6 +167,14 @@ func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig,
 		} else {
 			tc.Name = targetName
 		}
+	}
+
+	if tc.Preset == "" {
+		tc.Preset = appConfig.Preset
+	}
+
+	if err := applyPreset(&tc); err != nil {
+		return config.TargetConfig{}, err
 	}
 
 	mergedImage, err := mergeImage(targetConfig, appConfig.Images, appConfig.Image)
@@ -180,6 +193,14 @@ func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig,
 
 	if tc.DeploymentStrategy == "" {
 		tc.DeploymentStrategy = appConfig.DeploymentStrategy
+	}
+
+	if tc.NamingStrategy == "" {
+		tc.NamingStrategy = appConfig.NamingStrategy
+	}
+
+	if tc.Protected == nil {
+		tc.Protected = appConfig.Protected
 	}
 
 	if tc.Domains == nil {
@@ -235,21 +256,44 @@ func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig,
 	return tc, nil
 }
 
+func applyPreset(tc *config.TargetConfig) error {
+	switch tc.Preset {
+	case "":
+		// No preset, nothing to apply
+		return nil
+	case config.PresetDatabase:
+		if tc.Image.History == nil {
+			tc.Image.History = &config.ImageHistory{
+				Strategy: config.HistoryStrategyNone,
+			}
+		}
+		if tc.DeploymentStrategy == "" {
+			tc.DeploymentStrategy = config.DeploymentStrategyReplace
+		}
+		if tc.NamingStrategy == "" {
+			tc.NamingStrategy = config.NamingStrategyStatic
+		}
+		tc.Protected = helpers.Ptr(true)
+
+	default:
+		return fmt.Errorf("unknown preset: '%s'", tc.Preset)
+	}
+	return nil
+}
+
 // normalizeTargetConfig applies default values to a target config
 func normalizeTargetConfig(tc *config.TargetConfig) {
 	if tc.Image == nil {
-		build := true
 		tc.Image = &config.Image{
 			Repository: tc.Name,
-			Build:      &build,
+			Build:      helpers.Ptr(true),
 		}
 	}
 
 	if tc.Image.History == nil {
-		defaultCount := constants.DefaultDeploymentsToKeep
 		tc.Image.History = &config.ImageHistory{
 			Strategy: config.HistoryStrategyLocal,
-			Count:    &defaultCount,
+			Count:    helpers.Ptr(int(constants.DefaultDeploymentsToKeep)),
 		}
 	}
 
@@ -266,8 +310,7 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 	}
 
 	if tc.Replicas == nil {
-		defaultReplicas := constants.DefaultReplicas
-		tc.Replicas = &defaultReplicas
+		tc.Replicas = helpers.Ptr(constants.DefaultReplicas)
 	}
 }
 

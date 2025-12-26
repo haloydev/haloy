@@ -371,7 +371,7 @@ func TestMergeImage(t *testing.T) {
 		Tag:        "1.20",
 		History: &config.ImageHistory{
 			Strategy: config.HistoryStrategyLocal,
-			Count:    helpers.IntPtr(5),
+			Count:    helpers.Ptr(5),
 		},
 	}
 
@@ -424,7 +424,7 @@ func TestMergeImage(t *testing.T) {
 				Tag:        "1.21",  // Overridden
 				History: &config.ImageHistory{
 					Strategy: config.HistoryStrategyLocal,
-					Count:    helpers.IntPtr(5),
+					Count:    helpers.Ptr(5),
 				},
 			},
 		},

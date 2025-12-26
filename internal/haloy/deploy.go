@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
@@ -52,6 +53,25 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 
 			if len(rawTargets) != len(resolvedTargets) {
 				return fmt.Errorf("mismatch between raw targets (%d) and resolved targets (%d). This indicates a configuration processing error.", len(rawTargets), len(resolvedTargets))
+			}
+
+			// Filter out protected targets when using --all without --include-protected
+			if flags.all && !flags.includeProtected {
+				var skippedTargets []string
+				for targetName, target := range rawTargets {
+					if target.Protected != nil && *target.Protected {
+						skippedTargets = append(skippedTargets, targetName)
+						delete(rawTargets, targetName)
+						delete(resolvedTargets, targetName)
+					}
+				}
+				if len(skippedTargets) > 0 {
+					ui.Warn("Skipping protected targets: %s", strings.Join(skippedTargets, ", "))
+					ui.Warn("Use --include-protected to deploy these, or --targets to deploy explicitly")
+				}
+				if len(rawTargets) == 0 {
+					return fmt.Errorf("no targets to deploy (all targets are protected)")
+				}
 			}
 
 			builds, pushes, uploads := ResolveImageBuilds(resolvedTargets)
@@ -169,6 +189,7 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Deploy to a specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Deploy to all targets")
 	cmd.Flags().BoolVar(&noLogsFlag, "no-logs", false, "Don't stream haloyd deployment logs")
+	cmd.Flags().BoolVar(&flags.includeProtected, "include-protected", false, "Include protected targets when using --all")
 
 	return cmd
 }

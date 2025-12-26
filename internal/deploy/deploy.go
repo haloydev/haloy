@@ -32,6 +32,10 @@ func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, tar
 		if err != nil {
 			return fmt.Errorf("failed to stop containers before starting new deployment: %w", err)
 		}
+		_, err = docker.RemoveContainers(ctx, cli, logger, targetConfig.Name, "")
+		if err != nil {
+			return fmt.Errorf("failed to remove containers before starting new deployment: %w", err)
+		}
 	}
 
 	runResult, err := docker.RunContainer(ctx, cli, deploymentID, newImageRef, targetConfig)

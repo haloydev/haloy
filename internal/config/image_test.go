@@ -129,7 +129,7 @@ func TestImage_Validate(t *testing.T) {
 				Tag:        "latest",
 				History: &ImageHistory{
 					Strategy: HistoryStrategyRegistry,
-					Count:    helpers.IntPtr(5),
+					Count:    helpers.Ptr(5),
 					Pattern:  "v*",
 				},
 			},
@@ -143,7 +143,7 @@ func TestImage_Validate(t *testing.T) {
 				Tag:        "main",
 				History: &ImageHistory{
 					Strategy: HistoryStrategyRegistry,
-					Count:    helpers.IntPtr(5),
+					Count:    helpers.Ptr(5),
 					Pattern:  "v*",
 				},
 			},
@@ -157,7 +157,7 @@ func TestImage_Validate(t *testing.T) {
 				Tag:        "v1.2.3",
 				History: &ImageHistory{
 					Strategy: HistoryStrategyRegistry,
-					Count:    helpers.IntPtr(5),
+					Count:    helpers.Ptr(5),
 					Pattern:  "v*",
 				},
 			},
@@ -220,7 +220,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "valid local strategy with count",
 			history: ImageHistory{
 				Strategy: HistoryStrategyLocal,
-				Count:    helpers.IntPtr(5),
+				Count:    helpers.Ptr(5),
 			},
 			wantErr: false,
 		},
@@ -228,7 +228,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "valid registry strategy with count and pattern",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.IntPtr(10),
+				Count:    helpers.Ptr(10),
 				Pattern:  "v*",
 			},
 			wantErr: false,
@@ -277,7 +277,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "local strategy with zero count",
 			history: ImageHistory{
 				Strategy: HistoryStrategyLocal,
-				Count:    helpers.IntPtr(0),
+				Count:    helpers.Ptr(0),
 			},
 			wantErr: true,
 			errMsg:  "must be at least 1",
@@ -286,7 +286,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "registry strategy with negative count",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.IntPtr(-1),
+				Count:    helpers.Ptr(-1),
 			},
 			wantErr: true,
 			errMsg:  "must be at least 1",
@@ -295,7 +295,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "registry strategy missing pattern",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.IntPtr(5),
+				Count:    helpers.Ptr(5),
 				Pattern:  "",
 			},
 			wantErr: true,
@@ -305,7 +305,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "registry strategy with whitespace pattern",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.IntPtr(5),
+				Count:    helpers.Ptr(5),
 				Pattern:  "   ",
 			},
 			wantErr: true,

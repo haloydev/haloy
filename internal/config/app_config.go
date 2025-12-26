@@ -25,12 +25,17 @@ type TargetConfig struct {
 	// In a single-deployment file, this is required at the top level.
 	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 
+	// Preset applies default configurations for specific use cases, like databases.
+	Preset Preset `json:"preset,omitempty" yaml:"preset,omitempty" toml:"preset,omitempty"`
+
 	// Image can be defined inline OR reference a named image (ImageKey) from the Images map
 	Image              *Image             `json:"image,omitempty" yaml:"image,omitempty" toml:"image,omitempty"`
 	ImageKey           string             `json:"imageKey,omitempty" yaml:"image_key,omitempty" toml:"image_key,omitempty"`
 	Server             string             `json:"server,omitempty" yaml:"server,omitempty" toml:"server,omitempty"`
 	APIToken           *ValueSource       `json:"apiToken,omitempty" yaml:"api_token,omitempty" toml:"api_token,omitempty"`
 	DeploymentStrategy DeploymentStrategy `json:"deploymentStrategy,omitempty" yaml:"deployment_strategy,omitempty" toml:"deployment_strategy,omitempty"`
+	NamingStrategy     NamingStrategy     `json:"namingStrategy,omitempty" yaml:"naming_strategy,omitempty" toml:"naming_strategy,omitempty"`
+	Protected          *bool              `json:"protected,omitempty" yaml:"protected,omitempty" toml:"protected,omitempty"`
 	Domains            []Domain           `json:"domains,omitempty" yaml:"domains,omitempty" toml:"domains,omitempty"`
 	ACMEEmail          string             `json:"acmeEmail,omitempty" yaml:"acme_email,omitempty" toml:"acme_email,omitempty"`
 	Env                []EnvVar           `json:"env,omitempty" yaml:"env,omitempty" toml:"env,omitempty"`
@@ -47,11 +52,25 @@ type TargetConfig struct {
 	Format     string `json:"-" yaml:"-" toml:"-"`
 }
 
+type Preset string
+
+const (
+	PresetDefault  Preset = "default"
+	PresetDatabase Preset = "database"
+)
+
 type DeploymentStrategy string
 
 const (
 	DeploymentStrategyRolling DeploymentStrategy = "rolling" // Default: blue-green
 	DeploymentStrategyReplace DeploymentStrategy = "replace" // Stop old, start new
+)
+
+type NamingStrategy string
+
+const (
+	NamingStrategyDynamic NamingStrategy = "dynamic" // Default: app-deploymentID
+	NamingStrategyStatic  NamingStrategy = "static"  // app (requires replace strategy)
 )
 
 type Domain struct {

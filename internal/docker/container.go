@@ -64,9 +64,16 @@ func RunContainer(ctx context.Context, cli *client.Client, deploymentID, imageRe
 			Labels: labels,
 			Env:    envVars,
 		}
-		containerName := fmt.Sprintf("%s-haloy-%s", targetConfig.Name, deploymentID)
+
+		var containerName string
+		if targetConfig.NamingStrategy == config.NamingStrategyStatic {
+			containerName = targetConfig.Name
+		} else {
+			containerName = fmt.Sprintf("%s-%s", targetConfig.Name, deploymentID)
+		}
+
 		if *targetConfig.Replicas > 1 {
-			containerName += fmt.Sprintf("-replica-%d", i+1)
+			containerName += fmt.Sprintf("-r%d", i+1)
 		}
 
 		createResponse, err := cli.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
@@ -120,11 +127,23 @@ func StopContainers(ctx context.Context, cli *client.Client, logger *slog.Logger
 	defer cancel()
 
 	if len(containersToStop) <= 3 {
-		return stopContainersSequential(stopCtx, cli, logger, containersToStop)
+		stoppedIDs, err = stopContainersSequential(stopCtx, cli, logger, containersToStop)
+	} else {
+		logger.Info(fmt.Sprintf("Stopping %d containers. This might take a moment...", len(containersToStop)))
+		stoppedIDs, err = stopContainersConcurrent(stopCtx, cli, logger, containersToStop)
 	}
 
-	logger.Info(fmt.Sprintf("Stopping %d containers. This might take a moment...", len(containersToStop)))
-	return stopContainersConcurrent(stopCtx, cli, logger, containersToStop)
+	if err != nil {
+		return stoppedIDs, err
+	}
+
+	// Verify all stopped containers have reached "exited" state
+	for _, containerID := range stoppedIDs {
+		if err := waitForContainerExited(ctx, cli, containerID, 10*time.Second); err != nil {
+			return stoppedIDs, fmt.Errorf("failed to verify container stopped: %w", err)
+		}
+	}
+	return stoppedIDs, nil
 }
 
 func stopContainersSequential(ctx context.Context, cli *client.Client, logger *slog.Logger, containers []container.Summary) ([]string, error) {
@@ -187,8 +206,7 @@ func stopContainersConcurrent(ctx context.Context, cli *client.Client, logger *s
 }
 
 func stopSingleContainer(ctx context.Context, cli *client.Client, logger *slog.Logger, containerID string) error {
-	timeout := 20
-	stopOptions := container.StopOptions{Timeout: &timeout}
+	stopOptions := container.StopOptions{Timeout: helpers.Ptr(20)}
 
 	err := cli.ContainerStop(ctx, containerID, stopOptions)
 	if err == nil {
@@ -210,27 +228,30 @@ type RemoveContainersResult struct {
 	DeploymentID string
 }
 
-// RemoveContainers attempts to remove old containers for a given app and ignoring a specific deployment.
 func RemoveContainers(ctx context.Context, cli *client.Client, logger *slog.Logger, appName, ignoreDeploymentID string) (removedIDs []string, err error) {
 	containerList, err := GetAppContainers(ctx, cli, true, appName)
 	if err != nil {
 		return removedIDs, err
 	}
-
 	for _, containerInfo := range containerList {
 		deploymentID := containerInfo.Labels[config.LabelDeploymentID]
 		if deploymentID == ignoreDeploymentID {
 			continue
 		}
-
 		err := cli.ContainerRemove(ctx, containerInfo.ID, container.RemoveOptions{Force: true})
 		if err != nil {
-			logger.Error("Error removing container %s: %v\n", helpers.SafeIDPrefix(containerInfo.ID), err)
-		} else {
-			removedIDs = append(removedIDs, containerInfo.ID)
+			// If already removed, that's fine
+			if client.IsErrNotFound(err) {
+				continue
+			}
+			return removedIDs, fmt.Errorf("failed to remove container %s: %w", helpers.SafeIDPrefix(containerInfo.ID), err)
 		}
+		// Verify container is actually removed
+		if err := verifyContainerRemoved(ctx, cli, containerInfo.ID, 10*time.Second); err != nil {
+			return removedIDs, err
+		}
+		removedIDs = append(removedIDs, containerInfo.ID)
 	}
-
 	return removedIDs, nil
 }
 
@@ -500,4 +521,85 @@ func ExecInContainer(ctx context.Context, cli *client.Client, containerID string
 		return stdoutBuf.String(), stderrBuf.String(), 1, fmt.Errorf("failed to inspect exec: %w", err)
 	}
 	return stdoutBuf.String(), stderrBuf.String(), inspectResp.ExitCode, nil
+}
+
+// waitForContainerExited polls until the container reaches "exited" state or timeout.
+// Returns nil if container is exited, error if timeout or inspection fails.
+func waitForContainerExited(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var lastStatus string = "unknown"
+	// Check immediately before starting ticker
+	containerInfo, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to inspect container %s: %w", helpers.SafeIDPrefix(containerID), err)
+	}
+	if containerInfo.State != nil {
+		lastStatus = containerInfo.State.Status
+		if lastStatus == "exited" {
+			return nil
+		}
+	}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for container %s to exit (current status: %s)",
+				helpers.SafeIDPrefix(containerID), lastStatus)
+		case <-ticker.C:
+			containerInfo, err = cli.ContainerInspect(ctx, containerID)
+			if err != nil {
+				if client.IsErrNotFound(err) {
+					return nil
+				}
+				continue
+			}
+			if containerInfo.State != nil {
+				lastStatus = containerInfo.State.Status
+				if lastStatus == "exited" {
+					return nil
+				}
+			}
+		}
+	}
+}
+
+// verifyContainerRemoved polls until the container no longer exists or timeout.
+// Returns nil if container is removed, error if timeout or unexpected error.
+func verifyContainerRemoved(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Check immediately before starting ticker
+	_, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to inspect container %s: %w", helpers.SafeIDPrefix(containerID), err)
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for container %s to be removed",
+				helpers.SafeIDPrefix(containerID))
+		case <-ticker.C:
+			_, err := cli.ContainerInspect(ctx, containerID)
+			if err != nil {
+				if client.IsErrNotFound(err) {
+					return nil
+				}
+				// Transient error, continue polling
+				continue
+			}
+			// Container still exists, keep waiting
+		}
+	}
 }

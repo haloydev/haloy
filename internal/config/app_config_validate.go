@@ -24,6 +24,13 @@ func (tc *TargetConfig) Validate(format string) error {
 		return fmt.Errorf("invalid app name '%s'; must contain only alphanumeric characters, hyphens, and underscores", tc.Name)
 	}
 
+	if tc.Preset != "" {
+		validPresets := []Preset{PresetDatabase}
+		if !slices.Contains(validPresets, tc.Preset) {
+			return fmt.Errorf("preset must be a valid preset, %s is invalid", tc.Preset)
+		}
+	}
+
 	if tc.Image != nil && tc.ImageKey != "" {
 		return fmt.Errorf("cannot specify both 'image' and 'imageRef' in target config")
 	}
@@ -34,10 +41,26 @@ func (tc *TargetConfig) Validate(format string) error {
 		}
 	}
 
+	if tc.NamingStrategy != "" {
+		validNamingStrategies := []NamingStrategy{NamingStrategyDynamic, NamingStrategyStatic}
+		if !slices.Contains(validNamingStrategies, tc.NamingStrategy) {
+			return fmt.Errorf("%s must be 'dynamic' or 'static', got %s", GetFieldNameForFormat(TargetConfig{}, "NamingStrategy", format), tc.NamingStrategy)
+		}
+	}
+
+	// We can't use default deployment strategy if we want to use static naming because we can't have two container running with the same name.
+	if tc.NamingStrategy == NamingStrategyStatic && tc.DeploymentStrategy != DeploymentStrategyReplace {
+		return fmt.Errorf("%s 'static' requires %s 'replace' (you cannot use rolling updates with fixed container names)i", GetFieldNameForFormat(TargetConfig{}, "NamingStrategy", format), GetFieldNameForFormat(TargetConfig{}, "DeploymentStrategy", format))
+	}
+
+	if tc.NamingStrategy == NamingStrategyStatic && tc.Replicas != nil && *tc.Replicas > 1 {
+		return fmt.Errorf("%s 'static' does not support multiple replicas", GetFieldNameForFormat(TargetConfig{}, "NamingStrategy", format))
+	}
+
 	if tc.DeploymentStrategy != "" {
-		validStrategies := []DeploymentStrategy{DeploymentStrategyRolling, DeploymentStrategyReplace}
-		if !slices.Contains(validStrategies, tc.DeploymentStrategy) {
-			return fmt.Errorf("deployment_strategy must be 'rolling' or 'replace', got '%s'", tc.DeploymentStrategy)
+		validDeploymentStrategies := []DeploymentStrategy{DeploymentStrategyRolling, DeploymentStrategyReplace}
+		if !slices.Contains(validDeploymentStrategies, tc.DeploymentStrategy) {
+			return fmt.Errorf("%s must be 'rolling' or 'replace', got '%s'", GetFieldNameForFormat(TargetConfig{}, "DeploymentStrategy", format), tc.DeploymentStrategy)
 		}
 	}
 

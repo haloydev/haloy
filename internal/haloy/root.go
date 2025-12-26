@@ -10,9 +10,10 @@ import (
 
 // appCmdFlags holds the values for all flags shared by app-related commands.
 type appCmdFlags struct {
-	configPath string
-	targets    []string
-	all        bool
+	configPath       string
+	targets          []string
+	all              bool
+	includeProtected bool
 }
 
 func (f *appCmdFlags) validateTargetFlags() error {
