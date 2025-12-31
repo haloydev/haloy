@@ -29,10 +29,10 @@ func RollbackApp(ctx context.Context, cli *client.Client, targetConfig config.Ta
 
 	for _, target := range targets {
 		if target.DeploymentID == targetDeploymentID {
-			if target.RawAppConfig == nil {
-				return fmt.Errorf("no raw app config stored for app %s: %w", appName, err)
+			if target.RawDeployConfig == nil {
+				return fmt.Errorf("no raw deploy config stored for app %s: %w", appName, err)
 			}
-			if err := DeployApp(ctx, cli, newDeploymentID, targetConfig, *target.RawAppConfig, logger); err != nil {
+			if err := DeployApp(ctx, cli, newDeploymentID, targetConfig, *target.RawDeployConfig, logger); err != nil {
 				return fmt.Errorf("failed to deploy app %s: %w", appName, err)
 			}
 
@@ -93,19 +93,19 @@ func GetRollbackTargets(ctx context.Context, cli *client.Client, appName string)
 		}
 
 		// Parse original config and replace the image with the deployed one
-		var rawAppConfig config.AppConfig
-		if err := json.Unmarshal(deployment.RawAppConfig, &rawAppConfig); err != nil {
+		var rawDeployConfig config.DeployConfig
+		if err := json.Unmarshal(deployment.RawDeployConfig, &rawDeployConfig); err != nil {
 			continue
 		}
 
 		// Replace the image in the config with the deployed image
-		rawAppConfig.Image = &deployedImage
+		rawDeployConfig.Image = &deployedImage
 
 		target := deploytypes.RollbackTarget{
-			DeploymentID: deployment.ID,
-			ImageRef:     imageRef,
-			IsRunning:    deployment.ID == runningDeploymentID,
-			RawAppConfig: &rawAppConfig,
+			DeploymentID:    deployment.ID,
+			ImageRef:        imageRef,
+			IsRunning:       deployment.ID == runningDeploymentID,
+			RawDeployConfig: &rawDeployConfig,
 		}
 
 		targets = append(targets, target)

@@ -133,15 +133,15 @@ func UploadImage(ctx context.Context, imageRef string, resolvedTargetConfigs []*
 		return fmt.Errorf("failed to save image to tar: %w", err)
 	}
 
-	for _, resolvedAppConfig := range resolvedTargetConfigs {
-		ui.Info("Uploading image %s to %s", imageRef, resolvedAppConfig.Server)
+	for _, resolvedDeployConfig := range resolvedTargetConfigs {
+		ui.Info("Uploading image %s to %s", imageRef, resolvedDeployConfig.Server)
 
-		token, err := getToken(resolvedAppConfig, resolvedAppConfig.Server)
+		token, err := getToken(resolvedDeployConfig, resolvedDeployConfig.Server)
 		if err != nil {
 			return fmt.Errorf("failed to get authentication token: %w", err)
 		}
 
-		api, err := apiclient.NewWithTimeout(resolvedAppConfig.Server, token, 5*time.Minute)
+		api, err := apiclient.NewWithTimeout(resolvedDeployConfig.Server, token, 5*time.Minute)
 		if err != nil {
 			return fmt.Errorf("failed to create API client: %w", err)
 		}

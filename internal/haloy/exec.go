@@ -7,8 +7,8 @@ import (
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
-	"github.com/haloydev/haloy/internal/appconfigloader"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -60,12 +60,12 @@ Examples:
 				return fmt.Errorf("cannot specify both --all-containers and --container")
 			}
 
-			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
 			if err != nil {
 				return err
 			}

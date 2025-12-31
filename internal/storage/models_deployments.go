@@ -9,11 +9,11 @@ import (
 )
 
 type Deployment struct {
-	ID             string          `db:"id" json:"id"`
-	AppName        string          `db:"app_name" json:"appName"`
-	RawAppConfig   json.RawMessage `db:"raw_app_config" json:"rawAppConfig"`
-	DeployedImage  json.RawMessage `db:"deployed_image" json:"deployedImage"`
-	RolledBackFrom *string         `db:"rolled_back_from" json:"rolledBackFrom,omitempty"`
+	ID              string          `db:"id" json:"id"`
+	AppName         string          `db:"app_name" json:"appName"`
+	RawDeployConfig json.RawMessage `db:"raw_deploy_config" json:"rawDeployConfig"`
+	DeployedImage   json.RawMessage `db:"deployed_image" json:"deployedImage"`
+	RolledBackFrom  *string         `db:"rolled_back_from" json:"rolledBackFrom,omitempty"`
 }
 
 func createDeploymentsTable(db *DB) error {
@@ -21,7 +21,7 @@ func createDeploymentsTable(db *DB) error {
 CREATE TABLE IF NOT EXISTS deployments (
     id TEXT PRIMARY KEY,                    -- Timestamp-based ID
     app_name TEXT NOT NULL,                 -- App being deployed
-    raw_app_config JSON NOT NULL,           -- config.AppConfig as JSON
+    raw_deploy_config JSON NOT NULL,           -- config.DeployConfig as JSON
     deployed_image json not null,           -- Resolved config.Image config that was actually deployed
     rolled_back_from TEXT,                  -- ID of deployment this was rolled back from
 
@@ -41,20 +41,20 @@ CREATE INDEX IF NOT EXISTS idx_deployments_app_name ON deployments(app_name);
 }
 
 func (db *DB) SaveDeployment(deployment Deployment) error {
-	query := `INSERT INTO deployments (id, app_name, raw_app_config,  deployed_image, rolled_back_from)
+	query := `INSERT INTO deployments (id, app_name, raw_deploy_config,  deployed_image, rolled_back_from)
               VALUES (?, ?, ?, ?, ?)`
-	_, err := db.Exec(query, deployment.ID, deployment.AppName, deployment.RawAppConfig,
+	_, err := db.Exec(query, deployment.ID, deployment.AppName, deployment.RawDeployConfig,
 		deployment.DeployedImage, deployment.RolledBackFrom)
 	return err
 }
 
 func (db *DB) GetDeployment(deploymentID string) (Deployment, error) {
 	var deployment Deployment
-	query := `SELECT id, app_name, raw_app_config, deployed_image, rolled_back_from
+	query := `SELECT id, app_name, raw_deploy_config, deployed_image, rolled_back_from
               FROM deployments WHERE id = ?`
 
 	row := db.QueryRow(query, deploymentID)
-	err := row.Scan(&deployment.ID, &deployment.AppName, &deployment.RawAppConfig, &deployment.DeployedImage, &deployment.RolledBackFrom)
+	err := row.Scan(&deployment.ID, &deployment.AppName, &deployment.RawDeployConfig, &deployment.DeployedImage, &deployment.RolledBackFrom)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return deployment, fmt.Errorf("deployment '%s' not found", deploymentID)
@@ -67,7 +67,7 @@ func (db *DB) GetDeployment(deploymentID string) (Deployment, error) {
 
 func (db *DB) GetDeploymentHistory(appName string, limit int) ([]Deployment, error) {
 	var deployments []Deployment
-	query := `SELECT id, app_name, raw_app_config, deployed_image, rolled_back_from
+	query := `SELECT id, app_name, raw_deploy_config, deployed_image, rolled_back_from
               FROM deployments
               WHERE app_name = ?
               ORDER BY id DESC
@@ -81,7 +81,7 @@ func (db *DB) GetDeploymentHistory(appName string, limit int) ([]Deployment, err
 
 	for rows.Next() {
 		var deployment Deployment
-		err := rows.Scan(&deployment.ID, &deployment.AppName, &deployment.RawAppConfig,
+		err := rows.Scan(&deployment.ID, &deployment.AppName, &deployment.RawDeployConfig,
 			&deployment.DeployedImage, &deployment.RolledBackFrom)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan deployment: %w", err)

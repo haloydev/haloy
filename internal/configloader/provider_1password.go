@@ -1,4 +1,4 @@
-package appconfigloader
+package configloader
 
 import (
 	"context"

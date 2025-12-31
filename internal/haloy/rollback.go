@@ -8,8 +8,8 @@ import (
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
-	"github.com/haloydev/haloy/internal/appconfigloader"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/deploytypes"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/logging"
@@ -33,19 +33,19 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 
 			targetDeploymentID := args[0]
 
-			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
 			if err != nil {
 				return err
 			}
 
 			newDeploymentID := createDeploymentID()
 
-			servers := appconfigloader.TargetsByServer(targets)
+			servers := configloader.TargetsByServer(targets)
 
 			g, ctx := errgroup.WithContext(ctx)
 			for _, targetNames := range servers {
@@ -87,14 +87,14 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 							return &PrefixedError{Err: fmt.Errorf("deployment ID %s not found in available rollback targets", targetDeploymentID), Prefix: prefix}
 						}
 
-						if availableTarget.RawAppConfig == nil {
+						if availableTarget.RawDeployConfig == nil {
 							return &PrefixedError{Err: errors.New("unable to find configuration for rollback"), Prefix: prefix}
 						}
-						newResolvedAppConfig, err := appconfigloader.ResolveSecrets(ctx, *availableTarget.RawAppConfig)
+						newResolvedDeployConfig, err := configloader.ResolveSecrets(ctx, *availableTarget.RawDeployConfig)
 						if err != nil {
-							return &PrefixedError{Err: fmt.Errorf("unable to resolve secrets for the app config. This usually occurs when secrets names have been changed or deleted between deployments: %w", err), Prefix: prefix}
+							return &PrefixedError{Err: fmt.Errorf("unable to resolve secrets for the deploy config. This usually occurs when secrets names have been changed or deleted between deployments: %w", err), Prefix: prefix}
 						}
-						newResolvedTargetConfig, err := appconfigloader.MergeToTarget(newResolvedAppConfig, config.TargetConfig{}, newResolvedAppConfig.Name, format)
+						newResolvedTargetConfig, err := configloader.MergeToTarget(newResolvedDeployConfig, config.TargetConfig{}, newResolvedDeployConfig.Name, format)
 						if err != nil {
 							return &PrefixedError{Err: fmt.Errorf("failed to merge to target: %w", err), Prefix: prefix}
 						}
@@ -156,12 +156,12 @@ func RollbackTargetsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
 			if err != nil {
 				return err
 			}

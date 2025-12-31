@@ -19,7 +19,7 @@ func (s *APIServer) handleRollback() http.HandlerFunc {
 			return
 		}
 
-		appConfig := req.NewTargetConfig
+		deployConfig := req.NewTargetConfig
 
 		if req.TargetDeploymentID == "" {
 			http.Error(w, "Target deployment ID is required", http.StatusBadRequest)
@@ -30,8 +30,8 @@ func (s *APIServer) handleRollback() http.HandlerFunc {
 			return
 		}
 
-		if err := appConfig.Validate(appConfig.Format); err != nil {
-			http.Error(w, fmt.Sprintf("Invalid app configuration: %v", err), http.StatusBadRequest)
+		if err := deployConfig.Validate(deployConfig.Format); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid deploy configuration: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -49,11 +49,11 @@ func (s *APIServer) handleRollback() http.HandlerFunc {
 			}
 			defer cli.Close()
 
-			if err := deploy.RollbackApp(ctx, cli, appConfig, req.TargetDeploymentID, req.NewDeploymentID, deploymentLogger); err != nil {
-				deploymentLogger.Error("Deployment failed", "app", appConfig.Name, "error", err)
+			if err := deploy.RollbackApp(ctx, cli, deployConfig, req.TargetDeploymentID, req.NewDeploymentID, deploymentLogger); err != nil {
+				deploymentLogger.Error("Deployment failed", "app", deployConfig.Name, "error", err)
 				return
 			}
-			deploymentLogger.Info("Rollback initiated", "app", appConfig.Name, "deploymentID", req.NewDeploymentID)
+			deploymentLogger.Info("Rollback initiated", "app", deployConfig.Name, "deploymentID", req.NewDeploymentID)
 		}()
 
 		w.WriteHeader(http.StatusAccepted)

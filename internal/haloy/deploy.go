@@ -10,9 +10,9 @@ import (
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
-	"github.com/haloydev/haloy/internal/appconfigloader"
 	"github.com/haloydev/haloy/internal/cmdexec"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/ui"
@@ -31,22 +31,22 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			resolvedAppConfig, err := appconfigloader.ResolveSecrets(ctx, rawAppConfig)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
 			if err != nil {
 				return fmt.Errorf("failed to resolve secrets: %w", err)
 			}
 
-			rawTargets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			rawTargets, err := configloader.ExtractTargets(rawDeployConfig, format)
 			if err != nil {
 				return err
 			}
 
-			resolvedTargets, err := appconfigloader.ExtractTargets(resolvedAppConfig, format)
+			resolvedTargets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
 			if err != nil {
 				return err
 			}
@@ -102,10 +102,10 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				}
 			}
 
-			if len(rawAppConfig.GlobalPreDeploy) > 0 {
-				for _, hookCmd := range rawAppConfig.GlobalPreDeploy {
+			if len(rawDeployConfig.GlobalPreDeploy) > 0 {
+				for _, hookCmd := range rawDeployConfig.GlobalPreDeploy {
 					if err := cmdexec.RunCommand(ctx, hookCmd, getHooksWorkDir(*configPath)); err != nil {
-						return fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.AppConfig{}, "GlobalPreDeploy", rawAppConfig.Format), err)
+						return fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.DeployConfig{}, "GlobalPreDeploy", rawDeployConfig.Format), err)
 					}
 				}
 			}
@@ -113,7 +113,7 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 			// Group targets by server so that deployments to the same server are serialized.
 			// This will prevent too many containers starting at the same time, avoids race conditions and conflicts.
 			// Targets that are on different server are run in paralell to speed things up.
-			servers := appconfigloader.TargetsByServer(rawTargets)
+			servers := configloader.TargetsByServer(rawTargets)
 
 			// Create deployment IDs per app name
 			deploymentIDs := make(map[string]string)
@@ -142,10 +142,10 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 							return fmt.Errorf("could not find deployment ID for app '%s'", resolvedTargetConfig.Name)
 						}
 
-						// Recreate the AppConfig with just the target for rollbacks
-						rollbackAppConfig := config.AppConfig{
+						// Recreate the DeployConfig with just the target for rollbacks
+						rollbackDeployConfig := config.DeployConfig{
 							TargetConfig:    rawTargetConfig,
-							SecretProviders: rawAppConfig.SecretProviders,
+							SecretProviders: rawDeployConfig.SecretProviders,
 						}
 
 						prefix := ""
@@ -156,7 +156,7 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 						if err := deployTarget(
 							ctx,
 							resolvedTargetConfig,
-							rollbackAppConfig,
+							rollbackDeployConfig,
 							*configPath,
 							deploymentID,
 							prefix,
@@ -174,10 +174,10 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return err
 			}
 
-			if len(rawAppConfig.GlobalPostDeploy) > 0 {
-				for _, hookCmd := range rawAppConfig.GlobalPostDeploy {
+			if len(rawDeployConfig.GlobalPostDeploy) > 0 {
+				for _, hookCmd := range rawDeployConfig.GlobalPostDeploy {
 					if err := cmdexec.RunCommand(ctx, hookCmd, getHooksWorkDir(*configPath)); err != nil {
-						return fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.AppConfig{}, "GlobalPostDeploy", rawAppConfig.Format), err)
+						return fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.DeployConfig{}, "GlobalPostDeploy", rawDeployConfig.Format), err)
 					}
 				}
 			}
@@ -197,7 +197,7 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 func deployTarget(
 	ctx context.Context,
 	targetConfig config.TargetConfig,
-	rollbackAppConfig config.AppConfig,
+	rollbackDeployConfig config.DeployConfig,
 	configPath, deploymentID, prefix string,
 	noLogs bool,
 ) error {
@@ -211,7 +211,7 @@ func deployTarget(
 	if len(preDeploy) > 0 {
 		for _, hookCmd := range preDeploy {
 			if err := cmdexec.RunCommand(ctx, hookCmd, getHooksWorkDir(configPath)); err != nil {
-				return &PrefixedError{Err: fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.AppConfig{}, "PreDeploy", format), err), Prefix: prefix}
+				return &PrefixedError{Err: fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.DeployConfig{}, "PreDeploy", format), err), Prefix: prefix}
 			}
 		}
 	}
@@ -228,9 +228,9 @@ func deployTarget(
 	}
 
 	request := apitypes.DeployRequest{
-		TargetConfig:      targetConfig,
-		RollbackAppConfig: rollbackAppConfig,
-		DeploymentID:      deploymentID,
+		TargetConfig:         targetConfig,
+		RollbackDeployConfig: rollbackDeployConfig,
+		DeploymentID:         deploymentID,
 	}
 
 	pui.Info("Deployment started for %s", targetConfig.Name)
@@ -262,7 +262,7 @@ func deployTarget(
 	if len(postDeploy) > 0 {
 		for _, hookCmd := range postDeploy {
 			if err := cmdexec.RunCommand(ctx, hookCmd, getHooksWorkDir(configPath)); err != nil {
-				return &PrefixedError{Err: fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.AppConfig{}, "PostDeploy", format), err), Prefix: prefix}
+				return &PrefixedError{Err: fmt.Errorf("%s hook failed: %v", config.GetFieldNameForFormat(config.DeployConfig{}, "PostDeploy", format), err), Prefix: prefix}
 			}
 		}
 	}

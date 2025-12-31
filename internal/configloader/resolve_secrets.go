@@ -1,4 +1,4 @@
-package appconfigloader
+package configloader
 
 import (
 	"context"
@@ -10,10 +10,10 @@ import (
 	"github.com/jinzhu/copier"
 )
 
-func ResolveSecrets(ctx context.Context, appConfig config.AppConfig) (config.AppConfig, error) {
-	var resolvedConfig config.AppConfig
-	if err := copier.Copy(&resolvedConfig, &appConfig); err != nil {
-		return config.AppConfig{}, fmt.Errorf("failed to copy config for resolution: %w", err)
+func ResolveSecrets(ctx context.Context, haloyConfig config.DeployConfig) (config.DeployConfig, error) {
+	var resolvedConfig config.DeployConfig
+	if err := copier.Copy(&resolvedConfig, &haloyConfig); err != nil {
+		return config.DeployConfig{}, fmt.Errorf("failed to copy config for resolution: %w", err)
 	}
 
 	allSources := gatherValueSources(&resolvedConfig)
@@ -21,44 +21,44 @@ func ResolveSecrets(ctx context.Context, appConfig config.AppConfig) (config.App
 		return resolvedConfig, nil
 	}
 
-	// Group and fetch secrets once for the entire app config
+	// Group and fetch secrets once for the entire deploy config
 	groupedSources, err := groupSources(allSources, resolvedConfig.SecretProviders, resolvedConfig.Format)
 	if err != nil {
-		return config.AppConfig{}, fmt.Errorf("failed to group sources: %w", err)
+		return config.DeployConfig{}, fmt.Errorf("failed to group sources: %w", err)
 	}
 
 	fetchedDataCache, err := fetchGroupedSources(ctx, groupedSources)
 	if err != nil {
-		return config.AppConfig{}, fmt.Errorf("failed to fetch grouped sources: %w", err)
+		return config.DeployConfig{}, fmt.Errorf("failed to fetch grouped sources: %w", err)
 	}
 
 	if err := extractValues(allSources, fetchedDataCache); err != nil {
-		return config.AppConfig{}, fmt.Errorf("failed to extract values: %w", err)
+		return config.DeployConfig{}, fmt.Errorf("failed to extract values: %w", err)
 	}
 
 	return resolvedConfig, nil
 }
 
-func gatherValueSources(appConfig *config.AppConfig) []*config.ValueSource {
+func gatherValueSources(haloyConfig *config.DeployConfig) []*config.ValueSource {
 	var sources []*config.ValueSource
 
-	if appConfig.APIToken != nil {
-		sources = append(sources, appConfig.APIToken)
+	if haloyConfig.APIToken != nil {
+		sources = append(sources, haloyConfig.APIToken)
 	}
 
-	for i := range appConfig.Env {
-		sources = append(sources, &appConfig.Env[i].ValueSource)
+	for i := range haloyConfig.Env {
+		sources = append(sources, &haloyConfig.Env[i].ValueSource)
 	}
 
-	if appConfig.Image != nil {
-		sources = append(sources, gatherImageValueSources(appConfig.Image)...)
+	if haloyConfig.Image != nil {
+		sources = append(sources, gatherImageValueSources(haloyConfig.Image)...)
 	}
 
-	for _, image := range appConfig.Images {
+	for _, image := range haloyConfig.Images {
 		sources = append(sources, gatherImageValueSources(image)...)
 	}
 
-	for _, targetConfig := range appConfig.Targets {
+	for _, targetConfig := range haloyConfig.Targets {
 		sources = append(sources, gatherTargetValueSources(targetConfig)...)
 	}
 
@@ -121,7 +121,7 @@ func groupSources(sources []*config.ValueSource, providers *config.SecretProvide
 	if providers == nil {
 		for _, vs := range sources {
 			if vs.From != nil && vs.From.Secret != "" {
-				return nil, fmt.Errorf("found 'from.secret' reference but no '%s' block is defined in the configuration", config.GetFieldNameForFormat(config.AppConfig{}, "SecretProviders", configFormat))
+				return nil, fmt.Errorf("found 'from.secret' reference but no '%s' block is defined in the configuration", config.GetFieldNameForFormat(config.DeployConfig{}, "SecretProviders", configFormat))
 			}
 		}
 		return groups, nil // Only `env:` sources are possible, which don't need grouping.

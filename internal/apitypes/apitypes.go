@@ -14,8 +14,8 @@ type HealthResponse struct {
 type DeployRequest struct {
 	DeploymentID string              `json:"deploymentID"`
 	TargetConfig config.TargetConfig `json:"targetConfig"`
-	// AppConfig without resolved secrets and with target extracted. Saved on server for rollbacks
-	RollbackAppConfig config.AppConfig `json:"rollbackAppConfig"`
+	// DeployConfig without resolved secrets and with target extracted. Saved on server for rollbacks
+	RollbackDeployConfig config.DeployConfig `json:"rollbackDeployConfig"`
 }
 
 type RollbackRequest struct {

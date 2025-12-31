@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/haloydev/haloy/internal/apiclient"
-	"github.com/haloydev/haloy/internal/appconfigloader"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
@@ -30,17 +30,17 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 				return streamLogs(ctx, nil, serverFlag)
 			}
 
-			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
 			if err != nil {
 				return err
 			}
 
-			servers := appconfigloader.TargetsByServer(targets)
+			servers := configloader.TargetsByServer(targets)
 
 			g, ctx := errgroup.WithContext(ctx)
 			for server, targetNames := range servers {

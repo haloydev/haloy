@@ -10,7 +10,7 @@ import (
 	"github.com/haloydev/haloy/internal/helpers"
 )
 
-type AppConfig struct {
+type DeployConfig struct {
 	Images           map[string]*Image `json:"images,omitempty" yaml:"images,omitempty" toml:"images,omitempty"`
 	TargetConfig     `mapstructure:",squash" json:",inline" yaml:",inline" toml:",inline"`
 	Targets          map[string]*TargetConfig `json:"targets,omitempty" yaml:"targets,omitempty" toml:"targets,omitempty"`

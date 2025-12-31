@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/haloydev/haloy/internal/appconfigloader"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
-func ValidateAppConfigCmd(configPath *string) *cobra.Command {
+func ValidateDeployConfigCmd(configPath *string) *cobra.Command {
 	var showResolvedConfigFlag bool
 
 	cmd := &cobra.Command{
@@ -25,35 +25,35 @@ func ValidateAppConfigCmd(configPath *string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			configFileName, err := appconfigloader.FindConfigFile(*configPath)
+			configFileName, err := configloader.FindConfigFile(*configPath)
 			if err != nil {
 				return err
 			}
 
-			rawAppConfig, format, err := appconfigloader.LoadRawAppConfig(*configPath)
+			rawDeployConfig, format, err := configloader.LoadRawDeployConfig(*configPath)
 			if err != nil {
 				return fmt.Errorf("unable to load config file from %s: %w", *configPath, err)
 			}
 
 			errors := make([]error, 0)
-			if len(rawAppConfig.Targets) > 0 {
-				for targetName, target := range rawAppConfig.Targets {
-					mergedTargetConfig, err := appconfigloader.MergeToTarget(rawAppConfig, *target, targetName, format)
+			if len(rawDeployConfig.Targets) > 0 {
+				for targetName, target := range rawDeployConfig.Targets {
+					mergedTargetConfig, err := configloader.MergeToTarget(rawDeployConfig, *target, targetName, format)
 					if err != nil {
 						errors = append(errors, fmt.Errorf("unable to extract target '%s': %w", targetName, err))
 						continue
 					}
 
-					if err := mergedTargetConfig.Validate(rawAppConfig.Format); err != nil {
+					if err := mergedTargetConfig.Validate(rawDeployConfig.Format); err != nil {
 						errors = append(errors, fmt.Errorf("target '%s' validation failed: %w", targetName, err))
 					}
 				}
 			} else {
-				mergedSingleTargetConfig, err := appconfigloader.MergeToTarget(rawAppConfig, config.TargetConfig{}, rawAppConfig.Name, format)
+				mergedSingleTargetConfig, err := configloader.MergeToTarget(rawDeployConfig, config.TargetConfig{}, rawDeployConfig.Name, format)
 				if err != nil {
 					errors = append(errors, fmt.Errorf("unable to extract config: %w", err))
 				} else {
-					if err := mergedSingleTargetConfig.Validate(rawAppConfig.Format); err != nil {
+					if err := mergedSingleTargetConfig.Validate(rawDeployConfig.Format); err != nil {
 						errors = append(errors, fmt.Errorf("configuration validation failed: %w", err))
 					}
 				}
@@ -61,11 +61,11 @@ func ValidateAppConfigCmd(configPath *string) *cobra.Command {
 
 			resolvedTargets := make(map[string]config.TargetConfig)
 			if len(errors) == 0 {
-				resolvedAppConfig, err := appconfigloader.ResolveSecrets(ctx, rawAppConfig)
+				resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
 				if err != nil {
 					errors = append(errors, fmt.Errorf("unable to resolve secrets: %w", err))
 				} else {
-					resolvedTargets, err = appconfigloader.ExtractTargets(resolvedAppConfig, format)
+					resolvedTargets, err = configloader.ExtractTargets(resolvedDeployConfig, format)
 					if err != nil {
 						errors = append(errors, err)
 					}

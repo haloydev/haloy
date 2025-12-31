@@ -44,7 +44,7 @@ func NewRootCmd() *cobra.Command {
 			// Load environment files from default locations
 			config.LoadEnvFiles()
 
-			// Skip server subcommands that don't use app config (add, delete, list)
+			// Skip server subcommands that don't use deploy config (add, delete, list)
 			if cmd.Parent() != nil && cmd.Parent().Name() == "server" && cmd.Name() != "version" {
 				return nil
 			}
@@ -65,7 +65,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 	}
 
-	validateCmd := ValidateAppConfigCmd(&resolvedConfigPath)
+	validateCmd := ValidateDeployConfigCmd(&resolvedConfigPath)
 	validateCmd.Flags().StringVarP(&appFlags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
 
 	cmd.AddCommand(

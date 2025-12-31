@@ -10,8 +10,8 @@ import (
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
-	"github.com/haloydev/haloy/internal/appconfigloader"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
@@ -265,12 +265,12 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return nil
 			}
 
-			rawAppConfig, format, err := appconfigloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := appconfigloader.ExtractTargets(rawAppConfig, format)
+			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
 			if err != nil {
 				return err
 			}

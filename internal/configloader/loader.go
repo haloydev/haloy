@@ -1,4 +1,4 @@
-package appconfigloader
+package configloader
 
 import (
 	"context"
@@ -24,39 +24,39 @@ func Load(
 	configPath string,
 	targets []string,
 	allTargets bool,
-) (appConfig config.AppConfig, format string, err error) {
-	rawAppConfig, format, err := LoadRawAppConfig(configPath)
+) (haloyConfig config.DeployConfig, format string, err error) {
+	rawDeployConfig, format, err := LoadRawDeployConfig(configPath)
 	if err != nil {
-		return config.AppConfig{}, "", err
+		return config.DeployConfig{}, "", err
 	}
 
-	rawAppConfig.Format = format
+	rawDeployConfig.Format = format
 
-	if len(rawAppConfig.Targets) > 0 { // is multi target
+	if len(rawDeployConfig.Targets) > 0 { // is multi target
 
 		if len(targets) == 0 && !allTargets {
-			return config.AppConfig{}, "", errors.New("multiple targets available, please specify targets with --targets or use --all")
+			return config.DeployConfig{}, "", errors.New("multiple targets available, please specify targets with --targets or use --all")
 		}
 
 		if len(targets) > 0 {
 			filteredTargets := make(map[string]*config.TargetConfig)
 			for _, targetName := range targets {
-				if _, exists := rawAppConfig.Targets[targetName]; exists {
-					filteredTargets[targetName] = rawAppConfig.Targets[targetName]
+				if _, exists := rawDeployConfig.Targets[targetName]; exists {
+					filteredTargets[targetName] = rawDeployConfig.Targets[targetName]
 				} else {
-					return config.AppConfig{}, "", fmt.Errorf("target '%s' not found in configuration", targetName)
+					return config.DeployConfig{}, "", fmt.Errorf("target '%s' not found in configuration", targetName)
 				}
 			}
-			rawAppConfig.Targets = filteredTargets
+			rawDeployConfig.Targets = filteredTargets
 		}
 
 	} else {
 		if len(targets) > 0 || allTargets {
-			return config.AppConfig{}, "", errors.New("the --targets and --all flags are not applicable for a single-target configuration file")
+			return config.DeployConfig{}, "", errors.New("the --targets and --all flags are not applicable for a single-target configuration file")
 		}
 	}
 
-	return rawAppConfig, "", nil
+	return rawDeployConfig, "", nil
 }
 
 func mergeImage(targetConfig config.TargetConfig, images map[string]*config.Image, baseImage *config.Image) (*config.Image, error) {
@@ -107,29 +107,29 @@ func mergeImage(targetConfig config.TargetConfig, images map[string]*config.Imag
 	return nil, nil
 }
 
-func mergeEnvArrays(appConfigEnv, targetConfigEnv []config.EnvVar) []config.EnvVar {
+func mergeEnvArrays(haloyConfigEnv, targetConfigEnv []config.EnvVar) []config.EnvVar {
 	if len(targetConfigEnv) == 0 {
-		return appConfigEnv
+		return haloyConfigEnv
 	}
 
-	if len(appConfigEnv) == 0 {
+	if len(haloyConfigEnv) == 0 {
 		return targetConfigEnv
 	}
 
 	mergedMap := make(map[string]config.EnvVar)
 
-	for _, envVar := range appConfigEnv {
+	for _, envVar := range haloyConfigEnv {
 		mergedMap[envVar.Name] = envVar
 	}
 
 	for _, envVar := range targetConfigEnv {
-		mergedMap[envVar.Name] = envVar // override appConfig if exists
+		mergedMap[envVar.Name] = envVar // override haloyConfig if exists
 	}
 
 	mergedEnv := make([]config.EnvVar, 0, len(mergedMap))
 
-	// Preserve order defined in appConfigEnv (base)
-	for _, envVar := range appConfigEnv {
+	// Preserve order defined in haloyConfigEnv (base)
+	for _, envVar := range haloyConfigEnv {
 		if mergedEnvVar, exists := mergedMap[envVar.Name]; exists {
 			mergedEnv = append(mergedEnv, mergedEnvVar)
 			delete(mergedMap, envVar.Name)
@@ -147,12 +147,12 @@ func mergeEnvArrays(appConfigEnv, targetConfigEnv []config.EnvVar) []config.EnvV
 	return mergedEnv
 }
 
-// MergeToTarget merges the global AppConfig into a specific TargetConfig.
+// MergeToTarget merges the global DeployConfig into a specific TargetConfig.
 // The configuration hierarchy is (from highest to lowest specificity):
 // 1. Target Config (explicitly set in the 'targets' map)
 // 2. Preset Defaults (applied if fields are empty)
-// 3. Global AppConfig (applied if fields are still empty)
-func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig, targetName, format string) (config.TargetConfig, error) {
+// 3. Global DeployConfig (applied if fields are still empty)
+func MergeToTarget(haloyConfig config.DeployConfig, targetConfig config.TargetConfig, targetName, format string) (config.TargetConfig, error) {
 	var tc config.TargetConfig
 	if err := copier.Copy(&tc, &targetConfig); err != nil {
 		return config.TargetConfig{}, fmt.Errorf("failed to deep copy target config for merging: %w", err)
@@ -162,93 +162,93 @@ func MergeToTarget(appConfig config.AppConfig, targetConfig config.TargetConfig,
 	tc.Format = format
 
 	if tc.Name == "" {
-		if appConfig.Name != "" {
-			tc.Name = appConfig.Name
+		if haloyConfig.Name != "" {
+			tc.Name = haloyConfig.Name
 		} else {
 			tc.Name = targetName
 		}
 	}
 
 	if tc.Preset == "" {
-		tc.Preset = appConfig.Preset
+		tc.Preset = haloyConfig.Preset
 	}
 
 	if err := applyPreset(&tc); err != nil {
 		return config.TargetConfig{}, err
 	}
 
-	mergedImage, err := mergeImage(targetConfig, appConfig.Images, appConfig.Image)
+	mergedImage, err := mergeImage(targetConfig, haloyConfig.Images, haloyConfig.Image)
 	if err != nil {
 		return config.TargetConfig{}, fmt.Errorf("failed to resolve image for target '%s': %w", targetName, err)
 	}
 	tc.Image = mergedImage
 
 	if tc.Server == "" {
-		tc.Server = appConfig.Server
+		tc.Server = haloyConfig.Server
 	}
 
 	if tc.APIToken == nil {
-		tc.APIToken = appConfig.APIToken
+		tc.APIToken = haloyConfig.APIToken
 	}
 
 	if tc.DeploymentStrategy == "" {
-		tc.DeploymentStrategy = appConfig.DeploymentStrategy
+		tc.DeploymentStrategy = haloyConfig.DeploymentStrategy
 	}
 
 	if tc.NamingStrategy == "" {
-		tc.NamingStrategy = appConfig.NamingStrategy
+		tc.NamingStrategy = haloyConfig.NamingStrategy
 	}
 
 	if tc.Protected == nil {
-		tc.Protected = appConfig.Protected
+		tc.Protected = haloyConfig.Protected
 	}
 
 	if tc.Domains == nil {
-		tc.Domains = appConfig.Domains
+		tc.Domains = haloyConfig.Domains
 	}
 
 	if tc.ACMEEmail == "" {
-		tc.ACMEEmail = appConfig.ACMEEmail
+		tc.ACMEEmail = haloyConfig.ACMEEmail
 	}
 
 	// Merge Env arrays if the target has an explicit Env block, otherwise inherit (which is handled by copier)
 	// Only merge if both base and target have elements. If target.Env is nil (copied from targetConfig, which is nil),
 	// it will inherit the base config value. If target.Env is non-nil (meaning it was set explicitly in the target block,
 	// even if empty), we proceed to merge with the base.
-	if len(targetConfig.Env) > 0 || len(appConfig.Env) > 0 {
-		mergedEnv := mergeEnvArrays(appConfig.Env, targetConfig.Env)
+	if len(targetConfig.Env) > 0 || len(haloyConfig.Env) > 0 {
+		mergedEnv := mergeEnvArrays(haloyConfig.Env, targetConfig.Env)
 		tc.Env = mergedEnv
 	} else if tc.Env == nil {
 		// Fallback to base config if nothing was explicitly set on target
-		tc.Env = appConfig.Env
+		tc.Env = haloyConfig.Env
 	}
 
 	if tc.HealthCheckPath == "" {
-		tc.HealthCheckPath = appConfig.HealthCheckPath
+		tc.HealthCheckPath = haloyConfig.HealthCheckPath
 	}
 
 	if tc.Port == "" {
-		tc.Port = appConfig.Port
+		tc.Port = haloyConfig.Port
 	}
 
 	if tc.Replicas == nil {
-		tc.Replicas = appConfig.Replicas
+		tc.Replicas = haloyConfig.Replicas
 	}
 
 	if tc.Network == "" {
-		tc.Network = appConfig.Network
+		tc.Network = haloyConfig.Network
 	}
 
 	if tc.Volumes == nil {
-		tc.Volumes = appConfig.Volumes
+		tc.Volumes = haloyConfig.Volumes
 	}
 
 	if tc.PreDeploy == nil {
-		tc.PreDeploy = appConfig.PreDeploy
+		tc.PreDeploy = haloyConfig.PreDeploy
 	}
 
 	if tc.PostDeploy == nil {
-		tc.PostDeploy = appConfig.PostDeploy
+		tc.PostDeploy = haloyConfig.PostDeploy
 	}
 
 	normalizeTargetConfig(&tc)
@@ -335,67 +335,67 @@ func TargetsByServer(targets map[string]config.TargetConfig) map[string][]string
 	return servers
 }
 
-func ExtractTargets(appConfig config.AppConfig, format string) (map[string]config.TargetConfig, error) {
+func ExtractTargets(haloyConfig config.DeployConfig, format string) (map[string]config.TargetConfig, error) {
 	extractedTargetConfigs := make(map[string]config.TargetConfig)
 
-	if len(appConfig.Targets) > 0 {
-		for targetName, target := range appConfig.Targets {
-			mergedTargetConfig, err := MergeToTarget(appConfig, *target, targetName, format)
+	if len(haloyConfig.Targets) > 0 {
+		for targetName, target := range haloyConfig.Targets {
+			mergedTargetConfig, err := MergeToTarget(haloyConfig, *target, targetName, format)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve target '%s': %w", targetName, err)
 			}
 
-			if err := mergedTargetConfig.Validate(appConfig.Format); err != nil {
+			if err := mergedTargetConfig.Validate(haloyConfig.Format); err != nil {
 				return nil, fmt.Errorf("validation failed for target '%s': %w", targetName, err)
 			}
 			extractedTargetConfigs[targetName] = mergedTargetConfig
 		}
 	} else {
-		mergedSingleTargetConfig, err := MergeToTarget(appConfig, config.TargetConfig{}, "", format)
+		mergedSingleTargetConfig, err := MergeToTarget(haloyConfig, config.TargetConfig{}, "", format)
 		if err != nil {
 			return nil, fmt.Errorf("failed to merge config: %w", err)
 		}
-		if err := mergedSingleTargetConfig.Validate(appConfig.Format); err != nil {
+		if err := mergedSingleTargetConfig.Validate(haloyConfig.Format); err != nil {
 			return nil, fmt.Errorf("config invalid: %w", err)
 		}
-		extractedTargetConfigs[appConfig.Name] = mergedSingleTargetConfig
+		extractedTargetConfigs[haloyConfig.Name] = mergedSingleTargetConfig
 	}
 
 	return extractedTargetConfigs, nil
 }
 
-func LoadRawAppConfig(configPath string) (config.AppConfig, string, error) {
+func LoadRawDeployConfig(configPath string) (config.DeployConfig, string, error) {
 	configFile, err := FindConfigFile(configPath)
 	if err != nil {
-		return config.AppConfig{}, "", err
+		return config.DeployConfig{}, "", err
 	}
 
 	format, err := config.GetConfigFormat(configFile)
 	if err != nil {
-		return config.AppConfig{}, "", err
+		return config.DeployConfig{}, "", err
 	}
 
 	parser, err := config.GetConfigParser(format)
 	if err != nil {
-		return config.AppConfig{}, "", err
+		return config.DeployConfig{}, "", err
 	}
 
 	k := koanf.New(".")
 	if err := k.Load(file.Provider(configFile), parser); err != nil {
-		return config.AppConfig{}, "", fmt.Errorf("failed to load config file: %w", err)
+		return config.DeployConfig{}, "", fmt.Errorf("failed to load config file: %w", err)
 	}
 
 	configKeys := k.Keys()
-	appConfigType := reflect.TypeOf(config.AppConfig{})
+	haloyConfigType := reflect.TypeOf(config.DeployConfig{})
 
-	if err := config.CheckUnknownFields(appConfigType, configKeys, format); err != nil {
-		return config.AppConfig{}, "", err
+	if err := config.CheckUnknownFields(haloyConfigType, configKeys, format); err != nil {
+		return config.DeployConfig{}, "", err
 	}
 
-	var appConfig config.AppConfig
+	var haloyConfig config.DeployConfig
 	decoderConfig := &mapstructure.DecoderConfig{
 		TagName: format,
-		Result:  &appConfig,
+		Result:  &haloyConfig,
 		// This ensures that embedded structs with inline tags work properly
 		Squash:     true,
 		DecodeHook: config.PortDecodeHook(),
@@ -406,11 +406,11 @@ func LoadRawAppConfig(configPath string) (config.AppConfig, string, error) {
 		DecoderConfig: decoderConfig,
 	}
 
-	if err := k.UnmarshalWithConf("", &appConfig, unmarshalConf); err != nil {
-		return config.AppConfig{}, "", fmt.Errorf("failed to unmarshal config: %w", err)
+	if err := k.UnmarshalWithConf("", &haloyConfig, unmarshalConf); err != nil {
+		return config.DeployConfig{}, "", fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	return appConfig, format, nil
+	return haloyConfig, format, nil
 }
 
 var (

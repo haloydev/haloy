@@ -1,4 +1,4 @@
-package appconfigloader
+package configloader
 
 import (
 	"testing"
@@ -12,7 +12,7 @@ func TestMergeToTarget(t *testing.T) {
 	overrideReplicas := 5
 	defaultCount := 10
 
-	baseAppConfig := config.AppConfig{
+	baseDeployConfig := config.DeployConfig{
 		TargetConfig: config.TargetConfig{
 			Name: "myapp",
 			Image: &config.Image{
@@ -33,7 +33,7 @@ func TestMergeToTarget(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		appConfig       config.AppConfig
+		haloyConfig     config.DeployConfig
 		targetConfig    config.TargetConfig
 		targetName      string
 		expectedName    string
@@ -44,27 +44,27 @@ func TestMergeToTarget(t *testing.T) {
 	}{
 		{
 			name:           "empty target config inherits from base",
-			appConfig:      baseAppConfig,
+			haloyConfig:    baseDeployConfig,
 			targetConfig:   config.TargetConfig{},
 			targetName:     "test-target",
 			expectedName:   "myapp",
 			expectedServer: "default.haloy.dev",
-			expectedImage:  *baseAppConfig.Image,
+			expectedImage:  *baseDeployConfig.Image,
 		},
 		{
-			name:      "override server only",
-			appConfig: baseAppConfig,
+			name:        "override server only",
+			haloyConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Server: "override.haloy.dev",
 			},
 			targetName:     "test-target",
 			expectedName:   "myapp",
 			expectedServer: "override.haloy.dev",
-			expectedImage:  *baseAppConfig.Image,
+			expectedImage:  *baseDeployConfig.Image,
 		},
 		{
-			name:      "override image repository and tag",
-			appConfig: baseAppConfig,
+			name:        "override image repository and tag",
+			haloyConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "custom-nginx",
@@ -80,8 +80,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:      "override all fields",
-			appConfig: baseAppConfig,
+			name:        "override all fields",
+			haloyConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "apache",
@@ -106,8 +106,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:      "override with image history",
-			appConfig: baseAppConfig,
+			name:        "override with image history",
+			haloyConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					History: &config.ImageHistory{
@@ -131,8 +131,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:      "override with registry auth",
-			appConfig: baseAppConfig,
+			name:        "override with registry auth",
+			haloyConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					RegistryAuth: &config.RegistryAuth{
@@ -156,8 +156,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:      "override with domains",
-			appConfig: baseAppConfig,
+			name:        "override with domains",
+			haloyConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Domains: []config.Domain{
 					{Canonical: "prod.example.com", Aliases: []string{"www.prod.example.com"}},
@@ -168,8 +168,8 @@ func TestMergeToTarget(t *testing.T) {
 			expectedServer: "default.haloy.dev",
 		},
 		{
-			name:      "override with env vars",
-			appConfig: baseAppConfig,
+			name:        "override with env vars",
+			haloyConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Env: []config.EnvVar{
 					{Name: "ENV", ValueSource: config.ValueSource{Value: "production"}},
@@ -181,7 +181,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "target name used when no name in base or target",
-			appConfig: config.AppConfig{
+			haloyConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Image: &config.Image{
 						Repository: "nginx",
@@ -197,7 +197,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "target name overrides base name",
-			appConfig: config.AppConfig{
+			haloyConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "base-name",
 					Image: &config.Image{
@@ -216,7 +216,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "merge env with override and new item",
-			appConfig: config.AppConfig{
+			haloyConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -252,7 +252,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "merge env with all new items preserves target order",
-			appConfig: config.AppConfig{
+			haloyConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -290,7 +290,7 @@ func TestMergeToTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := MergeToTarget(tt.appConfig, tt.targetConfig, tt.targetName, "yaml")
+			result, err := MergeToTarget(tt.haloyConfig, tt.targetConfig, tt.targetName, "yaml")
 			if err != nil {
 				t.Fatalf("MergeToTarget() unexpected error = %v", err)
 			}
@@ -515,14 +515,14 @@ func TestMergeImage(t *testing.T) {
 func TestExtractTargets(t *testing.T) {
 	tests := []struct {
 		name        string
-		appConfig   config.AppConfig
+		haloyConfig config.DeployConfig
 		expectError bool
 		errMsg      string
 		expectCount int
 	}{
 		{
 			name: "single target config",
-			appConfig: config.AppConfig{
+			haloyConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -536,7 +536,7 @@ func TestExtractTargets(t *testing.T) {
 		},
 		{
 			name: "multi target config",
-			appConfig: config.AppConfig{
+			haloyConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -560,7 +560,7 @@ func TestExtractTargets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ExtractTargets(tt.appConfig, "yaml")
+			result, err := ExtractTargets(tt.haloyConfig, "yaml")
 			if err != nil {
 				t.Errorf("ExtractTargets() unexpected error = %v", err)
 			}
