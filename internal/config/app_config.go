@@ -57,6 +57,7 @@ type Preset string
 const (
 	PresetDefault  Preset = "default"
 	PresetDatabase Preset = "database"
+	PresetService  Preset = "service"
 )
 
 type DeploymentStrategy string

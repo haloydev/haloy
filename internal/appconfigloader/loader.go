@@ -275,6 +275,19 @@ func applyPreset(tc *config.TargetConfig) error {
 		}
 		tc.Protected = helpers.Ptr(true)
 
+	case config.PresetService:
+		if tc.Image.History == nil {
+			tc.Image.History = &config.ImageHistory{
+				Strategy: config.HistoryStrategyNone,
+			}
+		}
+		if tc.DeploymentStrategy == "" {
+			tc.DeploymentStrategy = config.DeploymentStrategyReplace
+		}
+		if tc.NamingStrategy == "" {
+			tc.NamingStrategy = config.NamingStrategyStatic
+		}
+
 	default:
 		return fmt.Errorf("unknown preset: '%s'", tc.Preset)
 	}
