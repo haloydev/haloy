@@ -286,6 +286,108 @@ func TestMergeToTarget(t *testing.T) {
 				{Name: "VAR_D", ValueSource: config.ValueSource{Value: "target-value-D"}}, // New, in target order
 			},
 		},
+		{
+			name: "preset service applies defaults",
+			haloyConfig: config.DeployConfig{
+				TargetConfig: config.TargetConfig{
+					Image: &config.Image{Repository: "nginx"},
+				},
+			},
+			targetConfig: config.TargetConfig{
+				Preset: config.PresetService,
+			},
+			targetName:   "service-target",
+			expectedName: "service-target",
+			expectedImage: config.Image{
+				Repository: "nginx",
+				History: &config.ImageHistory{
+					Strategy: config.HistoryStrategyNone,
+				},
+			},
+		},
+		{
+			name: "preset database applies defaults",
+			haloyConfig: config.DeployConfig{
+				TargetConfig: config.TargetConfig{
+					Image: &config.Image{Repository: "postgres"},
+				},
+			},
+			targetConfig: config.TargetConfig{
+				Preset: config.PresetDatabase,
+			},
+			targetName:   "db-target",
+			expectedName: "db-target",
+			expectedImage: config.Image{
+				Repository: "postgres",
+				History: &config.ImageHistory{
+					Strategy: config.HistoryStrategyNone,
+				},
+			},
+		},
+		{
+			name: "preset does not override explicit values",
+			haloyConfig: config.DeployConfig{
+				TargetConfig: config.TargetConfig{
+					Image: &config.Image{Repository: "nginx"},
+				},
+			},
+			targetConfig: config.TargetConfig{
+				Preset: config.PresetService,
+				Image: &config.Image{
+					History: &config.ImageHistory{
+						Strategy: config.HistoryStrategyLocal,
+					},
+				},
+			},
+			targetName:   "explicit-override",
+			expectedName: "explicit-override",
+			expectedImage: config.Image{
+				Repository: "nginx",
+				History: &config.ImageHistory{
+					Strategy: config.HistoryStrategyLocal,
+				},
+			},
+		},
+		{
+			name: "regression: single target with preset and image in base",
+			haloyConfig: config.DeployConfig{
+				TargetConfig: config.TargetConfig{
+					Preset: config.PresetService,
+					Server: "api.example.com",
+					Image:  &config.Image{Repository: "nginx"},
+				},
+			},
+			targetConfig:   config.TargetConfig{},
+			targetName:     "regression-target",
+			expectedName:   "regression-target",
+			expectedServer: "api.example.com",
+			expectedImage: config.Image{
+				Repository: "nginx",
+				History: &config.ImageHistory{
+					Strategy: config.HistoryStrategyNone,
+				},
+			},
+		},
+		{
+			name: "preset with imageKey should respect resolved image",
+			haloyConfig: config.DeployConfig{
+				Images: map[string]*config.Image{
+					"my-img": {Repository: "resolved-repo"},
+				},
+			},
+			targetConfig: config.TargetConfig{
+				Preset:   config.PresetService,
+				ImageKey: "my-img",
+			},
+			targetName:   "key-target",
+			expectedName: "key-target",
+			expectedImage: config.Image{
+				Repository: "resolved-repo",
+				History: &config.ImageHistory{
+					Strategy: config.HistoryStrategyNone,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -25,7 +25,7 @@ func (tc *TargetConfig) Validate(format string) error {
 	}
 
 	if tc.Preset != "" {
-		validPresets := []Preset{PresetDatabase}
+		validPresets := []Preset{PresetDatabase, PresetService}
 		if !slices.Contains(validPresets, tc.Preset) {
 			return fmt.Errorf("preset must be a valid preset, %s is invalid", tc.Preset)
 		}

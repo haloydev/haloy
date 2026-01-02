@@ -173,11 +173,7 @@ func MergeToTarget(haloyConfig config.DeployConfig, targetConfig config.TargetCo
 		tc.Preset = haloyConfig.Preset
 	}
 
-	if err := applyPreset(&tc); err != nil {
-		return config.TargetConfig{}, err
-	}
-
-	mergedImage, err := mergeImage(targetConfig, haloyConfig.Images, haloyConfig.Image)
+	mergedImage, err := mergeImage(tc, haloyConfig.Images, haloyConfig.Image)
 	if err != nil {
 		return config.TargetConfig{}, fmt.Errorf("failed to resolve image for target '%s': %w", targetName, err)
 	}
@@ -251,6 +247,10 @@ func MergeToTarget(haloyConfig config.DeployConfig, targetConfig config.TargetCo
 		tc.PostDeploy = haloyConfig.PostDeploy
 	}
 
+	if err := applyPreset(&tc); err != nil {
+		return config.TargetConfig{}, err
+	}
+
 	normalizeTargetConfig(&tc)
 
 	return tc, nil
@@ -262,30 +262,33 @@ func applyPreset(tc *config.TargetConfig) error {
 		// No preset, nothing to apply
 		return nil
 	case config.PresetDatabase:
-		if tc.Image.History == nil {
-			tc.Image.History = &config.ImageHistory{
-				Strategy: config.HistoryStrategyNone,
-			}
-		}
 		if tc.DeploymentStrategy == "" {
 			tc.DeploymentStrategy = config.DeploymentStrategyReplace
 		}
 		if tc.NamingStrategy == "" {
 			tc.NamingStrategy = config.NamingStrategyStatic
 		}
+
+		if tc.Image != nil && tc.Image.History == nil {
+			tc.Image.History = &config.ImageHistory{
+				Strategy: config.HistoryStrategyNone,
+			}
+		}
+
 		tc.Protected = helpers.Ptr(true)
 
 	case config.PresetService:
-		if tc.Image.History == nil {
-			tc.Image.History = &config.ImageHistory{
-				Strategy: config.HistoryStrategyNone,
-			}
-		}
 		if tc.DeploymentStrategy == "" {
 			tc.DeploymentStrategy = config.DeploymentStrategyReplace
 		}
 		if tc.NamingStrategy == "" {
 			tc.NamingStrategy = config.NamingStrategyStatic
+		}
+
+		if tc.Image != nil && tc.Image.History == nil {
+			tc.Image.History = &config.ImageHistory{
+				Strategy: config.HistoryStrategyNone,
+			}
 		}
 
 	default:
@@ -351,7 +354,7 @@ func ExtractTargets(haloyConfig config.DeployConfig, format string) (map[string]
 			extractedTargetConfigs[targetName] = mergedTargetConfig
 		}
 	} else {
-		mergedSingleTargetConfig, err := MergeToTarget(haloyConfig, config.TargetConfig{}, "", format)
+		mergedSingleTargetConfig, err := MergeToTarget(haloyConfig, haloyConfig.TargetConfig, haloyConfig.Name, format)
 		if err != nil {
 			return nil, fmt.Errorf("failed to merge config: %w", err)
 		}
