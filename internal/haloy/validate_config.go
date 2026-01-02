@@ -2,6 +2,7 @@ package haloy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -35,52 +36,52 @@ func ValidateDeployConfigCmd(configPath *string) *cobra.Command {
 				return fmt.Errorf("unable to load config file from %s: %w", *configPath, err)
 			}
 
-			errors := make([]error, 0)
+			collectedErrors := make([]error, 0)
 			if len(rawDeployConfig.Targets) > 0 {
 				for targetName, target := range rawDeployConfig.Targets {
 					mergedTargetConfig, err := configloader.MergeToTarget(rawDeployConfig, *target, targetName, format)
 					if err != nil {
-						errors = append(errors, fmt.Errorf("unable to extract target '%s': %w", targetName, err))
+						collectedErrors = append(collectedErrors, fmt.Errorf("unable to extract target '%s': %w", targetName, err))
 						continue
 					}
 
 					if err := mergedTargetConfig.Validate(rawDeployConfig.Format); err != nil {
-						errors = append(errors, fmt.Errorf("target '%s' validation failed: %w", targetName, err))
+						collectedErrors = append(collectedErrors, fmt.Errorf("target '%s' validation failed: %w", targetName, err))
 					}
 				}
 			} else {
 				mergedSingleTargetConfig, err := configloader.MergeToTarget(rawDeployConfig, config.TargetConfig{}, rawDeployConfig.Name, format)
 				if err != nil {
-					errors = append(errors, fmt.Errorf("unable to extract config: %w", err))
+					collectedErrors = append(collectedErrors, fmt.Errorf("unable to extract config: %w", err))
 				} else {
 					if err := mergedSingleTargetConfig.Validate(rawDeployConfig.Format); err != nil {
-						errors = append(errors, fmt.Errorf("configuration validation failed: %w", err))
+						collectedErrors = append(collectedErrors, err)
 					}
 				}
 			}
 
 			resolvedTargets := make(map[string]config.TargetConfig)
-			if len(errors) == 0 {
+			if len(collectedErrors) == 0 {
 				resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
 				if err != nil {
-					errors = append(errors, fmt.Errorf("unable to resolve secrets: %w", err))
+					collectedErrors = append(collectedErrors, fmt.Errorf("unable to resolve secrets: %w", err))
 				} else {
 					resolvedTargets, err = configloader.ExtractTargets(resolvedDeployConfig, format)
 					if err != nil {
-						errors = append(errors, err)
+						collectedErrors = append(collectedErrors, err)
 					}
 
 				}
 			}
 
 			// Return all errors
-			if len(errors) > 0 {
+			if len(collectedErrors) > 0 {
 				// Print all validation errors to provide complete feedback
-				for _, validationErr := range errors {
+				for _, validationErr := range collectedErrors {
 					ui.Error("%v", validationErr)
 				}
 				// Return the first error to trigger non-zero exit code
-				return errors[0]
+				return errors.New("validation failed")
 			}
 
 			if showResolvedConfigFlag {

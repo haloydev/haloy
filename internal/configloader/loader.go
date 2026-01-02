@@ -291,8 +291,6 @@ func applyPreset(tc *config.TargetConfig) error {
 			}
 		}
 
-	default:
-		return fmt.Errorf("unknown preset: '%s'", tc.Preset)
 	}
 	return nil
 }
