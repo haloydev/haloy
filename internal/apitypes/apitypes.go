@@ -35,10 +35,6 @@ type AppStatusResponse struct {
 	Domains      []config.Domain `json:"domains"`
 }
 
-type StopAppResponse struct {
-	Message string `json:"message,omitempty"`
-}
-
 type ImageUploadResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`

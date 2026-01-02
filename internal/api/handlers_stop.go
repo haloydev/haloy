@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/logging"
 )
@@ -50,12 +49,6 @@ func (s *APIServer) handleStopApp() http.HandlerFunc {
 			logger.Info("Successfully stopped containers", "app", appName, "stopped_count", len(stoppedIDs), "container_ids", stoppedIDs)
 		}()
 
-		response := apitypes.StopAppResponse{
-			Message: "Stop operation started. Use 'haloy logs' to monitor progress.",
-		}
-
-		if err := encodeJSON(w, http.StatusAccepted, response); err != nil {
-			logger.Error("Failed to write response", "error", err)
-		}
+		w.WriteHeader(http.StatusAccepted)
 	}
 }

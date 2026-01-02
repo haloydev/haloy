@@ -3,9 +3,9 @@ package haloy
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/haloydev/haloy/internal/apiclient"
-	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/ui"
@@ -49,7 +49,22 @@ func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				})
 			}
 
-			return g.Wait()
+			if err := g.Wait(); err != nil {
+				return err
+			}
+
+			infoMessage := "Stop operation started."
+			if flags.all {
+				infoMessage = infoMessage + " Use 'haloy logs --all' to monitor pogress"
+			}
+
+			if len(flags.targets) > 0 {
+				infoMessage = infoMessage + fmt.Sprintf(" Use 'haloy logs -t %s'", strings.Join(flags.targets, ","))
+			}
+
+			ui.Info("%s", infoMessage)
+
+			return nil
 		},
 	}
 
@@ -81,11 +96,9 @@ func stopApp(ctx context.Context, targetConfig *config.TargetConfig, targetServe
 		path += "?remove-containers=true"
 	}
 
-	var response apitypes.StopAppResponse
-	if err := api.Post(ctx, path, nil, &response); err != nil {
+	if err := api.Post(ctx, path, nil, nil); err != nil {
 		return &PrefixedError{Err: fmt.Errorf("failed to stop app: %w", err), Prefix: prefix}
 	}
 
-	ui.Success("%s", response.Message)
 	return nil
 }
