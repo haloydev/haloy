@@ -82,6 +82,12 @@ func (tc *TargetConfig) Validate(format string) error {
 		}
 	}
 
+	if tc.Port != "" {
+		if err := helpers.ValidatePort(tc.Port.String()); err != nil {
+			return fmt.Errorf("invalid %s: %w", GetFieldNameForFormat(TargetConfig{}, "Port", format), err)
+		}
+	}
+
 	for _, volume := range tc.Volumes {
 		// Expected format: /host/path:/container/path[:options] or volume-name:/container/path[:options]
 		parts := strings.Split(volume, ":")

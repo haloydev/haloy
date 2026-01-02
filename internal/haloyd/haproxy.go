@@ -109,6 +109,8 @@ func (hpm *HAProxyManager) generateConfig(deployments map[string]Deployment) (by
 		backends += "backend haloy_api\n"
 		backends += fmt.Sprintf("%smode http\n", indent)
 		backends += fmt.Sprintf("%s# Forward to the haloyd API server\n", indent)
+		backends += fmt.Sprintf("%s# Extended timeout for tunnel connections (e.g., database tunneling)\n", indent)
+		backends += fmt.Sprintf("%stimeout tunnel 1h\n", indent)
 		backends += fmt.Sprintf("%shttp-request set-header X-Forwarded-For %%[src]\n", indent)
 		backends += fmt.Sprintf("%shttp-request set-header X-Forwarded-Proto https\n", indent)
 		backends += fmt.Sprintf("%shttp-request set-header X-Forwarded-Port %%[dst_port]\n", indent)

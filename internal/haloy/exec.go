@@ -55,7 +55,6 @@ Examples:
 				return fmt.Errorf("command required after '--' separator")
 			}
 
-			// Validate mutually exclusive flags
 			if allContainers && containerID != "" {
 				return fmt.Errorf("cannot specify both --all-containers and --container")
 			}
@@ -65,7 +64,12 @@ Examples:
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			if err != nil {
+				return fmt.Errorf("unable to resolve secrets: %w", err)
+			}
+
+			targets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
 			if err != nil {
 				return err
 			}

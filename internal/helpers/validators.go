@@ -3,6 +3,7 @@ package helpers
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -88,5 +89,17 @@ func validateTLD(tld string) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidatePort checks if a port string is a valid port number (1-65535)
+func ValidatePort(port string) error {
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("must be a number")
+	}
+	if portNum < 1 || portNum > 65535 {
+		return fmt.Errorf("must be between 1 and 65535")
+	}
 	return nil
 }
