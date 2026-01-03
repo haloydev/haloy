@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/haloydev/haloy/internal/config"
@@ -27,41 +28,29 @@ type Deployment struct {
 	Instances []DeploymentInstance
 }
 
-type ContainerExclusionReason int
-
-const (
-	ExclusionReasonInspectionFailed ContainerExclusionReason = iota
-	ExclusionReasonLabelParsingFailed
-	ExclusionReasonNoDomains
-	ExclusionReasonNotDefaultNetwork
-	ExclusionReasonIPExtractionFailed
-	ExclusionReasonPortMismatch
-)
-
-func (r ContainerExclusionReason) String() string {
-	switch r {
-	case ExclusionReasonInspectionFailed:
-		return "container inspection failed"
-	case ExclusionReasonLabelParsingFailed:
-		return "label parsing failed"
-	case ExclusionReasonNoDomains:
-		return "no domains configured"
-	case ExclusionReasonNotDefaultNetwork:
-		return "not on haloy docker network"
-	case ExclusionReasonIPExtractionFailed:
-		return "IP extraction failed"
-	case ExclusionReasonPortMismatch:
-		return "label port does not match exposed container ports"
-	default:
-		return "unknown reason"
-	}
+// DiscoveredContainer represents a container found with haloy labels
+// but not yet validated as healthy/routable.
+type DiscoveredContainer struct {
+	ContainerID   string
+	Labels        *config.ContainerLabels
+	ContainerInfo container.InspectResponse
+	Port          string
 }
 
-type ExcludedContainerInfo struct {
+// HealthyContainer is a container that passed health checks and is ready to receive traffic.
+type HealthyContainer struct {
 	ContainerID string
-	Reason      ContainerExclusionReason
-	Message     string
 	Labels      *config.ContainerLabels
+	IP          string
+	Port        string
+}
+
+// FailedContainer represents a container that failed discovery or health check.
+type FailedContainer struct {
+	ContainerID string
+	Labels      *config.ContainerLabels // May be nil if label parsing failed
+	Reason      string                  // Human-readable failure reason
+	Err         error                   // Underlying error
 }
 
 type DeploymentManager struct {
@@ -81,88 +70,70 @@ func NewDeploymentManager(cli *client.Client, haloydConfig *config.HaloydConfig)
 	}
 }
 
-// BuildDeployments gets running Docker containers with the app label and builds a map of current deployments in the system.
-// It compares the new deployment state with the previous state to determine if any changes have occurred (additions, removals, or updates to deployments).
-// Returns true if the deployment state has changed, along with any error encountered.
-func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.Logger) (hasChanged bool, excludedContainers []ExcludedContainerInfo, err error) {
-	newDeployments := make(map[string]Deployment)
+// DiscoverContainers finds all containers with haloy labels and validates their basic configuration.
+// It returns containers that are eligible for health checking, and containers that failed validation.
+func (dm *DeploymentManager) DiscoverContainers(ctx context.Context, logger *slog.Logger) (discovered []DiscoveredContainer, failed []FailedContainer, err error) {
 	containers, err := docker.GetAppContainers(ctx, dm.cli, false, "")
 	if err != nil {
-		return hasChanged, excludedContainers, fmt.Errorf("failed to get containers: %w", err)
+		return nil, nil, fmt.Errorf("failed to get containers: %w", err)
 	}
 
 	for _, containerSummary := range containers {
-		container, err := dm.cli.ContainerInspect(ctx, containerSummary.ID)
+		containerInfo, err := dm.cli.ContainerInspect(ctx, containerSummary.ID)
 		if err != nil {
-			logger.Error("Failed to inspect container", "container_id", containerSummary.ID, "error", err)
-			excludedContainers = append(excludedContainers,
-				ExcludedContainerInfo{
-					ContainerID: containerSummary.ID,
-					Reason:      ExclusionReasonInspectionFailed,
-					Message:     err.Error(),
-					Labels:      nil,
-				})
+			logger.Debug("Failed to inspect container", "container_id", containerSummary.ID, "error", err)
+			failed = append(failed, FailedContainer{
+				ContainerID: containerSummary.ID,
+				Labels:      nil,
+				Reason:      "container inspection failed",
+				Err:         err,
+			})
 			continue
 		}
 
-		labels, err := config.ParseContainerLabels(container.Config.Labels)
+		labels, err := config.ParseContainerLabels(containerInfo.Config.Labels)
 		if err != nil {
-			logger.Error("Error parsing labels for container", "container_id", container.ID, "error", err)
-			excludedContainers = append(excludedContainers,
-				ExcludedContainerInfo{
-					ContainerID: container.ID,
-					Reason:      ExclusionReasonLabelParsingFailed,
-					Message:     err.Error(),
-					Labels:      nil,
-				})
+			logger.Debug("Error parsing labels for container", "container_id", containerInfo.ID, "error", err)
+			failed = append(failed, FailedContainer{
+				ContainerID: containerInfo.ID,
+				Labels:      nil,
+				Reason:      "label parsing failed",
+				Err:         err,
+			})
 			continue
 		}
 
-		_, isOnNetwork := container.NetworkSettings.Networks[constants.DockerNetwork]
+		// Check if container is on the haloy network
+		_, isOnNetwork := containerInfo.NetworkSettings.Networks[constants.DockerNetwork]
 		if !isOnNetwork {
-			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
-				ContainerID: container.ID,
-				Reason:      ExclusionReasonNotDefaultNetwork,
-				Message:     "",
-				Labels:      labels,
-			})
+			logger.Debug("Container not on haloy network, skipping",
+				"container_id", helpers.SafeIDPrefix(containerInfo.ID),
+				"app", labels.AppName)
 			continue
 		}
 
+		// Validate port configuration
 		labelPortString := labels.Port.String()
-		if !validateContainerPort(container.Config.ExposedPorts, labelPortString) {
-			exposedPortsStr := exposedPortsAsString(container.Config.ExposedPorts)
-			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
-				ContainerID: container.ID,
-				Reason:      ExclusionReasonPortMismatch,
-				Message:     fmt.Sprintf("configured port %s does not match exposed ports %s", labelPortString, exposedPortsStr),
+		if !validateContainerPort(containerInfo.Config.ExposedPorts, labelPortString) {
+			exposedPortsStr := exposedPortsAsString(containerInfo.Config.ExposedPorts)
+			failed = append(failed, FailedContainer{
+				ContainerID: containerInfo.ID,
 				Labels:      labels,
+				Reason:      "port mismatch",
+				Err:         fmt.Errorf("configured port %s does not match exposed ports %s", labelPortString, exposedPortsStr),
 			})
 			continue
 		}
 
+		// Check domains are configured
 		if len(labels.Domains) == 0 {
-			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
-				ContainerID: container.ID,
-				Reason:      ExclusionReasonNoDomains,
-				Message:     "",
-				Labels:      labels,
-			})
+			logger.Debug("Container has no domains configured, skipping",
+				"container_id", helpers.SafeIDPrefix(containerInfo.ID),
+				"app", labels.AppName)
 			continue
 		}
 
-		ip, err := docker.ContainerNetworkIP(container, constants.DockerNetwork)
-		if err != nil {
-			logger.Error("Error getting IP for container", "container_id", helpers.SafeIDPrefix(container.ID), "error", err)
-			excludedContainers = append(excludedContainers, ExcludedContainerInfo{
-				ContainerID: container.ID,
-				Reason:      ExclusionReasonIPExtractionFailed,
-				Message:     err.Error(),
-				Labels:      labels,
-			})
-			continue
-		}
-
+		// Determine port
 		var port string
 		if labels.Port != "" {
 			port = labels.Port.String()
@@ -170,21 +141,78 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 			port = constants.DefaultContainerPort
 		}
 
-		instance := DeploymentInstance{ContainerID: container.ID, IP: ip, Port: port}
+		discovered = append(discovered, DiscoveredContainer{
+			ContainerID:   containerInfo.ID,
+			Labels:        labels,
+			ContainerInfo: containerInfo,
+			Port:          port,
+		})
+	}
 
-		if deployment, exists := newDeployments[labels.AppName]; exists {
-			// There is a appName match, check if the deployment ID matches.
-			if deployment.Labels.DeploymentID == labels.DeploymentID {
+	return discovered, failed, nil
+}
+
+// HealthCheckContainers performs health checks on all discovered containers.
+// Returns healthy containers (with IPs) and failed containers with detailed error information.
+func (dm *DeploymentManager) HealthCheckContainers(ctx context.Context, logger *slog.Logger, discovered []DiscoveredContainer) (healthy []HealthyContainer, failed []FailedContainer) {
+	for _, container := range discovered {
+		result := docker.HealthCheckContainer(ctx, dm.cli, logger, container.ContainerID, container.ContainerInfo)
+		if result.Err != nil {
+			logger.Debug("Container failed health check",
+				"container_id", helpers.SafeIDPrefix(container.ContainerID),
+				"app", container.Labels.AppName,
+				"error", result.Err)
+			failed = append(failed, FailedContainer{
+				ContainerID: container.ContainerID,
+				Labels:      container.Labels,
+				Reason:      "health check failed",
+				Err:         result.Err,
+			})
+			continue
+		}
+
+		healthy = append(healthy, HealthyContainer{
+			ContainerID: container.ContainerID,
+			Labels:      container.Labels,
+			IP:          result.IP,
+			Port:        container.Port,
+		})
+	}
+
+	return healthy, failed
+}
+
+// UpdateDeployments builds the deployment map from healthy containers and compares with previous state.
+// Returns whether the deployment state has changed.
+func (dm *DeploymentManager) UpdateDeployments(healthy []HealthyContainer) (hasChanged bool) {
+	newDeployments := make(map[string]Deployment)
+
+	for _, container := range healthy {
+		instance := DeploymentInstance{
+			ContainerID: container.ContainerID,
+			IP:          container.IP,
+			Port:        container.Port,
+		}
+
+		if deployment, exists := newDeployments[container.Labels.AppName]; exists {
+			// There is an appName match, check if the deployment ID matches.
+			if deployment.Labels.DeploymentID == container.Labels.DeploymentID {
 				deployment.Instances = append(deployment.Instances, instance)
-				newDeployments[labels.AppName] = deployment
+				newDeployments[container.Labels.AppName] = deployment
 			} else {
 				// Replace the deployment if the new one has a higher deployment ID
-				if deployment.Labels.DeploymentID < labels.DeploymentID {
-					newDeployments[labels.AppName] = Deployment{Labels: labels, Instances: []DeploymentInstance{instance}}
+				if deployment.Labels.DeploymentID < container.Labels.DeploymentID {
+					newDeployments[container.Labels.AppName] = Deployment{
+						Labels:    container.Labels,
+						Instances: []DeploymentInstance{instance},
+					}
 				}
 			}
 		} else {
-			newDeployments[labels.AppName] = Deployment{Labels: labels, Instances: []DeploymentInstance{instance}}
+			newDeployments[container.Labels.AppName] = Deployment{
+				Labels:    container.Labels,
+				Instances: []DeploymentInstance{instance},
+			}
 		}
 	}
 
@@ -200,26 +228,7 @@ func (dm *DeploymentManager) BuildDeployments(ctx context.Context, logger *slog.
 		len(compareResult.UpdatedDeployments) > 0
 
 	dm.compareResult = compareResult
-	return hasChanged, excludedContainers, nil
-}
-
-func (dm *DeploymentManager) HealthCheckNewContainers(ctx context.Context, logger *slog.Logger) (checked []Deployment, failedContainerIDs []string) {
-	for _, deployment := range dm.compareResult.AddedDeployments {
-		checked = append(checked, deployment)
-	}
-
-	for _, deployment := range dm.compareResult.UpdatedDeployments {
-		checked = append(checked, deployment)
-	}
-
-	for _, deployment := range checked {
-		for _, instance := range deployment.Instances {
-			if err := docker.HealthCheckContainer(ctx, dm.cli, logger, instance.ContainerID); err != nil {
-				failedContainerIDs = append(failedContainerIDs, instance.ContainerID)
-			}
-		}
-	}
-	return checked, failedContainerIDs
+	return hasChanged
 }
 
 func (dm *DeploymentManager) Deployments() map[string]Deployment {
@@ -367,7 +376,7 @@ func validateContainerPort(exposedPorts nat.PortSet, labelPort string) bool {
 	return false
 }
 
-// getExposedPortsAsString returns a string representation of exposed ports for logging
+// exposedPortsAsString returns a string representation of exposed ports for logging
 func exposedPortsAsString(exposedPorts nat.PortSet) string {
 	if len(exposedPorts) == 0 {
 		return "none"

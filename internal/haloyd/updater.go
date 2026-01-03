@@ -89,31 +89,54 @@ func (r TriggerReason) String() string {
 	}
 }
 
-func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason TriggerReason, app *TriggeredByApp) error {
-	// Build Deployments and check if anything has changed (Thread-safe)
-	deploymentsHasChanged, excludedContainers, err := u.deploymentManager.BuildDeployments(ctx, logger)
+// UpdateResult contains information about the update operation.
+type UpdateResult struct {
+	// FailedContainers contains containers that failed discovery or health check.
+	// This is used by the caller to determine if a triggered app deployment failed.
+	FailedContainers []FailedContainer
+}
+
+func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason TriggerReason, app *TriggeredByApp) (UpdateResult, error) {
+	result := UpdateResult{}
+
+	discovered, discoveryFailed, err := u.deploymentManager.DiscoverContainers(ctx, logger)
 	if err != nil {
-		return fmt.Errorf("failed to build deployments: %w", err)
+		return result, fmt.Errorf("failed to discover containers: %w", err)
 	}
 
-	logExcludedContainerReasons(excludedContainers, logger)
+	logFailedContainers(discoveryFailed, logger, "discovery")
+
+	healthy, healthCheckFailed := u.deploymentManager.HealthCheckContainers(ctx, logger, discovered)
+
+	logFailedContainers(healthCheckFailed, logger, "health check")
+
+	result.FailedContainers = append(result.FailedContainers, discoveryFailed...)
+	result.FailedContainers = append(result.FailedContainers, healthCheckFailed...)
+
+	// Log warnings for partial replica failures (some healthy, some failed for same app)
+	logPartialReplicaFailures(healthy, healthCheckFailed, logger)
+
+	// Step 3: Update deployments map from healthy containers
+	deploymentsHasChanged := u.deploymentManager.UpdateDeployments(healthy)
 
 	// Skip further processing if no changes were detected and the reason is not an initial update.
 	// We'll still want to continue on the initial update to ensure the API domain is set up correctly.
 	if !deploymentsHasChanged && reason != TriggerReasonInitial {
 		logger.Debug("Updater: No changes detected in deployments, skipping further processing")
-		return nil
+		return result, nil
 	}
 
-	checkedDeployments, failedContainerIDs := u.deploymentManager.HealthCheckNewContainers(ctx, logger)
-	if len(failedContainerIDs) > 0 {
-		return fmt.Errorf("deployment aborted: failed to perform health check on containers (%s)", strings.Join(failedContainerIDs, ", "))
-	} else {
-		apps := make([]string, 0, len(checkedDeployments))
-		for _, dep := range checkedDeployments {
-			apps = append(apps, dep.Labels.AppName)
+	// Log successful health checks
+	if len(healthy) > 0 {
+		apps := make(map[string]struct{})
+		for _, c := range healthy {
+			apps[c.Labels.AppName] = struct{}{}
 		}
-		logger.Info("Health check completed", "apps", strings.Join(apps, ", "))
+		appNames := make([]string, 0, len(apps))
+		for appName := range apps {
+			appNames = append(appNames, appName)
+		}
+		logger.Info("Health check completed", "apps", strings.Join(appNames, ", "))
 	}
 
 	deployments := u.deploymentManager.Deployments()
@@ -130,7 +153,7 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	// Certificates refresh logic based on trigger reason.
 	certDomains, err := u.deploymentManager.GetCertificateDomains()
 	if err != nil {
-		return fmt.Errorf("failed to get certificate domains: %w", err)
+		return result, fmt.Errorf("failed to get certificate domains: %w", err)
 	}
 
 	// If an app is provided we refresh the certs synchronously so we can log the result.
@@ -149,12 +172,12 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 			}
 		}
 		if err := u.certManager.RefreshSync(logger, appCertDomains); err != nil {
-			return fmt.Errorf("failed to refresh certificates for app %s: %w", app.appName, err)
+			return result, fmt.Errorf("failed to refresh certificates for app %s: %w", app.appName, err)
 		}
 	} else if reason == TriggerReasonInitial {
 		// Refresh synchronously on initial update so we can log api domain setup.
 		if err := u.certManager.RefreshSync(logger, certDomains); err != nil {
-			return err
+			return result, err
 		}
 	} else {
 		u.certManager.Refresh(logger, certDomains)
@@ -166,7 +189,7 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 
 	// Apply the HAProxy configuration
 	if err := u.haproxyManager.ApplyConfig(ctx, logger, deployments); err != nil {
-		return fmt.Errorf("failed to apply HAProxy config for app: %w", err)
+		return result, fmt.Errorf("failed to apply HAProxy config for app: %w", err)
 	}
 	logger.Info("HAProxy configuration applied successfully")
 
@@ -178,42 +201,70 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		defer cancelStop()
 		_, err := docker.StopContainers(stopCtx, u.cli, logger, app.appName, app.deploymentID)
 		if err != nil {
-			return fmt.Errorf("failed to stop old containers: %w", err)
+			return result, fmt.Errorf("failed to stop old containers: %w", err)
 		}
 		_, err = docker.RemoveContainers(stopCtx, u.cli, logger, app.appName, app.deploymentID)
 		if err != nil {
-			return fmt.Errorf("failed to remove old containers: %w", err)
+			return result, fmt.Errorf("failed to remove old containers: %w", err)
 		}
 	}
 
-	return nil
+	return result, nil
 }
 
-func logExcludedContainerReasons(containers []ExcludedContainerInfo, logger *slog.Logger) {
-	if len(containers) == 0 {
-		return
-	}
-	for _, excluded := range containers {
-		switch excluded.Reason {
-		case ExclusionReasonInspectionFailed, ExclusionReasonLabelParsingFailed, ExclusionReasonIPExtractionFailed, ExclusionReasonPortMismatch:
-			if excluded.Labels != nil {
-				logger.Info(fmt.Sprintf("Failed to process container: %v", excluded.Message),
-					"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
-					"app", excluded.Labels.AppName,
-					"deployment_id", excluded.Labels.DeploymentID,
-					"reason", excluded.Reason.String())
-			} else {
-				logger.Info("Container failed to start - no label info available",
-					"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
-					"reason", excluded.Reason.String())
-			}
-		case ExclusionReasonNoDomains, ExclusionReasonNotDefaultNetwork:
-			logger.Debug("Container excluded from further processing",
-				"container_id", helpers.SafeIDPrefix(excluded.ContainerID),
-				"reason", excluded.Reason.String(),
-				"app", excluded.Labels.AppName)
+// logFailedContainers logs warnings about containers that failed during a specific phase.
+// The final deployment success/failure is logged by the caller (haloyd.go).
+func logFailedContainers(failed []FailedContainer, logger *slog.Logger, phase string) {
+	for _, f := range failed {
+		if f.Labels != nil {
+			logger.Warn(fmt.Sprintf("Container failed %s: %s", phase, f.Reason),
+				"container_id", helpers.SafeIDPrefix(f.ContainerID),
+				"app", f.Labels.AppName,
+				"deployment_id", f.Labels.DeploymentID,
+				"error", f.Err)
+		} else {
+			logger.Warn(fmt.Sprintf("Container failed %s: %s", phase, f.Reason),
+				"container_id", helpers.SafeIDPrefix(f.ContainerID),
+				"error", f.Err)
 		}
 	}
+}
+
+// logPartialReplicaFailures logs warnings when some replicas of an app are healthy but others failed.
+func logPartialReplicaFailures(healthy []HealthyContainer, failed []FailedContainer, logger *slog.Logger) {
+	// Build map of healthy apps
+	healthyApps := make(map[string]int)
+	for _, c := range healthy {
+		healthyApps[c.Labels.AppName]++
+	}
+
+	// Check for failed containers that have healthy siblings
+	failedApps := make(map[string]int)
+	for _, f := range failed {
+		if f.Labels != nil {
+			failedApps[f.Labels.AppName]++
+		}
+	}
+
+	for appName, failedCount := range failedApps {
+		if healthyCount, hasHealthy := healthyApps[appName]; hasHealthy {
+			logger.Warn("Partial replica failure: some containers failed health check but deployment continues with healthy instances",
+				"app", appName,
+				"healthy_count", healthyCount,
+				"failed_count", failedCount)
+		}
+	}
+}
+
+// GetAppFailures returns failures for a specific app from the update result.
+func (r *UpdateResult) GetAppFailures(appName string) []FailedContainer {
+	var failures []FailedContainer
+	for _, f := range r.FailedContainers {
+		if f.Labels != nil && f.Labels.AppName == appName {
+			failures = append(failures, f)
+		}
+	}
+	return failures
 }
 
 // waitForACMERouting waits for HAProxy to be accepting HTTP connections so that

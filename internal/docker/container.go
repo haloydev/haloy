@@ -228,6 +228,12 @@ type RemoveContainersResult struct {
 	DeploymentID string
 }
 
+// HealthCheckResult contains the result of a container health check.
+type HealthCheckResult struct {
+	IP  string // Container IP address on the haloy network (only set on success)
+	Err error  // nil if healthy
+}
+
 func RemoveContainers(ctx context.Context, cli *client.Client, logger *slog.Logger, appName, ignoreDeploymentID string) (removedIDs []string, err error) {
 	containerList, err := GetAppContainers(ctx, cli, true, appName)
 	if err != nil {
@@ -255,63 +261,69 @@ func RemoveContainers(ctx context.Context, cli *client.Client, logger *slog.Logg
 	return removedIDs, nil
 }
 
-func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.Logger, containerID string, initialWaitTime ...time.Duration) error {
-	// Check if container is running - wait up to 30 seconds for it to start
-	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+// HealthCheckContainer performs health checks on a container and returns its IP address on success.
+// It accepts a pre-fetched container.InspectResponse but will re-inspect if needed.
+// The function checks:
+// 1. Container is running (and stable, not in restart loop)
+// 2. Docker health status (if configured)
+// 3. HTTP health check endpoint (if no Docker healthcheck)
+// 4. Container has a valid IP on the haloy network
+func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.Logger, containerID string, containerInfo container.InspectResponse) HealthCheckResult {
+	// Re-inspect container to get fresh state (the passed containerInfo may be stale)
+	freshInfo, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return HealthCheckResult{Err: fmt.Errorf("failed to inspect container: %w", err)}
+	}
+	containerInfo = freshInfo
 
-	var containerInfo container.InspectResponse
-	var err error
-
-	for {
-		containerInfo, err = cli.ContainerInspect(startCtx, containerID)
-		if err != nil {
-			return fmt.Errorf("failed to inspect container %s: %w", helpers.SafeIDPrefix(containerID), err)
-		}
-
-		if containerInfo.State.Running {
-			break
-		}
-
-		select {
-		case <-startCtx.Done():
-			return fmt.Errorf("timed out waiting for container %s to start", helpers.SafeIDPrefix(containerID))
-		case <-time.After(500 * time.Millisecond):
-		}
+	// Check if container is running
+	if containerInfo.State == nil {
+		return HealthCheckResult{Err: fmt.Errorf("container state is nil")}
 	}
 
-	if len(initialWaitTime) > 0 && initialWaitTime[0] > 0 {
-		waitTime := initialWaitTime[0]
-
-		waitTimer := time.NewTimer(waitTime)
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context canceled during initial wait period")
-		case <-waitTimer.C:
-		}
+	// Check for restarting state - this indicates the container is crash-looping
+	if containerInfo.State.Restarting {
+		exitCode := containerInfo.State.ExitCode
+		return HealthCheckResult{Err: fmt.Errorf("container is restarting (exit code: %d) - check container logs for details", exitCode)}
 	}
 
+	if !containerInfo.State.Running {
+		exitCode := containerInfo.State.ExitCode
+		return HealthCheckResult{Err: fmt.Errorf("container is not running (status: %s, exit code: %d)", containerInfo.State.Status, exitCode)}
+	}
+
+	// Get the container's IP address early - we need it for health checks and as the result
+	targetIP, err := ContainerNetworkIP(containerInfo, constants.DockerNetwork)
+	if err != nil {
+		return HealthCheckResult{Err: fmt.Errorf("failed to get container IP address: %w", err)}
+	}
+
+	// Check Docker's built-in health status if available
 	if containerInfo.State.Health != nil {
 		if containerInfo.State.Health.Status == "healthy" {
-			return nil
+			logger.Debug("Container is healthy according to Docker healthcheck", "container_id", helpers.SafeIDPrefix(containerID))
+			return HealthCheckResult{IP: targetIP}
 		}
 
 		if containerInfo.State.Health.Status == "starting" {
 			healthCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
+
+			var latestInfo container.InspectResponse
 			for {
-				containerInfo, err = cli.ContainerInspect(healthCtx, containerID)
+				latestInfo, err = cli.ContainerInspect(healthCtx, containerID)
 				if err != nil {
-					return fmt.Errorf("failed to re-inspect container: %w", err)
+					return HealthCheckResult{Err: fmt.Errorf("failed to re-inspect container: %w", err)}
 				}
 
-				if containerInfo.State.Health.Status != "starting" {
+				if latestInfo.State.Health.Status != "starting" {
+					containerInfo = latestInfo
 					break
 				}
 
 				select {
 				case <-healthCtx.Done():
-					return fmt.Errorf("timed out waiting for container health check to complete")
+					return HealthCheckResult{Err: fmt.Errorf("timed out waiting for container health check to complete")}
 				case <-time.After(1 * time.Second):
 				}
 			}
@@ -320,36 +332,32 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 		switch containerInfo.State.Health.Status {
 		case "healthy":
 			logger.Debug("Container is healthy according to Docker healthcheck", "container_id", helpers.SafeIDPrefix(containerID))
-			return nil
+			return HealthCheckResult{IP: targetIP}
 		case "starting":
 			logger.Info("Container is still starting, falling back to manual health check", "container_id", helpers.SafeIDPrefix(containerID))
 		case "unhealthy":
 			if len(containerInfo.State.Health.Log) > 0 {
 				lastLog := containerInfo.State.Health.Log[len(containerInfo.State.Health.Log)-1]
-				return fmt.Errorf("container %s is unhealthy: %s", helpers.SafeIDPrefix(containerID), lastLog.Output)
+				return HealthCheckResult{Err: fmt.Errorf("container is unhealthy: %s", lastLog.Output)}
 			}
-			return fmt.Errorf("container %s is unhealthy according to Docker healthcheck", helpers.SafeIDPrefix(containerID))
+			return HealthCheckResult{Err: fmt.Errorf("container is unhealthy according to Docker healthcheck")}
 		default:
-			return fmt.Errorf("container %s health status unknown: %s", helpers.SafeIDPrefix(containerID), containerInfo.State.Health.Status)
+			return HealthCheckResult{Err: fmt.Errorf("container health status unknown: %s", containerInfo.State.Health.Status)}
 		}
 	}
 
+	// No Docker healthcheck configured, perform manual HTTP health check
 	labels, err := config.ParseContainerLabels(containerInfo.Config.Labels)
 	if err != nil {
-		return fmt.Errorf("failed to parse container labels: %w", err)
+		return HealthCheckResult{Err: fmt.Errorf("failed to parse container labels: %w", err)}
 	}
 
 	if labels.Port == "" {
-		return fmt.Errorf("container %s has no port label set", helpers.SafeIDPrefix(containerID))
+		return HealthCheckResult{Err: fmt.Errorf("container has no port label set")}
 	}
 
 	if labels.HealthCheckPath == "" {
-		return fmt.Errorf("container %s has no health check path set", helpers.SafeIDPrefix(containerID))
-	}
-
-	targetIP, err := ContainerNetworkIP(containerInfo, constants.DockerNetwork)
-	if err != nil {
-		return fmt.Errorf("failed to get container IP address: %w", err)
+		return HealthCheckResult{Err: fmt.Errorf("container has no health check path set")}
 	}
 
 	healthCheckURL := fmt.Sprintf("http://%s:%s%s", targetIP, labels.Port, labels.HealthCheckPath)
@@ -369,7 +377,7 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 
 		req, err := http.NewRequestWithContext(ctx, "GET", healthCheckURL, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create health check request: %w", err)
+			return HealthCheckResult{Err: fmt.Errorf("failed to create health check request: %w", err)}
 		}
 
 		resp, err := httpClient.Do(req)
@@ -377,17 +385,17 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 			logger.Warn("Health check attempt failed", "error", err)
 			continue
 		}
-		defer resp.Body.Close()
+		resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return nil
+			return HealthCheckResult{IP: targetIP}
 		}
 
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		logger.Warn("Health check returned error status", "status_code", resp.StatusCode, "response", string(bodyBytes))
 	}
 
-	return fmt.Errorf("container %s failed health check after %d attempts", helpers.SafeIDPrefix(containerID), maxRetries)
+	return HealthCheckResult{Err: fmt.Errorf("container failed health check after %d attempts", maxRetries)}
 }
 
 // GetAppContainers returns a slice of container summaries filtered by labels.

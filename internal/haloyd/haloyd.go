@@ -133,7 +133,7 @@ func Run(debug bool) {
 	}
 
 	updater := NewUpdater(updaterConfig)
-	if err := updater.Update(ctx, logger, TriggerReasonInitial, nil); err != nil {
+	if _, err := updater.Update(ctx, logger, TriggerReasonInitial, nil); err != nil {
 		logger.Error("Initial update failed", "error", err)
 	}
 
@@ -183,7 +183,8 @@ func Run(debug bool) {
 					return
 				}
 
-				if err := updater.Update(updateCtx, deploymentLogger, TriggerReasonAppUpdated, app); err != nil {
+				result, err := updater.Update(updateCtx, deploymentLogger, TriggerReasonAppUpdated, app)
+				if err != nil {
 					logging.LogDeploymentFailed(deploymentLogger, de.DeploymentID, de.AppName,
 						"Deployment failed", err)
 					return
@@ -191,9 +192,48 @@ func Run(debug bool) {
 
 				// Start event indicates that this is a new deployment and we'll signal the logger that the deployment is done.
 				if de.CapturedStartEvent {
-					canonicalDomains := make([]string, len(de.Domains))
-					for i, domain := range de.Domains {
-						canonicalDomains[i] = domain.Canonical
+					// Check if the triggering app had any failures
+					appFailures := result.GetAppFailures(de.AppName)
+
+					// Check if there are any healthy instances for this app
+					deployments := updater.deploymentManager.Deployments()
+					appDeployment, appHasHealthyInstances := deployments[de.AppName]
+
+					if len(appFailures) > 0 && !appHasHealthyInstances {
+						// All instances failed - clean up failed containers and report deployment failure
+						cleanupCtx, cleanupCancel := context.WithTimeout(ctx, 2*time.Minute)
+						defer cleanupCancel()
+
+						// Stop and remove all containers for this app (including the failed ones)
+						if _, err := docker.StopContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
+							deploymentLogger.Warn("Failed to stop containers during cleanup", "error", err)
+						}
+						if _, err := docker.RemoveContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
+							deploymentLogger.Warn("Failed to remove containers during cleanup", "error", err)
+						}
+
+						// Report deployment failure
+						var failureReasons []string
+						for _, f := range appFailures {
+							failureReasons = append(failureReasons, fmt.Sprintf("%s: %v", f.Reason, f.Err))
+						}
+						logging.LogDeploymentFailed(deploymentLogger, de.DeploymentID, de.AppName,
+							"Deployment failed", fmt.Errorf("%s", strings.Join(failureReasons, "; ")))
+						return
+					}
+
+					// Success: either no failures, or partial failure with some healthy instances
+					canonicalDomains := make([]string, 0, len(de.Domains))
+					if appHasHealthyInstances {
+						// Use domains from the actual deployment (may differ if some replicas failed)
+						for _, domain := range appDeployment.Labels.Domains {
+							canonicalDomains = append(canonicalDomains, domain.Canonical)
+						}
+					} else {
+						// Fallback to domains from the event
+						for _, domain := range de.Domains {
+							canonicalDomains = append(canonicalDomains, domain.Canonical)
+						}
 					}
 					logging.LogDeploymentComplete(deploymentLogger, canonicalDomains, de.DeploymentID, de.AppName,
 						fmt.Sprintf("Successfully deployed %s", de.AppName))
@@ -229,7 +269,7 @@ func Run(debug bool) {
 				deploymentCtx, cancelDeployment := context.WithCancel(ctx)
 				defer cancelDeployment()
 
-				if err := updater.Update(deploymentCtx, logger, TriggerPeriodicRefresh, nil); err != nil {
+				if _, err := updater.Update(deploymentCtx, logger, TriggerPeriodicRefresh, nil); err != nil {
 					logger.Error("Background update failed", "error", err)
 				}
 			}()
