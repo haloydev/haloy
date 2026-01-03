@@ -262,16 +262,29 @@ func RemoveContainers(ctx context.Context, cli *client.Client, logger *slog.Logg
 }
 
 // HealthCheckContainer performs health checks on a container and returns its IP address on success.
-// It accepts a pre-fetched container.InspectResponse to avoid redundant API calls.
+// It accepts a pre-fetched container.InspectResponse but will re-inspect if needed.
 // The function checks:
-// 1. Container is running
+// 1. Container is running (and stable, not in restart loop)
 // 2. Docker health status (if configured)
 // 3. HTTP health check endpoint (if no Docker healthcheck)
 // 4. Container has a valid IP on the haloy network
 func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.Logger, containerID string, containerInfo container.InspectResponse) HealthCheckResult {
+	// Re-inspect container to get fresh state (the passed containerInfo may be stale)
+	freshInfo, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return HealthCheckResult{Err: fmt.Errorf("failed to inspect container: %w", err)}
+	}
+	containerInfo = freshInfo
+
 	// Check if container is running
 	if containerInfo.State == nil {
 		return HealthCheckResult{Err: fmt.Errorf("container state is nil")}
+	}
+
+	// Check for restarting state - this indicates the container is crash-looping
+	if containerInfo.State.Restarting {
+		exitCode := containerInfo.State.ExitCode
+		return HealthCheckResult{Err: fmt.Errorf("container is restarting (exit code: %d) - check container logs for details", exitCode)}
 	}
 
 	if !containerInfo.State.Running {

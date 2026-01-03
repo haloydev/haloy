@@ -200,7 +200,19 @@ func Run(debug bool) {
 					appDeployment, appHasHealthyInstances := deployments[de.AppName]
 
 					if len(appFailures) > 0 && !appHasHealthyInstances {
-						// All instances failed - report deployment failure
+						// All instances failed - clean up failed containers and report deployment failure
+						cleanupCtx, cleanupCancel := context.WithTimeout(ctx, 2*time.Minute)
+						defer cleanupCancel()
+
+						// Stop and remove all containers for this app (including the failed ones)
+						if _, err := docker.StopContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
+							deploymentLogger.Warn("Failed to stop containers during cleanup", "error", err)
+						}
+						if _, err := docker.RemoveContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
+							deploymentLogger.Warn("Failed to remove containers during cleanup", "error", err)
+						}
+
+						// Report deployment failure
 						var failureReasons []string
 						for _, f := range appFailures {
 							failureReasons = append(failureReasons, fmt.Sprintf("%s: %v", f.Reason, f.Err))
