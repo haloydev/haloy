@@ -147,7 +147,7 @@ jobs:
             fi
 
             echo "Building haloy for $GOOS/$GOARCH..."
-            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloy
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloy
           done
 
           # haloyadm CLI - server administration tool (typically used on Linux servers)
@@ -161,7 +161,7 @@ jobs:
             OUTPUT_NAME="haloyadm-${GOOS}-${GOARCH}"
 
             echo "Building haloyadm for $GOOS/$GOARCH..."
-            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloyadm
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloyadm
           done
 
           # Create checksums for all built artifacts

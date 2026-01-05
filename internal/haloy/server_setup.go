@@ -105,7 +105,7 @@ Examples:
 			}
 
 			ui.Info("Reading API token from remote server...")
-			tokenRes, err := sshrunner.Run(ctx, sshCfg, "haloyadm api token --raw")
+			tokenRes, err := sshrunner.Run(ctx, sshCfg, "/usr/local/bin/haloyadm api token --raw")
 			if err != nil {
 				serverURL := serverURLFromDomainOrHost(apiDomain, host)
 				ui.Warn("Could not retrieve API token from remote server.")
@@ -150,7 +150,7 @@ Examples:
 }
 
 func buildInitCommand(apiDomain, acmeEmail string, override, noServices, noLogs bool) string {
-	args := []string{"haloyadm", "init", "--remote-install"}
+	args := []string{"/usr/local/bin/haloyadm", "init", "--remote-install"}
 
 	if apiDomain != "" {
 		args = append(args, "--api-domain", apiDomain)
