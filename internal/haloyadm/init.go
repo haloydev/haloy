@@ -81,6 +81,12 @@ The data directory can be customized by setting the %s environment variable.`,
 				return fmt.Errorf("docker executable not found: %w\nPlease ensure Docker is installed and in your PATH.\nDownload from: https://www.docker.com/get-started", err)
 			}
 
+			// Check if Docker daemon is running and accessible.
+			dockerCheck := exec.CommandContext(ctx, "docker", "info")
+			if err := dockerCheck.Run(); err != nil {
+				return fmt.Errorf("Docker daemon is not running. Please start Docker and try again.")
+			}
+
 			dataDir, err := config.DataDir()
 			if err != nil {
 				return fmt.Errorf("failed to determine data directory: %w", err)
