@@ -173,7 +173,7 @@ main() {
 
     # Step 2: Update version in constants.go
     info "Updating version in $CONSTANTS_FILE..."
-    sed -i.bak -E "s/(Version[[:space:]]+=[[:space:]]+\").*(\")/\1$new_version\2/" "$CONSTANTS_FILE"
+    sed -i.bak -E "s/(^[[:space:]]+Version[[:space:]]+=[[:space:]]+\").*(\")/\1$new_version\2/" "$CONSTANTS_FILE"
     rm -f "${CONSTANTS_FILE}.bak"
     success "Version updated"
 
