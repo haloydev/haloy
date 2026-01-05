@@ -22,8 +22,16 @@ esac
 
 # --- Fetch the latest version from GitHub ---
 echo "Finding the latest version of Haloy..."
-GITHUB_API_URL="https://api.github.com/repos/haloydev/haloy/releases/latest"
-GITHUB_LATEST_VERSION=$(curl -sL -H 'Accept: application/json' "$GITHUB_API_URL" | grep '"tag_name":' | sed -e 's/.*"tag_name":"\([^"]*\)".*/\1/')
+GITHUB_API_URL="https://api.github.com/repos/haloydev/haloy/releases"
+GITHUB_RESPONSE=$(curl -sL -H 'Accept: application/json' "$GITHUB_API_URL")
+
+# Check if the response indicates no releases
+if echo "$GITHUB_RESPONSE" | grep -q '"message": "Not Found"'; then
+    echo "Error: No releases found for Haloy. Please check https://github.com/haloydev/haloy/releases" >&2
+    exit 1
+fi
+
+GITHUB_LATEST_VERSION=$(echo "$GITHUB_RESPONSE" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 
 if [ -z "$GITHUB_LATEST_VERSION" ]; then
     echo "Error: Could not determine the latest Haloy version from GitHub." >&2
