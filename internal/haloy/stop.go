@@ -16,6 +16,7 @@ import (
 func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	var serverFlag string
 	var removeContainersFlag bool
+	var removeVolumesFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "stop",
@@ -25,7 +26,7 @@ func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			if serverFlag != "" {
-				return stopApp(ctx, nil, serverFlag, "", removeContainersFlag, "")
+				return stopApp(ctx, nil, serverFlag, "", removeContainersFlag, removeVolumesFlag, "")
 			}
 
 			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
@@ -45,7 +46,7 @@ func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 					if len(targets) > 1 {
 						prefix = target.TargetName
 					}
-					return stopApp(ctx, &target, target.Server, target.Name, removeContainersFlag, prefix)
+					return stopApp(ctx, &target, target.Server, target.Name, removeContainersFlag, removeVolumesFlag, prefix)
 				})
 			}
 
@@ -73,11 +74,12 @@ func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Stop app on specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Stop app on all targets")
 	cmd.Flags().BoolVarP(&removeContainersFlag, "remove-containers", "r", false, "Remove containers after stopping them")
+	cmd.Flags().BoolVar(&removeVolumesFlag, "remove-volumes", false, "Remove volumes after stopping (requires --remove-containers)")
 
 	return cmd
 }
 
-func stopApp(ctx context.Context, targetConfig *config.TargetConfig, targetServer, appName string, removeContainers bool, prefix string) error {
+func stopApp(ctx context.Context, targetConfig *config.TargetConfig, targetServer, appName string, removeContainers, removeVolumes bool, prefix string) error {
 	ui.Info("Stopping application: %s using server %s", appName, targetServer)
 
 	token, err := getToken(targetConfig, targetServer)
@@ -91,9 +93,21 @@ func stopApp(ctx context.Context, targetConfig *config.TargetConfig, targetServe
 	}
 	path := fmt.Sprintf("stop/%s", appName)
 
-	// Add query parameter if removeContainers is true
+	// Validate that removeVolumes requires removeContainers
+	if removeVolumes && !removeContainers {
+		return &PrefixedError{Err: fmt.Errorf("--remove-volumes requires --remove-containers"), Prefix: prefix}
+	}
+
+	// Add query parameters for flags
+	var queryParams []string
 	if removeContainers {
-		path += "?remove-containers=true"
+		queryParams = append(queryParams, "remove-containers=true")
+	}
+	if removeVolumes {
+		queryParams = append(queryParams, "remove-volumes=true")
+	}
+	if len(queryParams) > 0 {
+		path += "?" + strings.Join(queryParams, "&")
 	}
 
 	if err := api.Post(ctx, path, nil, nil); err != nil {

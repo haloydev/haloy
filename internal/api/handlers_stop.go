@@ -17,6 +17,7 @@ func (s *APIServer) handleStopApp() http.HandlerFunc {
 		}
 
 		removeContainers := r.URL.Query().Get("remove-containers") == "true"
+		removeVolumes := r.URL.Query().Get("remove-volumes") == "true"
 
 		logger := logging.NewLogger(s.logLevel, s.logBroker)
 
@@ -44,6 +45,15 @@ func (s *APIServer) handleStopApp() http.HandlerFunc {
 					return
 				}
 				logger.Info("Successfully removed containers", "app", appName, "removed_count", len(removedIDs), "container_ids", removedIDs)
+
+				if removeVolumes {
+					logger.Info("Removing volumes", "app", appName)
+					if err := docker.RemoveVolumes(ctx, cli, logger, appName); err != nil {
+						logger.Error("Failed to remove volumes", "app", appName, "error", err)
+						return
+					}
+					logger.Info("Successfully removed volumes", "app", appName)
+				}
 			}
 
 			logger.Info("Successfully stopped containers", "app", appName, "stopped_count", len(stoppedIDs), "container_ids", stoppedIDs)
