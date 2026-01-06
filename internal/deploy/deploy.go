@@ -38,6 +38,13 @@ func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, tar
 		}
 	}
 
+	// Ensure named volumes exist with labels before starting container
+	if len(targetConfig.Volumes) > 0 {
+		if err := docker.EnsureVolumes(ctx, cli, logger, targetConfig.Name, targetConfig.Volumes); err != nil {
+			return fmt.Errorf("failed to ensure volumes: %w", err)
+		}
+	}
+
 	runResult, err := docker.RunContainer(ctx, cli, deploymentID, newImageRef, targetConfig)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
