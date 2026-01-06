@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-
+#!/bin/sh
 set -e
 
 echo "Uninstalling Haloy admin tool (haloyadm)..."
@@ -17,7 +16,7 @@ else
 fi
 
 # Check permissions for system installation
-if [[ "$BINARY_PATH" == "/usr/local/bin/haloyadm" ]] && [ "$(id -u)" -ne 0 ]; then
+if [ "$BINARY_PATH" = "/usr/local/bin/haloyadm" ] && [ "$(id -u)" -ne 0 ]; then
     echo "Error: Uninstalling from $BINARY_PATH requires root privileges." >&2
     echo "Run with sudo:" >&2
     echo "  sudo $0" >&2
@@ -27,7 +26,7 @@ fi
 # Remove the binary
 rm -f "$BINARY_PATH"
 
-echo "✅ Haloy admin tool (haloyadm) has been uninstalled successfully."
+echo "Haloy admin tool (haloyadm) has been uninstalled successfully."
 echo ""
 echo "Note: This only removes the admin tool binary."
 echo "Server daemon (haloyd) and configuration files are not affected."

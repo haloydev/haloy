@@ -25,7 +25,7 @@ Haloy is a lightweight deployment and orchestration system designed for develope
 **Install script:**
 
 ```bash
-curl -fsSL https://sh.haloy.dev/install-haloy.sh | bash
+curl -fsSL https://sh.haloy.dev/install-haloy.sh | sh
 ```
 
 **Homebrew (macOS / Linux):**

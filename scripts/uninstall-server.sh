@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-# filepath: scripts/uninstall-server.sh
+#!/bin/sh
 
 set -e
 

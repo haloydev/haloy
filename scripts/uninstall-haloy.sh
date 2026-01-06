@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-
+#!/bin/sh
 set -e
 
 echo "Uninstalling Haloy client..."
@@ -15,10 +14,10 @@ if [ ! -f "$BINARY_PATH" ]; then
     echo "Haloy client not found at $BINARY_PATH"
 
     # Check if installed via Homebrew
-    if command -v brew &> /dev/null; then
-        if brew list haloy &> /dev/null 2>&1; then
+    if command -v brew >/dev/null 2>&1; then
+        if brew list haloy >/dev/null 2>&1; then
             echo ""
-            echo "✓ Found haloy installed via Homebrew"
+            echo "Found haloy installed via Homebrew"
             echo ""
             echo "To uninstall, please run:"
             echo "  brew uninstall haloy"
@@ -49,7 +48,7 @@ if [ -d "$CLIENT_CONFIG_DIR" ]; then
     rm -rf "$CLIENT_CONFIG_DIR"
 fi
 
-echo "✅ Haloy client has been uninstalled successfully."
+echo "Haloy client has been uninstalled successfully."
 echo ""
 echo "Note: This only removes the client binary and configuration."
 echo "Server-side components (haloyd, haloyadm) are not affected."
