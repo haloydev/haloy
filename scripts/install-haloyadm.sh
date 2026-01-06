@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-
+#!/bin/sh
 set -e
 
 # Detect if we should install system-wide or user-specific
@@ -17,7 +16,7 @@ DIR="${DIR:-"$DEFAULT_DIR"}"
 echo "Installing Haloy admin tool to: $DIR"
 
 # Check permissions for system installation
-if [[ "$DIR" == "/usr/local/bin" ]] && [ "$(id -u)" -ne 0 ]; then
+if [ "$DIR" = "/usr/local/bin" ] && [ "$(id -u)" -ne 0 ]; then
     echo "Error: Installing to $DIR requires root privileges." >&2
     echo "Run with sudo or set DIR environment variable:" >&2
     echo "  sudo $0" >&2
@@ -26,10 +25,10 @@ if [[ "$DIR" == "/usr/local/bin" ]] && [ "$(id -u)" -ne 0 ]; then
 fi
 
 # Warn if installing to user directory for admin tool
-if [[ "$DIR" == "$HOME/.local/bin" ]] && [ "$(id -u)" -ne 0 ]; then
-    echo "⚠️  Installing to user directory ($DIR)"
+if [ "$DIR" = "$HOME/.local/bin" ] && [ "$(id -u)" -ne 0 ]; then
+    echo "Warning: Installing to user directory ($DIR)"
     echo "   For system-wide installation, run with sudo:"
-    echo "   sudo curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyadm.sh | bash"
+    echo "   sudo curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyadm.sh | sh"
     echo ""
 fi
 
@@ -80,11 +79,11 @@ curl -L -o "$INSTALL_PATH" "$DOWNLOAD_URL"
 chmod +x "$INSTALL_PATH"
 
 echo ""
-echo "✅ Haloy admin tool (haloyadm) has been installed to '$INSTALL_PATH'"
+echo "Haloy admin tool (haloyadm) has been installed to '$INSTALL_PATH'"
 echo ""
 
 # Show appropriate PATH instructions based on installation location
-if [[ "$DIR" == "/usr/local/bin" ]]; then
+if [ "$DIR" = "/usr/local/bin" ]; then
     echo "The binary is installed in /usr/local/bin which should already be in your PATH."
     echo "You can now run: sudo haloyadm init"
 else

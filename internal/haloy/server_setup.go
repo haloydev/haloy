@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	installHaloyadmScript = "curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyadm.sh | bash"
+	installHaloyadmScript = "curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyadm.sh | sh"
 	checkDockerCmd        = "command -v docker >/dev/null 2>&1 && echo 'installed' || echo 'missing'"
 	installDockerScript   = "curl -fsSL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-docker.sh | sh"
 )

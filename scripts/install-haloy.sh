@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-
+#!/bin/sh
 set -e
 
 # The directory to install the binary to. Can be overridden by setting the DIR environment variable.
@@ -51,18 +50,22 @@ curl -L -o "$INSTALL_PATH" "$DOWNLOAD_URL"
 chmod +x "$INSTALL_PATH"
 
 echo ""
-echo "✅ Haloy client has been installed to '$INSTALL_PATH'"
+echo "Haloy client has been installed to '$INSTALL_PATH'"
 echo ""
 
 # --- Check if DIR is in PATH ---
-if [[ ":$PATH:" != *":$DIR:"* ]]; then
-    echo "⚠️  '$DIR' is not in your PATH."
-    echo ""
-    echo "Add the following line to your shell profile (~/.bashrc, ~/.zshrc, or equivalent):"
-    echo ""
-    echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-    echo ""
-    echo "Then restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
-else
-    echo "✅ You can now run 'haloy' from anywhere!"
-fi
+# Use case statement for POSIX-compliant substring check
+case ":$PATH:" in
+    *":$DIR:"*)
+        echo "You can now run 'haloy' from anywhere!"
+        ;;
+    *)
+        echo "Warning: '$DIR' is not in your PATH."
+        echo ""
+        echo "Add the following line to your shell profile (~/.bashrc, ~/.zshrc, or equivalent):"
+        echo ""
+        echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+        echo ""
+        echo "Then restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
+        ;;
+esac
