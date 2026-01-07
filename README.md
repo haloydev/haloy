@@ -34,6 +34,15 @@ curl -fsSL https://sh.haloy.dev/install-haloy.sh | sh
 brew install haloydev/tap/haloy
 ```
 
+**npm/pnpm/bun**
+```bash
+npm i -g haloy
+
+pnpm add -g haloy
+
+bun add -g haloy
+```
+
 ### 2. Server Setup
 
 Use the `server setup` command to provision your server automatically. This command will SSH into your server as `root` (default), install Docker if needed, install `haloyadm`, and configure the remote `haloyd` service.
