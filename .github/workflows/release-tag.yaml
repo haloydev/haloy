@@ -213,3 +213,16 @@ jobs:
     with:
       version: ${{ needs.build-and-publish.outputs.version }}
     secrets: inherit
+
+  publish-npm:
+    name: Publish to npm
+    needs: [build-and-publish, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger npm publish
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HALOY_NPM_DISPATCH_TOKEN }}
+          repository: haloydev/npm
+          event-type: release
+          client-payload: '{"version": "${{ needs.build-and-publish.outputs.version }}"}'
