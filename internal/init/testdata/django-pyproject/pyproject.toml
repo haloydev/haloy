@@ -1,0 +1,7 @@
+[project]
+name = "webapp"
+requires-python = ">=3.11"
+dependencies = [
+    "django>=4.2",
+    "psycopg2-binary",
+]

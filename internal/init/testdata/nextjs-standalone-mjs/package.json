@@ -1,0 +1,6 @@
+{
+  "name": "nextjs-mjs-app",
+  "dependencies": {
+    "next": "14.0.0"
+  }
+}

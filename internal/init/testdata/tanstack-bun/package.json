@@ -1,0 +1,6 @@
+{
+  "name": "tanstack-bun-app",
+  "dependencies": {
+    "@tanstack/start": "1.0.0"
+  }
+}
