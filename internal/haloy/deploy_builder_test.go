@@ -16,19 +16,19 @@ func TestGetBuilderWorkDir(t *testing.T) {
 
 	// Create a subdirectory
 	subDir := filepath.Join(tempDir, "subdir")
-	if err := os.Mkdir(subDir, 0755); err != nil {
+	if err := os.Mkdir(subDir, 0o755); err != nil {
 		t.Fatalf("failed to create subdir: %v", err)
 	}
 
 	// Create a config file
 	configFile := filepath.Join(tempDir, "haloy.yaml")
-	if err := os.WriteFile(configFile, []byte(""), 0644); err != nil {
+	if err := os.WriteFile(configFile, []byte(""), 0o644); err != nil {
 		t.Fatalf("failed to create config file: %v", err)
 	}
 
 	// Create a config file in subdirectory
 	subConfigFile := filepath.Join(subDir, "haloy.yaml")
-	if err := os.WriteFile(subConfigFile, []byte(""), 0644); err != nil {
+	if err := os.WriteFile(subConfigFile, []byte(""), 0o644); err != nil {
 		t.Fatalf("failed to create sub config file: %v", err)
 	}
 
