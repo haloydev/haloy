@@ -50,8 +50,12 @@ func BuildImage(ctx context.Context, imageRef string, image *config.Image, confi
 	if buildConfig == nil {
 		buildConfig = &config.BuildConfig{}
 	}
-	workDir := getBuilderWorkDir(configPath, buildConfig.Context)
 
+	// Work directory is the config file's directory.
+	// All paths (context, dockerfile) are relative to this directory.
+	workDir := getBuilderWorkDir(configPath)
+
+	// Context defaults to "." (config directory) if not specified
 	buildContext := "."
 	if buildConfig.Context != "" {
 		buildContext = buildConfig.Context
@@ -92,31 +96,16 @@ func BuildImage(ctx context.Context, imageRef string, image *config.Image, confi
 	return nil
 }
 
-// getBuilderWorkDir determines the working directory for the docker build command
-func getBuilderWorkDir(configPath, builderContext string) string {
-	workDir := "."
-
-	if configPath != "." {
-		if stat, err := os.Stat(configPath); err == nil {
-			if stat.IsDir() {
-				workDir = configPath
-			} else {
-				workDir = filepath.Dir(configPath)
-			}
-		}
+// getBuilderWorkDir returns the directory containing the config file.
+// All build paths (context, dockerfile) are relative to this directory.
+func getBuilderWorkDir(configPath string) string {
+	if configPath == "" || configPath == "." {
+		return "."
 	}
-
-	if builderContext != "" {
-		if filepath.IsAbs(builderContext) {
-			// For absolute paths, use the path directly as working directory
-			workDir = builderContext
-		} else {
-			// For relative paths, combine with config directory
-			workDir = filepath.Join(workDir, builderContext)
-		}
+	if stat, err := os.Stat(configPath); err == nil && stat.IsDir() {
+		return configPath
 	}
-
-	return workDir
+	return filepath.Dir(configPath)
 }
 
 // UploadImage uploads a Docker image tar to the specified server
