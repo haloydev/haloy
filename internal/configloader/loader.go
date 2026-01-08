@@ -383,7 +383,7 @@ func LoadRawDeployConfig(configPath string) (config.DeployConfig, string, error)
 
 	k := koanf.New(".")
 	if err := k.Load(file.Provider(configFile), parser); err != nil {
-		return config.DeployConfig{}, "", fmt.Errorf("failed to load config file: %w", err)
+		return config.DeployConfig{}, "", EnhanceConfigError(configFile, format, err)
 	}
 
 	configKeys := k.Keys()
