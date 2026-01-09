@@ -38,7 +38,12 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			if err != nil {
+				return fmt.Errorf("failed to resolve secrets: %w", err)
+			}
+
+			targets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
 			if err != nil {
 				return err
 			}
@@ -161,7 +166,12 @@ func RollbackTargetsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			if err != nil {
+				return fmt.Errorf("failed to resolve secrets: %w", err)
+			}
+
+			targets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
 			if err != nil {
 				return err
 			}

@@ -35,7 +35,12 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			targets, err := configloader.ExtractTargets(rawDeployConfig, format)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			if err != nil {
+				return fmt.Errorf("failed to resolve secrets: %w", err)
+			}
+
+			targets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
 			if err != nil {
 				return err
 			}
