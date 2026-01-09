@@ -204,7 +204,9 @@ func Run(debug bool) {
 						cleanupCtx, cleanupCancel := context.WithTimeout(ctx, 2*time.Minute)
 						defer cleanupCancel()
 
-						// Stop and remove all containers for this app (including the failed ones)
+						// Extract logs from failed containers before removing them to allow debugging
+						logContainerFailureLogs(cleanupCtx, cli, deploymentLogger, appFailures)
+
 						if _, err := docker.StopContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
 							deploymentLogger.Warn("Failed to stop containers during cleanup", "error", err)
 						}
@@ -212,7 +214,6 @@ func Run(debug bool) {
 							deploymentLogger.Warn("Failed to remove containers during cleanup", "error", err)
 						}
 
-						// Report deployment failure
 						var failureReasons []string
 						for _, f := range appFailures {
 							failureReasons = append(failureReasons, fmt.Sprintf("%s: %v", f.Reason, f.Err))
@@ -222,10 +223,8 @@ func Run(debug bool) {
 						return
 					}
 
-					// Success: either no failures, or partial failure with some healthy instances
 					canonicalDomains := make([]string, 0, len(de.Domains))
 					if appHasHealthyInstances {
-						// Use domains from the actual deployment (may differ if some replicas failed)
 						for _, domain := range appDeployment.Labels.Domains {
 							canonicalDomains = append(canonicalDomains, domain.Canonical)
 						}
@@ -360,5 +359,49 @@ func listenForDockerEvents(ctx context.Context, cli *client.Client, eventsChan c
 			}
 			return
 		}
+	}
+}
+
+// logContainerFailureLogs extracts and logs container output from failed containers.
+// It deduplicates logs to avoid repeating the same output when multiple replicas fail
+// with the same error. This helps users debug why their deployment failed.
+func logContainerFailureLogs(ctx context.Context, cli *client.Client, logger *slog.Logger, failures []FailedContainer) {
+	if len(failures) == 0 {
+		return
+	}
+
+	// Track unique logs to avoid duplicating output when multiple replicas fail identically
+	seenLogs := make(map[string]bool)
+	const maxLogLines = 50
+
+	for _, failure := range failures {
+		if failure.ContainerID == "" {
+			continue
+		}
+
+		logs, err := docker.GetContainerLogs(ctx, cli, failure.ContainerID, maxLogLines)
+		if err != nil {
+			logger.Debug("Could not retrieve container logs",
+				"container_id", helpers.SafeIDPrefix(failure.ContainerID),
+				"error", err)
+			continue
+		}
+
+		// Trim whitespace and skip empty logs
+		logs = strings.TrimSpace(logs)
+		if logs == "" {
+			continue
+		}
+
+		// Deduplicate: only show each unique log output once
+		if seenLogs[logs] {
+			continue
+		}
+		seenLogs[logs] = true
+
+		// Log the container output
+		logger.Error("Container logs from failed instance",
+			"container_id", helpers.SafeIDPrefix(failure.ContainerID),
+			"logs", "\n"+logs)
 	}
 }

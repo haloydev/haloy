@@ -531,6 +531,47 @@ func ExecInContainer(ctx context.Context, cli *client.Client, containerID string
 	return stdoutBuf.String(), stderrBuf.String(), inspectResp.ExitCode, nil
 }
 
+// GetContainerLogs retrieves the last N lines of logs from a container.
+// This works even for stopped containers, making it useful for debugging failed deployments.
+func GetContainerLogs(ctx context.Context, cli *client.Client, containerID string, tailLines int) (string, error) {
+	if tailLines <= 0 {
+		tailLines = 100
+	}
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       fmt.Sprintf("%d", tailLines),
+		Timestamps: false,
+	}
+
+	reader, err := cli.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		return "", fmt.Errorf("failed to get container logs: %w", err)
+	}
+	defer reader.Close()
+
+	// Docker multiplexes stdout and stderr in the log stream
+	// Use stdcopy to demultiplex them into a single buffer
+	var outputBuf bytes.Buffer
+	_, err = stdcopy.StdCopy(&outputBuf, &outputBuf, reader)
+	if err != nil {
+		// If stdcopy fails, the container might be using TTY mode
+		// In that case, read directly from the reader
+		reader, err = cli.ContainerLogs(ctx, containerID, options)
+		if err != nil {
+			return "", fmt.Errorf("failed to get container logs (retry): %w", err)
+		}
+		defer reader.Close()
+		_, err = io.Copy(&outputBuf, reader)
+		if err != nil {
+			return "", fmt.Errorf("failed to read container logs: %w", err)
+		}
+	}
+
+	return outputBuf.String(), nil
+}
+
 // waitForContainerExited polls until the container reaches "exited" state or timeout.
 // Returns nil if container is exited, error if timeout or inspection fails.
 func waitForContainerExited(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
