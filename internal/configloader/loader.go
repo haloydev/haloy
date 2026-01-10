@@ -253,6 +253,10 @@ func MergeToTarget(haloyConfig config.DeployConfig, targetConfig config.TargetCo
 
 	normalizeTargetConfig(&tc)
 
+	if err := mergeBuildArgsFromEnv(&tc); err != nil {
+		return config.TargetConfig{}, err
+	}
+
 	return tc, nil
 }
 
@@ -326,6 +330,51 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 	if tc.Replicas == nil {
 		tc.Replicas = helpers.Ptr(constants.DefaultReplicas)
 	}
+}
+
+// mergeBuildArgsFromEnv expands environment variables marked with BuildArg: true into the image's BuildConfig.Args.
+// If a build arg with the same name already exists, the explicit build arg takes precedence (no override).
+func mergeBuildArgsFromEnv(tc *config.TargetConfig) error {
+	if tc.Image == nil || !tc.Image.ShouldBuild() {
+		return nil
+	}
+
+	// Collect env vars that should be build args
+	var envBuildArgs []config.EnvVar
+	for _, env := range tc.Env {
+		if env.BuildArg {
+			envBuildArgs = append(envBuildArgs, env)
+		}
+	}
+
+	if len(envBuildArgs) == 0 {
+		return nil
+	}
+
+	if tc.Image.BuildConfig == nil {
+		tc.Image.BuildConfig = &config.BuildConfig{}
+	}
+
+	// Build a set of existing build arg names for conflict detection
+	existingArgs := make(map[string]struct{})
+	for _, arg := range tc.Image.BuildConfig.Args {
+		existingArgs[arg.Name] = struct{}{}
+	}
+
+	// Add env vars as build args (explicit build args take precedence)
+	for _, env := range envBuildArgs {
+		if _, exists := existingArgs[env.Name]; exists {
+			// Explicit build arg already exists, skip (explicit takes precedence)
+			continue
+		}
+
+		tc.Image.BuildConfig.Args = append(tc.Image.BuildConfig.Args, config.BuildArg{
+			Name:        env.Name,
+			ValueSource: env.ValueSource,
+		})
+	}
+
+	return nil
 }
 
 func TargetsByServer(targets map[string]config.TargetConfig) map[string][]string {

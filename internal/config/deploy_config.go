@@ -63,7 +63,7 @@ const (
 type DeploymentStrategy string
 
 const (
-	DeploymentStrategyRolling DeploymentStrategy = "rolling" // Default: blue-green
+	DeploymentStrategyRolling DeploymentStrategy = "rolling" // Default: blue-green deployments
 	DeploymentStrategyReplace DeploymentStrategy = "replace" // Stop old, start new
 )
 
@@ -95,6 +95,8 @@ func (d *Domain) Validate() error {
 type EnvVar struct {
 	Name        string `json:"name" yaml:"name" toml:"name"`
 	ValueSource `mapstructure:",squash" json:",inline" yaml:",inline" toml:",inline"`
+	// BuildArg indicates this environment variable should also be included as a build argument.
+	BuildArg bool `json:"buildArg,omitempty" yaml:"build_arg,omitempty" toml:"build_arg,omitempty"`
 }
 
 func (ev *EnvVar) Validate(format string) error {
@@ -103,7 +105,6 @@ func (ev *EnvVar) Validate(format string) error {
 	}
 
 	if err := ev.ValueSource.Validate(); err != nil {
-		// Add context to the error returned from the embedded struct's validation.
 		return fmt.Errorf("environment variable '%s': %w", ev.Name, err)
 	}
 

@@ -672,3 +672,217 @@ func TestExtractTargets(t *testing.T) {
 		})
 	}
 }
+
+func TestExpandBuildArgsFromEnv(t *testing.T) {
+	tests := []struct {
+		name              string
+		targetConfig      config.TargetConfig
+		expectedBuildArgs []config.BuildArg
+	}{
+		{
+			name: "env with build_arg true expands to build args",
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					Repository: "myapp",
+					Build:      helpers.Ptr(true),
+				},
+				Env: []config.EnvVar{
+					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}, BuildArg: true},
+					{Name: "API_URL", ValueSource: config.ValueSource{Value: "https://api.example.com"}, BuildArg: true},
+					{Name: "RUNTIME_ONLY", ValueSource: config.ValueSource{Value: "secret"}},
+				},
+			},
+			expectedBuildArgs: []config.BuildArg{
+				{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}},
+				{Name: "API_URL", ValueSource: config.ValueSource{Value: "https://api.example.com"}},
+			},
+		},
+		{
+			name: "no build_arg true means no expansion",
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					Repository: "myapp",
+					Build:      helpers.Ptr(true),
+				},
+				Env: []config.EnvVar{
+					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}},
+					{Name: "API_URL", ValueSource: config.ValueSource{Value: "https://api.example.com"}},
+				},
+			},
+			expectedBuildArgs: nil,
+		},
+		{
+			name: "explicit build arg takes precedence over env with build_arg",
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					Repository: "myapp",
+					Build:      helpers.Ptr(true),
+					BuildConfig: &config.BuildConfig{
+						Args: []config.BuildArg{
+							{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "development"}},
+						},
+					},
+				},
+				Env: []config.EnvVar{
+					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}, BuildArg: true},
+					{Name: "API_URL", ValueSource: config.ValueSource{Value: "https://api.example.com"}, BuildArg: true},
+				},
+			},
+			expectedBuildArgs: []config.BuildArg{
+				{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "development"}},            // Explicit takes precedence
+				{Name: "API_URL", ValueSource: config.ValueSource{Value: "https://api.example.com"}}, // Added from env
+			},
+		},
+		{
+			name: "build_arg with from source reference",
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					Repository: "myapp",
+					Build:      helpers.Ptr(true),
+				},
+				Env: []config.EnvVar{
+					{
+						Name: "DB_PASSWORD",
+						ValueSource: config.ValueSource{
+							From: &config.SourceReference{Secret: "db-password"},
+						},
+						BuildArg: true,
+					},
+				},
+			},
+			expectedBuildArgs: []config.BuildArg{
+				{
+					Name: "DB_PASSWORD",
+					ValueSource: config.ValueSource{
+						From: &config.SourceReference{Secret: "db-password"},
+					},
+				},
+			},
+		},
+		{
+			name: "no expansion when image should not build",
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					Repository: "myapp",
+					Build:      helpers.Ptr(false),
+				},
+				Env: []config.EnvVar{
+					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}, BuildArg: true},
+				},
+			},
+			expectedBuildArgs: nil,
+		},
+		{
+			name: "no expansion when image is nil",
+			targetConfig: config.TargetConfig{
+				Image: nil,
+				Env: []config.EnvVar{
+					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}, BuildArg: true},
+				},
+			},
+			expectedBuildArgs: nil,
+		},
+		{
+			name: "creates build config when needed",
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					Repository:  "myapp",
+					Build:       helpers.Ptr(true),
+					BuildConfig: nil, // No build config initially
+				},
+				Env: []config.EnvVar{
+					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}, BuildArg: true},
+				},
+			},
+			expectedBuildArgs: []config.BuildArg{
+				{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tc := tt.targetConfig
+			err := mergeBuildArgsFromEnv(&tc)
+			if err != nil {
+				t.Fatalf("expandBuildArgsFromEnv() unexpected error = %v", err)
+			}
+
+			// Check build args
+			var actualArgs []config.BuildArg
+			if tc.Image != nil && tc.Image.BuildConfig != nil {
+				actualArgs = tc.Image.BuildConfig.Args
+			}
+
+			if len(actualArgs) != len(tt.expectedBuildArgs) {
+				t.Errorf("expandBuildArgsFromEnv() args count = %d, expected %d. Got: %+v",
+					len(actualArgs), len(tt.expectedBuildArgs), actualArgs)
+				return
+			}
+
+			for i, expected := range tt.expectedBuildArgs {
+				actual := actualArgs[i]
+				if actual.Name != expected.Name {
+					t.Errorf("expandBuildArgsFromEnv() arg[%d].Name = %s, expected %s", i, actual.Name, expected.Name)
+				}
+				if actual.ValueSource.Value != expected.ValueSource.Value {
+					t.Errorf("expandBuildArgsFromEnv() arg[%d].Value = %s, expected %s", i, actual.ValueSource.Value, expected.ValueSource.Value)
+				}
+				if (actual.ValueSource.From == nil) != (expected.ValueSource.From == nil) {
+					t.Errorf("expandBuildArgsFromEnv() arg[%d].From nil mismatch", i)
+				}
+				if actual.ValueSource.From != nil && expected.ValueSource.From != nil {
+					if actual.ValueSource.From.Secret != expected.ValueSource.From.Secret {
+						t.Errorf("expandBuildArgsFromEnv() arg[%d].From.Secret = %s, expected %s",
+							i, actual.ValueSource.From.Secret, expected.ValueSource.From.Secret)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestMergeToTargetWithBuildArgExpansion(t *testing.T) {
+	// Integration test to ensure build arg expansion happens during MergeToTarget
+	haloyConfig := config.DeployConfig{
+		TargetConfig: config.TargetConfig{
+			Name: "myapp",
+			Image: &config.Image{
+				Repository: "myapp",
+				Build:      helpers.Ptr(true),
+			},
+			Server: "test.haloy.dev",
+			Env: []config.EnvVar{
+				{Name: "SHARED_VAR", ValueSource: config.ValueSource{Value: "shared-value"}, BuildArg: true},
+				{Name: "RUNTIME_ONLY", ValueSource: config.ValueSource{Value: "runtime-value"}},
+			},
+		},
+	}
+
+	result, err := MergeToTarget(haloyConfig, config.TargetConfig{}, "test-target", "yaml")
+	if err != nil {
+		t.Fatalf("MergeToTarget() unexpected error = %v", err)
+	}
+
+	// Verify build arg was expanded
+	if result.Image.BuildConfig == nil {
+		t.Fatal("MergeToTarget() expected BuildConfig to be created")
+	}
+
+	if len(result.Image.BuildConfig.Args) != 1 {
+		t.Errorf("MergeToTarget() expected 1 build arg, got %d", len(result.Image.BuildConfig.Args))
+	}
+
+	if result.Image.BuildConfig.Args[0].Name != "SHARED_VAR" {
+		t.Errorf("MergeToTarget() expected build arg name 'SHARED_VAR', got '%s'", result.Image.BuildConfig.Args[0].Name)
+	}
+
+	if result.Image.BuildConfig.Args[0].ValueSource.Value != "shared-value" {
+		t.Errorf("MergeToTarget() expected build arg value 'shared-value', got '%s'", result.Image.BuildConfig.Args[0].ValueSource.Value)
+	}
+
+	// Verify env vars are still present
+	if len(result.Env) != 2 {
+		t.Errorf("MergeToTarget() expected 2 env vars, got %d", len(result.Env))
+	}
+}
