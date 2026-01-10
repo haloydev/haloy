@@ -47,7 +47,7 @@ func TestMergeToTarget(t *testing.T) {
 			haloyConfig:    baseDeployConfig,
 			targetConfig:   config.TargetConfig{},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "default.haloy.dev",
 			expectedImage:  *baseDeployConfig.Image,
 		},
@@ -58,7 +58,7 @@ func TestMergeToTarget(t *testing.T) {
 				Server: "override.haloy.dev",
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "override.haloy.dev",
 			expectedImage:  *baseDeployConfig.Image,
 		},
@@ -72,7 +72,7 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "default.haloy.dev",
 			expectedImage: config.Image{
 				Repository: "custom-nginx",
@@ -98,7 +98,7 @@ func TestMergeToTarget(t *testing.T) {
 				PostDeploy:      []string{"echo 'prod post'"},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "prod.haloy.dev",
 			expectedImage: config.Image{
 				Repository: "apache",
@@ -118,7 +118,7 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "default.haloy.dev",
 			expectedImage: config.Image{
 				Repository: "nginx", // Base repository
@@ -143,7 +143,7 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "default.haloy.dev",
 			expectedImage: config.Image{
 				Repository: "nginx", // Base repository
@@ -164,7 +164,7 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "default.haloy.dev",
 		},
 		{
@@ -176,7 +176,7 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "default.haloy.dev",
 		},
 		{
@@ -193,6 +193,23 @@ func TestMergeToTarget(t *testing.T) {
 			targetConfig:   config.TargetConfig{},
 			targetName:     "my-target",
 			expectedName:   "my-target",
+			expectedServer: "test.haloy.dev",
+		},
+		{
+			name: "target key used as name even when global name exists",
+			haloyConfig: config.DeployConfig{
+				TargetConfig: config.TargetConfig{
+					Name: "global-name",
+					Image: &config.Image{
+						Repository: "nginx",
+						Tag:        "latest",
+					},
+					Server: "test.haloy.dev",
+				},
+			},
+			targetConfig:   config.TargetConfig{},
+			targetName:     "my-target-key",
+			expectedName:   "my-target-key",
 			expectedServer: "test.haloy.dev",
 		},
 		{
@@ -238,7 +255,7 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "override.haloy.dev",
 			expectedImage: config.Image{
 				Repository: "base-repo",
@@ -273,7 +290,7 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 			targetName:     "test-target",
-			expectedName:   "myapp",
+			expectedName:   "test-target",
 			expectedServer: "default.haloy.dev",
 			expectedImage: config.Image{
 				Repository: "base-repo",

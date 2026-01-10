@@ -162,11 +162,7 @@ func MergeToTarget(haloyConfig config.DeployConfig, targetConfig config.TargetCo
 	tc.Format = format
 
 	if tc.Name == "" {
-		if haloyConfig.Name != "" {
-			tc.Name = haloyConfig.Name
-		} else {
-			tc.Name = targetName
-		}
+		tc.Name = targetName
 	}
 
 	if tc.Preset == "" {
@@ -386,6 +382,10 @@ func TargetsByServer(targets map[string]config.TargetConfig) map[string][]string
 }
 
 func ExtractTargets(haloyConfig config.DeployConfig, format string) (map[string]config.TargetConfig, error) {
+	if err := haloyConfig.Validate(); err != nil {
+		return nil, err
+	}
+
 	extractedTargetConfigs := make(map[string]config.TargetConfig)
 
 	if len(haloyConfig.Targets) > 0 {

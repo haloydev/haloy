@@ -11,6 +11,29 @@ import (
 	"github.com/haloydev/haloy/internal/helpers"
 )
 
+func (dc *DeployConfig) Validate() error {
+	if len(dc.Targets) > 0 {
+		// Multi-target config: check for duplicate names
+		names := make(map[string]string) // name -> targetKey
+		for targetKey, target := range dc.Targets {
+			name := target.Name
+			if name == "" {
+				name = targetKey // Will use target key as name after merge
+			}
+			if existingKey, exists := names[name]; exists {
+				return fmt.Errorf("duplicate name '%s' found in targets '%s' and '%s'", name, existingKey, targetKey)
+			}
+			names[name] = targetKey
+		}
+	} else {
+		// Single-target config: require global name
+		if dc.Name == "" {
+			return errors.New("'name' is required for single-target configurations")
+		}
+	}
+	return nil
+}
+
 func (tc *TargetConfig) Validate(format string) error {
 	if tc.Name == "" {
 		return errors.New("app 'name' is required")

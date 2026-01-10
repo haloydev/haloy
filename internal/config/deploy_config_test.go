@@ -674,3 +674,104 @@ func TestPortDecodeHook_NonPortType(t *testing.T) {
 		t.Errorf("expected data to be returned unchanged for non-Port target type, got %v", result)
 	}
 }
+
+func TestDeployConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      DeployConfig
+		expectError bool
+		errMsg      string
+	}{
+		{
+			name: "valid single-target config with name",
+			config: DeployConfig{
+				TargetConfig: TargetConfig{
+					Name: "my-app",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid single-target config without name",
+			config: DeployConfig{
+				TargetConfig: TargetConfig{
+					Server: "example.com",
+				},
+			},
+			expectError: true,
+			errMsg:      "'name' is required for single-target configurations",
+		},
+		{
+			name: "valid multi-target config with unique target keys",
+			config: DeployConfig{
+				Targets: map[string]*TargetConfig{
+					"app-one": {Server: "example.com"},
+					"app-two": {Server: "example.com"},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid multi-target config with explicit unique names",
+			config: DeployConfig{
+				Targets: map[string]*TargetConfig{
+					"target-a": {Name: "app-one", Server: "example.com"},
+					"target-b": {Name: "app-two", Server: "example.com"},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid multi-target config with duplicate explicit names",
+			config: DeployConfig{
+				Targets: map[string]*TargetConfig{
+					"target-a": {Name: "same-name", Server: "example.com"},
+					"target-b": {Name: "same-name", Server: "example.com"},
+				},
+			},
+			expectError: true,
+			errMsg:      "duplicate name 'same-name'",
+		},
+		{
+			name: "invalid multi-target config with explicit name matching another target key",
+			config: DeployConfig{
+				Targets: map[string]*TargetConfig{
+					"app-one":  {Server: "example.com"},
+					"target-b": {Name: "app-one", Server: "example.com"},
+				},
+			},
+			expectError: true,
+			errMsg:      "duplicate name 'app-one'",
+		},
+		{
+			name: "valid multi-target config ignores global name",
+			config: DeployConfig{
+				TargetConfig: TargetConfig{
+					Name: "global-name",
+				},
+				Targets: map[string]*TargetConfig{
+					"app-one": {Server: "example.com"},
+					"app-two": {Server: "example.com"},
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Validate() expected error but got none")
+				} else if tt.errMsg != "" && !helpers.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Validate() error = %v, expected to contain %v", err, tt.errMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Validate() unexpected error = %v", err)
+				}
+			}
+		})
+	}
+}
