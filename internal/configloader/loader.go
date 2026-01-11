@@ -24,7 +24,7 @@ func Load(
 	configPath string,
 	targets []string,
 	allTargets bool,
-) (haloyConfig config.DeployConfig, format string, err error) {
+) (deployConfig config.DeployConfig, format string, err error) {
 	rawDeployConfig, format, err := LoadRawDeployConfig(configPath)
 	if err != nil {
 		return config.DeployConfig{}, "", err
@@ -107,29 +107,29 @@ func mergeImage(targetConfig config.TargetConfig, images map[string]*config.Imag
 	return nil, nil
 }
 
-func mergeEnvArrays(haloyConfigEnv, targetConfigEnv []config.EnvVar) []config.EnvVar {
+func mergeEnvArrays(deployConfigEnv, targetConfigEnv []config.EnvVar) []config.EnvVar {
 	if len(targetConfigEnv) == 0 {
-		return haloyConfigEnv
+		return deployConfigEnv
 	}
 
-	if len(haloyConfigEnv) == 0 {
+	if len(deployConfigEnv) == 0 {
 		return targetConfigEnv
 	}
 
 	mergedMap := make(map[string]config.EnvVar)
 
-	for _, envVar := range haloyConfigEnv {
+	for _, envVar := range deployConfigEnv {
 		mergedMap[envVar.Name] = envVar
 	}
 
 	for _, envVar := range targetConfigEnv {
-		mergedMap[envVar.Name] = envVar // override haloyConfig if exists
+		mergedMap[envVar.Name] = envVar // override deployConfig if exists
 	}
 
 	mergedEnv := make([]config.EnvVar, 0, len(mergedMap))
 
-	// Preserve order defined in haloyConfigEnv (base)
-	for _, envVar := range haloyConfigEnv {
+	// Preserve order defined in deployConfigEnv (base)
+	for _, envVar := range deployConfigEnv {
 		if mergedEnvVar, exists := mergedMap[envVar.Name]; exists {
 			mergedEnv = append(mergedEnv, mergedEnvVar)
 			delete(mergedMap, envVar.Name)
@@ -152,7 +152,7 @@ func mergeEnvArrays(haloyConfigEnv, targetConfigEnv []config.EnvVar) []config.En
 // 1. Target Config (explicitly set in the 'targets' map)
 // 2. Preset Defaults (applied if fields are empty)
 // 3. Global DeployConfig (applied if fields are still empty)
-func MergeToTarget(haloyConfig config.DeployConfig, targetConfig config.TargetConfig, targetName, format string) (config.TargetConfig, error) {
+func MergeToTarget(deployConfig config.DeployConfig, targetConfig config.TargetConfig, targetName, format string) (config.TargetConfig, error) {
 	var tc config.TargetConfig
 	if err := copier.Copy(&tc, &targetConfig); err != nil {
 		return config.TargetConfig{}, fmt.Errorf("failed to deep copy target config for merging: %w", err)
@@ -166,81 +166,81 @@ func MergeToTarget(haloyConfig config.DeployConfig, targetConfig config.TargetCo
 	}
 
 	if tc.Preset == "" {
-		tc.Preset = haloyConfig.Preset
+		tc.Preset = deployConfig.Preset
 	}
 
-	mergedImage, err := mergeImage(tc, haloyConfig.Images, haloyConfig.Image)
+	mergedImage, err := mergeImage(tc, deployConfig.Images, deployConfig.Image)
 	if err != nil {
 		return config.TargetConfig{}, fmt.Errorf("failed to resolve image for target '%s': %w", targetName, err)
 	}
 	tc.Image = mergedImage
 
 	if tc.Server == "" {
-		tc.Server = haloyConfig.Server
+		tc.Server = deployConfig.Server
 	}
 
 	if tc.APIToken == nil {
-		tc.APIToken = haloyConfig.APIToken
+		tc.APIToken = deployConfig.APIToken
 	}
 
 	if tc.DeploymentStrategy == "" {
-		tc.DeploymentStrategy = haloyConfig.DeploymentStrategy
+		tc.DeploymentStrategy = deployConfig.DeploymentStrategy
 	}
 
 	if tc.NamingStrategy == "" {
-		tc.NamingStrategy = haloyConfig.NamingStrategy
+		tc.NamingStrategy = deployConfig.NamingStrategy
 	}
 
 	if tc.Protected == nil {
-		tc.Protected = haloyConfig.Protected
+		tc.Protected = deployConfig.Protected
 	}
 
 	if tc.Domains == nil {
-		tc.Domains = haloyConfig.Domains
+		tc.Domains = deployConfig.Domains
 	}
 
 	if tc.ACMEEmail == "" {
-		tc.ACMEEmail = haloyConfig.ACMEEmail
+		tc.ACMEEmail = deployConfig.ACMEEmail
 	}
 
 	// Merge Env arrays if the target has an explicit Env block, otherwise inherit (which is handled by copier)
 	// Only merge if both base and target have elements. If target.Env is nil (copied from targetConfig, which is nil),
 	// it will inherit the base config value. If target.Env is non-nil (meaning it was set explicitly in the target block,
 	// even if empty), we proceed to merge with the base.
-	if len(targetConfig.Env) > 0 || len(haloyConfig.Env) > 0 {
-		mergedEnv := mergeEnvArrays(haloyConfig.Env, targetConfig.Env)
+	if len(targetConfig.Env) > 0 || len(deployConfig.Env) > 0 {
+		mergedEnv := mergeEnvArrays(deployConfig.Env, targetConfig.Env)
 		tc.Env = mergedEnv
 	} else if tc.Env == nil {
 		// Fallback to base config if nothing was explicitly set on target
-		tc.Env = haloyConfig.Env
+		tc.Env = deployConfig.Env
 	}
 
 	if tc.HealthCheckPath == "" {
-		tc.HealthCheckPath = haloyConfig.HealthCheckPath
+		tc.HealthCheckPath = deployConfig.HealthCheckPath
 	}
 
 	if tc.Port == "" {
-		tc.Port = haloyConfig.Port
+		tc.Port = deployConfig.Port
 	}
 
 	if tc.Replicas == nil {
-		tc.Replicas = haloyConfig.Replicas
+		tc.Replicas = deployConfig.Replicas
 	}
 
 	if tc.Network == "" {
-		tc.Network = haloyConfig.Network
+		tc.Network = deployConfig.Network
 	}
 
 	if tc.Volumes == nil {
-		tc.Volumes = haloyConfig.Volumes
+		tc.Volumes = deployConfig.Volumes
 	}
 
 	if tc.PreDeploy == nil {
-		tc.PreDeploy = haloyConfig.PreDeploy
+		tc.PreDeploy = deployConfig.PreDeploy
 	}
 
 	if tc.PostDeploy == nil {
-		tc.PostDeploy = haloyConfig.PostDeploy
+		tc.PostDeploy = deployConfig.PostDeploy
 	}
 
 	if err := applyPreset(&tc); err != nil {
@@ -381,34 +381,34 @@ func TargetsByServer(targets map[string]config.TargetConfig) map[string][]string
 	return servers
 }
 
-func ExtractTargets(haloyConfig config.DeployConfig, format string) (map[string]config.TargetConfig, error) {
-	if err := haloyConfig.Validate(); err != nil {
+func ExtractTargets(deployConfig config.DeployConfig, format string) (map[string]config.TargetConfig, error) {
+	if err := deployConfig.Validate(); err != nil {
 		return nil, err
 	}
 
 	extractedTargetConfigs := make(map[string]config.TargetConfig)
 
-	if len(haloyConfig.Targets) > 0 {
-		for targetName, target := range haloyConfig.Targets {
-			mergedTargetConfig, err := MergeToTarget(haloyConfig, *target, targetName, format)
+	if len(deployConfig.Targets) > 0 {
+		for targetName, target := range deployConfig.Targets {
+			mergedTargetConfig, err := MergeToTarget(deployConfig, *target, targetName, format)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve target '%s': %w", targetName, err)
 			}
 
-			if err := mergedTargetConfig.Validate(haloyConfig.Format); err != nil {
+			if err := mergedTargetConfig.Validate(deployConfig.Format); err != nil {
 				return nil, fmt.Errorf("validation failed for target '%s': %w", targetName, err)
 			}
 			extractedTargetConfigs[targetName] = mergedTargetConfig
 		}
 	} else {
-		mergedSingleTargetConfig, err := MergeToTarget(haloyConfig, haloyConfig.TargetConfig, haloyConfig.Name, format)
+		mergedSingleTargetConfig, err := MergeToTarget(deployConfig, deployConfig.TargetConfig, deployConfig.Name, format)
 		if err != nil {
 			return nil, fmt.Errorf("failed to merge config: %w", err)
 		}
-		if err := mergedSingleTargetConfig.Validate(haloyConfig.Format); err != nil {
+		if err := mergedSingleTargetConfig.Validate(deployConfig.Format); err != nil {
 			return nil, fmt.Errorf("config invalid: %w", err)
 		}
-		extractedTargetConfigs[haloyConfig.Name] = mergedSingleTargetConfig
+		extractedTargetConfigs[deployConfig.Name] = mergedSingleTargetConfig
 	}
 
 	return extractedTargetConfigs, nil
@@ -436,16 +436,16 @@ func LoadRawDeployConfig(configPath string) (config.DeployConfig, string, error)
 	}
 
 	configKeys := k.Keys()
-	haloyConfigType := reflect.TypeOf(config.DeployConfig{})
+	deployConfigType := reflect.TypeOf(config.DeployConfig{})
 
-	if err := config.CheckUnknownFields(haloyConfigType, configKeys, format); err != nil {
+	if err := config.CheckUnknownFields(deployConfigType, configKeys, format); err != nil {
 		return config.DeployConfig{}, "", err
 	}
 
-	var haloyConfig config.DeployConfig
+	var deployConfig config.DeployConfig
 	decoderConfig := &mapstructure.DecoderConfig{
 		TagName: format,
-		Result:  &haloyConfig,
+		Result:  &deployConfig,
 		// This ensures that embedded structs with inline tags work properly
 		Squash:     true,
 		DecodeHook: config.PortDecodeHook(),
@@ -456,11 +456,11 @@ func LoadRawDeployConfig(configPath string) (config.DeployConfig, string, error)
 		DecoderConfig: decoderConfig,
 	}
 
-	if err := k.UnmarshalWithConf("", &haloyConfig, unmarshalConf); err != nil {
+	if err := k.UnmarshalWithConf("", &deployConfig, unmarshalConf); err != nil {
 		return config.DeployConfig{}, "", fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	return haloyConfig, format, nil
+	return deployConfig, format, nil
 }
 
 var (

@@ -10,9 +10,9 @@ import (
 	"github.com/jinzhu/copier"
 )
 
-func ResolveSecrets(ctx context.Context, haloyConfig config.DeployConfig) (config.DeployConfig, error) {
+func ResolveSecrets(ctx context.Context, deployConfig config.DeployConfig) (config.DeployConfig, error) {
 	var resolvedConfig config.DeployConfig
-	if err := copier.Copy(&resolvedConfig, &haloyConfig); err != nil {
+	if err := copier.Copy(&resolvedConfig, &deployConfig); err != nil {
 		return config.DeployConfig{}, fmt.Errorf("failed to copy config for resolution: %w", err)
 	}
 
@@ -39,26 +39,26 @@ func ResolveSecrets(ctx context.Context, haloyConfig config.DeployConfig) (confi
 	return resolvedConfig, nil
 }
 
-func gatherValueSources(haloyConfig *config.DeployConfig) []*config.ValueSource {
+func gatherValueSources(deployConfig *config.DeployConfig) []*config.ValueSource {
 	var sources []*config.ValueSource
 
-	if haloyConfig.APIToken != nil {
-		sources = append(sources, haloyConfig.APIToken)
+	if deployConfig.APIToken != nil {
+		sources = append(sources, deployConfig.APIToken)
 	}
 
-	for i := range haloyConfig.Env {
-		sources = append(sources, &haloyConfig.Env[i].ValueSource)
+	for i := range deployConfig.Env {
+		sources = append(sources, &deployConfig.Env[i].ValueSource)
 	}
 
-	if haloyConfig.Image != nil {
-		sources = append(sources, gatherImageValueSources(haloyConfig.Image)...)
+	if deployConfig.Image != nil {
+		sources = append(sources, gatherImageValueSources(deployConfig.Image)...)
 	}
 
-	for _, image := range haloyConfig.Images {
+	for _, image := range deployConfig.Images {
 		sources = append(sources, gatherImageValueSources(image)...)
 	}
 
-	for _, targetConfig := range haloyConfig.Targets {
+	for _, targetConfig := range deployConfig.Targets {
 		sources = append(sources, gatherTargetValueSources(targetConfig)...)
 	}
 

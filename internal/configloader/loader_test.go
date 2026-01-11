@@ -33,7 +33,7 @@ func TestMergeToTarget(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		haloyConfig     config.DeployConfig
+		deployConfig    config.DeployConfig
 		targetConfig    config.TargetConfig
 		targetName      string
 		expectedName    string
@@ -44,7 +44,7 @@ func TestMergeToTarget(t *testing.T) {
 	}{
 		{
 			name:           "empty target config inherits from base",
-			haloyConfig:    baseDeployConfig,
+			deployConfig:   baseDeployConfig,
 			targetConfig:   config.TargetConfig{},
 			targetName:     "test-target",
 			expectedName:   "test-target",
@@ -52,8 +52,8 @@ func TestMergeToTarget(t *testing.T) {
 			expectedImage:  *baseDeployConfig.Image,
 		},
 		{
-			name:        "override server only",
-			haloyConfig: baseDeployConfig,
+			name:         "override server only",
+			deployConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Server: "override.haloy.dev",
 			},
@@ -63,8 +63,8 @@ func TestMergeToTarget(t *testing.T) {
 			expectedImage:  *baseDeployConfig.Image,
 		},
 		{
-			name:        "override image repository and tag",
-			haloyConfig: baseDeployConfig,
+			name:         "override image repository and tag",
+			deployConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "custom-nginx",
@@ -80,8 +80,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:        "override all fields",
-			haloyConfig: baseDeployConfig,
+			name:         "override all fields",
+			deployConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "apache",
@@ -106,8 +106,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:        "override with image history",
-			haloyConfig: baseDeployConfig,
+			name:         "override with image history",
+			deployConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					History: &config.ImageHistory{
@@ -131,8 +131,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:        "override with registry auth",
-			haloyConfig: baseDeployConfig,
+			name:         "override with registry auth",
+			deployConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					RegistryAuth: &config.RegistryAuth{
@@ -156,8 +156,8 @@ func TestMergeToTarget(t *testing.T) {
 			},
 		},
 		{
-			name:        "override with domains",
-			haloyConfig: baseDeployConfig,
+			name:         "override with domains",
+			deployConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Domains: []config.Domain{
 					{Canonical: "prod.example.com", Aliases: []string{"www.prod.example.com"}},
@@ -168,8 +168,8 @@ func TestMergeToTarget(t *testing.T) {
 			expectedServer: "default.haloy.dev",
 		},
 		{
-			name:        "override with env vars",
-			haloyConfig: baseDeployConfig,
+			name:         "override with env vars",
+			deployConfig: baseDeployConfig,
 			targetConfig: config.TargetConfig{
 				Env: []config.EnvVar{
 					{Name: "ENV", ValueSource: config.ValueSource{Value: "production"}},
@@ -181,7 +181,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "target name used when no name in base or target",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Image: &config.Image{
 						Repository: "nginx",
@@ -197,7 +197,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "target key used as name even when global name exists",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "global-name",
 					Image: &config.Image{
@@ -214,7 +214,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "target name overrides base name",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "base-name",
 					Image: &config.Image{
@@ -233,7 +233,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "merge env with override and new item",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -269,7 +269,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "merge env with all new items preserves target order",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -305,7 +305,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "preset service applies defaults",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Image: &config.Image{Repository: "nginx"},
 				},
@@ -324,7 +324,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "preset database applies defaults",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Image: &config.Image{Repository: "postgres"},
 				},
@@ -343,7 +343,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "preset does not override explicit values",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Image: &config.Image{Repository: "nginx"},
 				},
@@ -367,7 +367,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "regression: single target with preset and image in base",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Preset: config.PresetService,
 					Server: "api.example.com",
@@ -387,7 +387,7 @@ func TestMergeToTarget(t *testing.T) {
 		},
 		{
 			name: "preset with imageKey should respect resolved image",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				Images: map[string]*config.Image{
 					"my-img": {Repository: "resolved-repo"},
 				},
@@ -409,7 +409,7 @@ func TestMergeToTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := MergeToTarget(tt.haloyConfig, tt.targetConfig, tt.targetName, "yaml")
+			result, err := MergeToTarget(tt.deployConfig, tt.targetConfig, tt.targetName, "yaml")
 			if err != nil {
 				t.Fatalf("MergeToTarget() unexpected error = %v", err)
 			}
@@ -633,15 +633,15 @@ func TestMergeImage(t *testing.T) {
 
 func TestExtractTargets(t *testing.T) {
 	tests := []struct {
-		name        string
-		haloyConfig config.DeployConfig
-		expectError bool
-		errMsg      string
-		expectCount int
+		name         string
+		deployConfig config.DeployConfig
+		expectError  bool
+		errMsg       string
+		expectCount  int
 	}{
 		{
 			name: "single target config",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -655,7 +655,7 @@ func TestExtractTargets(t *testing.T) {
 		},
 		{
 			name: "multi target config",
-			haloyConfig: config.DeployConfig{
+			deployConfig: config.DeployConfig{
 				TargetConfig: config.TargetConfig{
 					Name: "myapp",
 					Image: &config.Image{
@@ -679,7 +679,7 @@ func TestExtractTargets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ExtractTargets(tt.haloyConfig, "yaml")
+			result, err := ExtractTargets(tt.deployConfig, "yaml")
 			if err != nil {
 				t.Errorf("ExtractTargets() unexpected error = %v", err)
 			}
@@ -861,7 +861,7 @@ func TestExpandBuildArgsFromEnv(t *testing.T) {
 
 func TestMergeToTargetWithBuildArgExpansion(t *testing.T) {
 	// Integration test to ensure build arg expansion happens during MergeToTarget
-	haloyConfig := config.DeployConfig{
+	deployConfig := config.DeployConfig{
 		TargetConfig: config.TargetConfig{
 			Name: "myapp",
 			Image: &config.Image{
@@ -876,7 +876,7 @@ func TestMergeToTargetWithBuildArgExpansion(t *testing.T) {
 		},
 	}
 
-	result, err := MergeToTarget(haloyConfig, config.TargetConfig{}, "test-target", "yaml")
+	result, err := MergeToTarget(deployConfig, config.TargetConfig{}, "test-target", "yaml")
 	if err != nil {
 		t.Fatalf("MergeToTarget() unexpected error = %v", err)
 	}
