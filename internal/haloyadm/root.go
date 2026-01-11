@@ -23,6 +23,7 @@ func NewRootCmd() *cobra.Command {
 		RestartCmd(),
 		StopCmd(),
 		APICmd(),
+		SelfUpdateCmd(),
 	)
 
 	return cmd
