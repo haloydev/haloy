@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -128,4 +129,15 @@ func (p *PrefixedUI) Error(format string, a ...any) {
 
 func (p *PrefixedUI) Success(format string, a ...any) {
 	p.call(Success, format, a...)
+}
+
+// Prompt asks the user for input and returns the response
+func Prompt(message string) (string, error) {
+	fmt.Fprint(os.Stdout, s.Foreground(Blue).Render("● ")+message+" ")
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(response), nil
 }

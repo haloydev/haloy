@@ -32,6 +32,7 @@ func ServerCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.AddCommand(ServerListCmd())
 	cmd.AddCommand(ServerSetupCmd())
 	cmd.AddCommand(ServerVersionCmd(configPath, flags))
+	cmd.AddCommand(ServerUpgradeCmd(configPath, flags))
 
 	return cmd
 }
@@ -131,7 +132,7 @@ func addServerURL(url, token string, force bool) error {
 }
 
 func generateTokenEnvName(url string) string {
-	return fmt.Sprintf("HALOY_API_TOKEN_%s", strings.ToUpper(helpers.SanitizeString(url)))
+	return fmt.Sprintf("%s_%s", constants.EnvVarAPIToken, strings.ToUpper(helpers.SanitizeString(url)))
 }
 
 func ServerDeleteCmd() *cobra.Command {

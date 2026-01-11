@@ -42,8 +42,8 @@ This will:
   - Add the server to your local haloy config
 
 Examples:
-  haloy server setup 192.168.1.100 --api-domain api.example.com --acme-email admin@example.com
-  haloy server setup myserver.com -u ubuntu --ssh-identity ~/.ssh/id_rsa`,
+  haloy server setup 192.168.1.100 --api-domain haloy.myserver.com --acme-email acme@myserver.com
+  haloy server setup haloy.myserver.com -u ubuntu --ssh-identity ~/.ssh/id_rsa`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
