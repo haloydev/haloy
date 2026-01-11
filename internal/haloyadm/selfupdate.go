@@ -12,20 +12,13 @@ import (
 	"time"
 
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 type gitHubRelease struct {
 	TagName string `json:"tag_name"`
-}
-
-// normalizeVersion strips the 'v' prefix from version strings for comparison
-func normalizeVersion(version string) string {
-	if len(version) > 0 && version[0] == 'v' {
-		return version[1:]
-	}
-	return version
 }
 
 func SelfUpdateCmd() *cobra.Command {
@@ -81,8 +74,8 @@ func runSelfUpdate(ctx context.Context, checkOnly, force bool) error {
 	ui.Info("Latest version: %s", latestVersion)
 
 	// Normalize versions for comparison (strip 'v' prefix if present)
-	normalizedCurrent := normalizeVersion(currentVersion)
-	normalizedLatest := normalizeVersion(latestVersion)
+	normalizedCurrent := helpers.NormalizeVersion(currentVersion)
+	normalizedLatest := helpers.NormalizeVersion(latestVersion)
 
 	// Check if update is needed
 	if normalizedCurrent == normalizedLatest && !force {

@@ -133,7 +133,7 @@ Examples:
 			ui.Info("")
 			ui.Info("Current CLI version: %s", constants.Version)
 			if latestVersion != "unknown" {
-				ui.Info("Latest available version: %s", normalizeVersion(latestVersion))
+				ui.Info("Latest available version: %s", helpers.NormalizeVersion(latestVersion))
 			}
 
 			if manualMode {
@@ -320,8 +320,8 @@ func checkCLIVersion(ctx context.Context) error {
 	}
 
 	// Normalize versions for comparison (strip 'v' prefix if present)
-	normalizedCurrent := normalizeVersion(constants.Version)
-	normalizedLatest := normalizeVersion(latestVersion)
+	normalizedCurrent := helpers.NormalizeVersion(constants.Version)
+	normalizedLatest := helpers.NormalizeVersion(latestVersion)
 
 	if normalizedLatest != normalizedCurrent {
 		return fmt.Errorf(
@@ -335,14 +335,6 @@ func checkCLIVersion(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// normalizeVersion strips the 'v' prefix from version strings for comparison
-func normalizeVersion(version string) string {
-	if len(version) > 0 && version[0] == 'v' {
-		return version[1:]
-	}
-	return version
 }
 
 // getLatestReleaseVersion fetches the latest release version from GitHub.
