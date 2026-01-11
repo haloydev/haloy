@@ -260,7 +260,7 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 	tmpFile.Close()
 
 	// Make executable
-	if err := os.Chmod(tmpPath, 0755); err != nil {
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		return fmt.Errorf("failed to make binary executable: %w", err)
 	}
 
