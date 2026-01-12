@@ -9,11 +9,16 @@ import (
 )
 
 func LoadEnvFiles() {
+	// Load base .env files
 	_ = godotenv.Load(constants.ConfigEnvFileName)
-
 	if configDir, err := ConfigDir(); err == nil {
-		configEnvPath := filepath.Join(configDir, constants.ConfigEnvFileName)
-		_ = godotenv.Load(configEnvPath)
+		_ = godotenv.Load(filepath.Join(configDir, constants.ConfigEnvFileName))
+	}
+
+	// Load .env.local files (overrides base values)
+	_ = godotenv.Overload(constants.ConfigEnvLocalFileName)
+	if configDir, err := ConfigDir(); err == nil {
+		_ = godotenv.Overload(filepath.Join(configDir, constants.ConfigEnvLocalFileName))
 	}
 }
 

@@ -41,7 +41,8 @@ const (
 	// File names
 	HaloydConfigFileName  = "haloyd.yaml"
 	ClientConfigFileName  = "client.yaml"
-	ConfigEnvFileName     = ".env"
+	ConfigEnvFileName      = ".env"
+	ConfigEnvLocalFileName = ".env.local"
 	HAProxyConfigFileName = "haproxy.cfg"
 	DBFileName            = "haloy.db"
 )
