@@ -356,9 +356,19 @@ func parseImageTar(tarPath string) (apitypes.ImageManifestEntry, []byte, map[str
 // extractDigestFromPath extracts the sha256 digest from a layer path
 func extractDigestFromPath(layerPath string) string {
 	dir := filepath.Dir(layerPath)
+
+	// Handle modern Docker buildkit format: blobs/sha256/<hash>/layer.tar
+	if strings.HasPrefix(dir, "blobs/sha256/") {
+		hash := strings.TrimPrefix(dir, "blobs/sha256/")
+		return "sha256:" + hash
+	}
+
+	// Handle legacy format: sha256:<hash>/layer.tar
 	if strings.HasPrefix(dir, "sha256:") {
 		return dir
 	}
+
+	// Handle simple format: <hash>/layer.tar
 	return "sha256:" + dir
 }
 
