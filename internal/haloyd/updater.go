@@ -230,28 +230,44 @@ func logFailedContainers(failed []FailedContainer, logger *slog.Logger, phase st
 	}
 }
 
-// logPartialReplicaFailures logs warnings when some replicas of an app are healthy but others failed.
+// logPartialReplicaFailures logs warnings when some replicas of the same deployment are healthy but others failed.
+// This only logs warnings for actual partial failures within a single deployment, not when a new deployment
+// fails while an old deployment is still running.
 func logPartialReplicaFailures(healthy []HealthyContainer, failed []FailedContainer, logger *slog.Logger) {
-	// Build map of healthy apps
-	healthyApps := make(map[string]int)
+	// Build map of healthy apps by deployment ID: map[appName][deploymentID]count
+	healthyApps := make(map[string]map[string]int)
 	for _, c := range healthy {
-		healthyApps[c.Labels.AppName]++
+		if healthyApps[c.Labels.AppName] == nil {
+			healthyApps[c.Labels.AppName] = make(map[string]int)
+		}
+		healthyApps[c.Labels.AppName][c.Labels.DeploymentID]++
 	}
 
-	// Check for failed containers that have healthy siblings
-	failedApps := make(map[string]int)
+	// Build map of failed apps by deployment ID: map[appName][deploymentID]count
+	failedApps := make(map[string]map[string]int)
 	for _, f := range failed {
 		if f.Labels != nil {
-			failedApps[f.Labels.AppName]++
+			if failedApps[f.Labels.AppName] == nil {
+				failedApps[f.Labels.AppName] = make(map[string]int)
+			}
+			failedApps[f.Labels.AppName][f.Labels.DeploymentID]++
 		}
 	}
 
-	for appName, failedCount := range failedApps {
-		if healthyCount, hasHealthy := healthyApps[appName]; hasHealthy {
-			logger.Warn("Partial replica failure: some containers failed health check but deployment continues with healthy instances",
-				"app", appName,
-				"healthy_count", healthyCount,
-				"failed_count", failedCount)
+	// Only log warnings when there are both healthy AND failed containers with the SAME deployment ID
+	for appName, failedDeployments := range failedApps {
+		healthyDeployments, hasHealthy := healthyApps[appName]
+		if hasHealthy {
+			for deploymentID, failedCount := range failedDeployments {
+				if healthyCount, sameDeployment := healthyDeployments[deploymentID]; sameDeployment {
+					// True partial failure: some replicas of the same deployment succeeded, others failed
+					logger.Warn("Partial replica failure: some containers of the same deployment failed health check but deployment continues with healthy instances",
+						"app", appName,
+						"deployment_id", deploymentID,
+						"healthy_count", healthyCount,
+						"failed_count", failedCount)
+				}
+			}
 		}
 	}
 }

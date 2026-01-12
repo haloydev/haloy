@@ -199,8 +199,13 @@ func Run(debug bool) {
 					deployments := updater.deploymentManager.Deployments()
 					appDeployment, appHasHealthyInstances := deployments[de.AppName]
 
-					if len(appFailures) > 0 && !appHasHealthyInstances {
-						// All instances failed - clean up failed containers and report deployment failure
+					// Determine if the new deployment succeeded:
+					// - If there are no healthy instances at all, the deployment failed
+					// - If there are healthy instances but they're from an OLD deployment (different ID), the new deployment failed
+					newDeploymentSucceeded := appHasHealthyInstances && appDeployment.Labels.DeploymentID == de.DeploymentID
+
+					if len(appFailures) > 0 && !newDeploymentSucceeded {
+						// New deployment failed - clean up failed containers and report deployment failure
 						cleanupCtx, cleanupCancel := context.WithTimeout(ctx, 2*time.Minute)
 						defer cleanupCancel()
 
@@ -224,7 +229,7 @@ func Run(debug bool) {
 					}
 
 					canonicalDomains := make([]string, 0, len(de.Domains))
-					if appHasHealthyInstances {
+					if newDeploymentSucceeded {
 						for _, domain := range appDeployment.Labels.Domains {
 							canonicalDomains = append(canonicalDomains, domain.Canonical)
 						}
