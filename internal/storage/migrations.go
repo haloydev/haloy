@@ -5,5 +5,9 @@ func (db *DB) Migrate() error {
 		return err
 	}
 
+	if err := createLayersTable(db); err != nil {
+		return err
+	}
+
 	return nil
 }

@@ -41,8 +41,9 @@ type ImageUploadResponse struct {
 }
 
 type VersionResponse struct {
-	Version        string `json:"haloyd"`
-	HAProxyVersion string `json:"haproxy"`
+	Version        string   `json:"haloyd"`
+	HAProxyVersion string   `json:"haproxy"`
+	Capabilities   []string `json:"capabilities,omitempty"`
 }
 
 type ExecRequest struct {
@@ -69,4 +70,41 @@ type UpgradeResponse struct {
 	PreviousVersion string `json:"previousVersion,omitempty"` // Version before upgrade
 	TargetVersion   string `json:"targetVersion,omitempty"`   // Version being upgraded to
 	Message         string `json:"message,omitempty"`         // Additional information or error message
+}
+
+// LayerCheckRequest is sent by client to query which layers already exist on server
+type LayerCheckRequest struct {
+	Digests []string `json:"digests"`
+}
+
+// LayerCheckResponse tells client which layers are missing
+type LayerCheckResponse struct {
+	Missing []string `json:"missing"`
+	Exists  []string `json:"exists"`
+}
+
+// LayerUploadResponse confirms a layer was stored
+type LayerUploadResponse struct {
+	Digest string `json:"digest"`
+	Size   int64  `json:"size"`
+}
+
+// ImageManifestEntry represents one entry from docker save manifest.json
+type ImageManifestEntry struct {
+	Config   string   `json:"Config"`
+	RepoTags []string `json:"RepoTags"`
+	Layers   []string `json:"Layers"`
+}
+
+// ImageAssembleRequest contains metadata to reassemble an image from layers
+type ImageAssembleRequest struct {
+	ImageRef string             `json:"imageRef"`
+	Config   []byte             `json:"config"`
+	Manifest ImageManifestEntry `json:"manifest"`
+}
+
+// ImageAssembleResponse confirms image was loaded
+type ImageAssembleResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }

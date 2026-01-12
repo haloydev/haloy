@@ -305,3 +305,21 @@ func (c *APIClient) Stream(ctx context.Context, path string, handler func(data s
 
 	return nil
 }
+
+// NewRequest creates an authenticated request with the base URL and auth header set.
+// Callers can customize the request (add headers, etc.) before calling Do.
+func (c *APIClient) NewRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	url := fmt.Sprintf("%s/v1/%s", c.baseURL, path)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.setAuthHeader(req)
+	return req, nil
+}
+
+// Do executes a request using the client's http.Client.
+// Use with NewRequest for custom requests that don't fit Get/Post patterns.
+func (c *APIClient) Do(req *http.Request) (*http.Response, error) {
+	return c.client.Do(req)
+}

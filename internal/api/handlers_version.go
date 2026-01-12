@@ -12,6 +12,7 @@ func (s *APIServer) handleVersion() http.HandlerFunc {
 		response := apitypes.VersionResponse{
 			Version:        constants.Version,
 			HAProxyVersion: constants.HAProxyVersion,
+			Capabilities:   []string{"layer-upload"},
 		}
 
 		encodeJSON(w, http.StatusOK, response)

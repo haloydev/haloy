@@ -34,6 +34,7 @@ const (
 	DBDir            = "db"
 	HAProxyConfigDir = "haproxy-config"
 	CertStorageDir   = "cert-storage"
+	LayersDir        = "layers"
 
 	// File names
 	HaloydConfigFileName  = "haloyd.yaml"
