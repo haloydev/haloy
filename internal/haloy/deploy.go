@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -75,6 +76,18 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 			}
 
 			builds, pushes, uploads := ResolveImageBuilds(resolvedTargets)
+
+			// Check Docker availability before building
+			if len(builds) > 0 {
+				imageRefs := make([]string, 0, len(builds))
+				for imageRef := range builds {
+					imageRefs = append(imageRefs, imageRef)
+				}
+				if err := checkDockerAvailable(ctx, imageRefs); err != nil {
+					return err
+				}
+			}
+
 			for imageRef, image := range builds {
 				if err := BuildImage(ctx, imageRef, image, *configPath); err != nil {
 					return err
@@ -282,4 +295,16 @@ func getHooksWorkDir(configPath string) string {
 		}
 	}
 	return workDir
+}
+
+// checkDockerAvailable verifies Docker daemon is running using a shell command.
+// This avoids importing the Docker client library which adds significant binary bloat.
+func checkDockerAvailable(ctx context.Context, imageRefs []string) error {
+	cmd := exec.CommandContext(ctx, "docker", "info")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Docker is not running. Required to build: %s", strings.Join(imageRefs, ", "))
+	}
+	return nil
 }
