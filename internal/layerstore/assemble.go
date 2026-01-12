@@ -130,7 +130,7 @@ func extractDigestFromLayerPath(layerPath string) (string, error) {
 func writeToTar(tw *tar.Writer, name string, data []byte) error {
 	header := &tar.Header{
 		Name: name,
-		Mode: 0644,
+		Mode: 0o644,
 		Size: int64(len(data)),
 	}
 	if err := tw.WriteHeader(header); err != nil {
@@ -155,7 +155,7 @@ func copyFileToTar(tw *tar.Writer, tarPath string, filePath string) error {
 
 	header := &tar.Header{
 		Name: tarPath,
-		Mode: 0644,
+		Mode: 0o644,
 		Size: stat.Size(),
 	}
 	if err := tw.WriteHeader(header); err != nil {
