@@ -39,12 +39,12 @@ const (
 	LayersDir        = "layers"
 
 	// File names
-	HaloydConfigFileName  = "haloyd.yaml"
-	ClientConfigFileName  = "client.yaml"
+	HaloydConfigFileName   = "haloyd.yaml"
+	ClientConfigFileName   = "client.yaml"
 	ConfigEnvFileName      = ".env"
 	ConfigEnvLocalFileName = ".env.local"
-	HAProxyConfigFileName = "haproxy.cfg"
-	DBFileName            = "haloy.db"
+	HAProxyConfigFileName  = "haproxy.cfg"
+	DBFileName             = "haloy.db"
 )
 
 // File and directory permissions
