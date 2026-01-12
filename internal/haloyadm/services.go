@@ -37,6 +37,13 @@ func startHaloyd(ctx context.Context, dataDir, configDir string, devMode bool, d
 	gid := os.Getgid()
 	dockerGID := getDockerGroupID()
 
+	// Get the path to haloyadm binary for mounting into the container
+	binDir, err := config.BinDir()
+	if err != nil {
+		return fmt.Errorf("failed to get bin directory: %w", err)
+	}
+	haloyadmPath := filepath.Join(binDir, "haloyadm")
+
 	args := []string{
 		"run",
 		"--detach",
@@ -46,6 +53,7 @@ func startHaloyd(ctx context.Context, dataDir, configDir string, devMode bool, d
 		"--volume", fmt.Sprintf("%s:%s:ro", configDir, configDir), // /etc/haloy or ~/.config/haloy
 		"--volume", fmt.Sprintf("%s:%s:rw", dataDir, dataDir), // /var/lib/haloy or ~/.local/share/haloy
 		"--volume", "/var/run/docker.sock:/var/run/docker.sock:rw",
+		"--volume", fmt.Sprintf("%s:/usr/local/bin/haloyadm:rw", haloyadmPath), // Mount haloyadm for self-update
 		"--user", fmt.Sprintf("%d:%d", uid, gid),
 		"--group-add", dockerGID,
 		"--label", fmt.Sprintf("%s=%s", config.LabelRole, config.HaloydLabelRole),

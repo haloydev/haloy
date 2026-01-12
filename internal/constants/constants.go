@@ -27,8 +27,10 @@ const (
 	// Directories
 	SystemDataDir   = "/var/lib/haloy"
 	SystemConfigDir = "/etc/haloy"
+	SystemBinDir    = "/usr/local/bin"
 	UserDataDir     = "~/.local/share/haloy"
 	UserConfigDir   = "~/.config/haloy"
+	UserBinDir      = "~/.local/bin"
 
 	// Subdirectories
 	DBDir            = "db"

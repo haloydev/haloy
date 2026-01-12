@@ -63,6 +63,16 @@ func ConfigDir() (string, error) {
 	return expandedPath, nil
 }
 
+// BinDir returns the directory where haloy binaries are installed
+// System install: /usr/local/bin
+// User install: ~/.local/bin
+func BinDir() (string, error) {
+	if !IsSystemMode() {
+		return expandPath(constants.UserBinDir)
+	}
+	return constants.SystemBinDir, nil
+}
+
 func IsSystemMode() bool {
 	// Check explicit override first
 	if systemInstall := os.Getenv(constants.EnvVarSystemInstall); systemInstall != "" {
