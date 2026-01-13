@@ -12,14 +12,14 @@ import (
 
 // ProgressBar displays an aggregate progress bar that can be updated from multiple goroutines
 type ProgressBar struct {
-	total        int64
-	current      atomic.Int64
-	completed    atomic.Int32
-	totalItems   int32
-	description  string
-	mu           sync.Mutex
-	lastLineLen  int
-	showBytes    bool
+	total       int64
+	current     atomic.Int64
+	completed   atomic.Int32
+	totalItems  int32
+	description string
+	mu          sync.Mutex
+	lastLineLen int
+	showBytes   bool
 }
 
 // ProgressBarConfig configures the progress bar display
