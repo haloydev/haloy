@@ -74,8 +74,9 @@ else
 fi
 
 # Build the CLI binaries using detected/default platform
-CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-X 'github.com/haloydev/haloy/cmd.version=$version'" -o $CLI_BINARY_NAME ../cmd/haloy
-CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-X 'github.com/haloydev/haloy/cmd.version=$version'" -o $CLI_ADM_BINARY_NAME ../cmd/haloyadm
+# Using same flags as production: -s -w strips debug symbols, -trimpath for reproducible builds
+CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=$version'" -o $CLI_BINARY_NAME ../cmd/haloy
+CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=$version'" -o $CLI_ADM_BINARY_NAME ../cmd/haloyadm
 
 # Support localhost: If HOSTNAME is localhost (or 127.0.0.1), use local commands instead of SSH/SCP.
 if [ "$HOSTNAME" = "localhost" ] || [ "$HOSTNAME" = "127.0.0.1" ]; then

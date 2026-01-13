@@ -66,6 +66,29 @@ func (i *Image) ImageRef() string {
 	return fmt.Sprintf("%s:%s", repo, tag)
 }
 
+// GetRegistryServer returns the registry server for the image.
+// If explicitly set in RegistryAuth.Server, that value is used.
+// Otherwise, it parses the server from the Repository field.
+// Defaults to "index.docker.io" (Docker Hub) if no server can be determined.
+func (i *Image) GetRegistryServer() string {
+	if i.RegistryAuth != nil && i.RegistryAuth.Server != "" {
+		return i.RegistryAuth.Server
+	}
+
+	// Default to Docker Hub
+	server := "index.docker.io"
+
+	// Try to parse server from repository
+	// e.g., "ghcr.io/user/repo" -> "ghcr.io"
+	// e.g., "localhost:5000/repo" -> "localhost:5000"
+	parts := strings.SplitN(i.Repository, "/", 2)
+	if len(parts) > 1 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
+		server = parts[0]
+	}
+
+	return server
+}
+
 func (i *Image) Validate(format string) error {
 	if strings.TrimSpace(i.Repository) == "" {
 		return fmt.Errorf("image.repository is required")

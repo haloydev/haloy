@@ -17,29 +17,12 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 )
 
-func GetRegistryServer(imageConfig *config.Image) string {
-	auth := imageConfig.RegistryAuth
-
-	if auth != nil && auth.Server != "" {
-		return auth.Server
-	}
-
-	server := "index.docker.io" // set default to Docker Hub
-	// Try to parse server from repository
-	parts := strings.SplitN(imageConfig.Repository, "/", 2)
-	if len(parts) > 1 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
-		server = parts[0]
-	}
-
-	return server
-}
-
 func getRegistryAuthString(imageConfig *config.Image) (string, error) {
 	auth := imageConfig.RegistryAuth
 	if auth == nil {
 		return "", nil
 	}
-	server := GetRegistryServer(imageConfig)
+	server := imageConfig.GetRegistryServer()
 	authConfig := registry.AuthConfig{
 		Username:      auth.Username.Value,
 		Password:      auth.Password.Value,

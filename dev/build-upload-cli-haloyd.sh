@@ -26,8 +26,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 version=$("$SCRIPT_DIR/get-version.sh")
 echo "Building version: $version"
 
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'github.com/haloydev/haloy/cmd.version=$version'" -o $CLI_BINARY_NAME ../cmd/haloy
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'github.com/haloydev/haloy/cmd.version=$version'" -o $CLI_ADM_BINARY_NAME ../cmd/haloyadm
+# Using same flags as production: -s -w strips debug symbols, -trimpath for reproducible builds
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=$version'" -o $CLI_BINARY_NAME ../cmd/haloy
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=$version'" -o $CLI_ADM_BINARY_NAME ../cmd/haloyadm
 
 # Support localhost: If HOSTNAME is localhost, use local commands instead of SSH/SCP,
 # otherwise use SSH.

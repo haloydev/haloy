@@ -14,7 +14,6 @@ import (
 	"github.com/haloydev/haloy/internal/cmdexec"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/configloader"
-	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
@@ -100,15 +99,11 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 			}
 
 			if len(pushes) > 0 {
-				cli, err := docker.NewClient(ctx)
-				if err != nil {
-					return fmt.Errorf("unable to create docker client for push image: %w", err)
-				}
 				for imageRef, images := range pushes {
 					for _, image := range images {
-						registryServer := docker.GetRegistryServer(image)
+						registryServer := image.GetRegistryServer()
 						ui.Info("Pushing image '%s' to %s", imageRef, registryServer)
-						if err := docker.PushImage(ctx, cli, imageRef, image); err != nil {
+						if err := pushImageToRegistry(ctx, imageRef, image); err != nil {
 							return err
 						}
 					}
@@ -306,5 +301,30 @@ func checkDockerAvailable(ctx context.Context, imageRefs []string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("Docker is not running. Required to build: %s", strings.Join(imageRefs, ", "))
 	}
+	return nil
+}
+
+// pushImageToRegistry pushes an image to a container registry using shell commands.
+// This avoids importing the Docker client library which adds significant binary bloat.
+func pushImageToRegistry(ctx context.Context, imageRef string, image *config.Image) error {
+	if image.RegistryAuth == nil {
+		return fmt.Errorf("no registry authentication configured for image %s", imageRef)
+	}
+
+	server := image.GetRegistryServer()
+
+	// Use --password-stdin to avoid exposing password in process list
+	loginCmd := exec.CommandContext(ctx, "docker", "login", "-u", image.RegistryAuth.Username.Value, "--password-stdin", server)
+	loginCmd.Stdin = strings.NewReader(image.RegistryAuth.Password.Value)
+	if output, err := loginCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("docker login to %s failed: %w\n%s", server, err, string(output))
+	}
+
+	// Push the image
+	pushCmd := fmt.Sprintf("docker push %s", imageRef)
+	if err := cmdexec.RunCommand(ctx, pushCmd, "."); err != nil {
+		return fmt.Errorf("failed to push image %s: %w", imageRef, err)
+	}
+
 	return nil
 }
