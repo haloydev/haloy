@@ -10,11 +10,15 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/haloydev/haloy/internal/apitypes"
+	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/logging"
+	"github.com/joho/godotenv"
 )
 
 type gitHubRelease struct {
@@ -40,7 +44,11 @@ func (s *APIServer) handleUpgrade() http.HandlerFunc {
 			return
 		}
 
-		if currentVersion == latestVersion {
+		// Normalize versions for comparison (strip 'v' prefix if present)
+		normalizedCurrent := helpers.NormalizeVersion(currentVersion)
+		normalizedLatest := helpers.NormalizeVersion(latestVersion)
+
+		if normalizedCurrent == normalizedLatest {
 			encodeJSON(w, http.StatusOK, apitypes.UpgradeResponse{
 				Status:          "completed",
 				PreviousVersion: currentVersion,
@@ -82,26 +90,23 @@ func (s *APIServer) handleUpgradeRestart() http.HandlerFunc {
 
 		logger.Info("Starting service restart for upgrade")
 
-		// Spawn a detached process to run haloyadm restart
-		// We need to do this because haloyadm restart will stop this container
+		// Spawn a separate container to run haloyadm restart.
+		// We can't run it directly in this container because haloyadm restart
+		// will stop this container (haloyd), killing the process before it can
+		// start the new containers. By running in a separate container, the
+		// restart process survives when haloyd is stopped.
 		go func() {
 			// Small delay to ensure the HTTP response is sent
 			time.Sleep(500 * time.Millisecond)
 
-			logger.Info("Executing haloyadm restart")
+			logger.Info("Spawning restart helper container")
 
-			// Run haloyadm restart
-			cmd := exec.Command("haloyadm", "restart", "--no-logs")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-
-			if err := cmd.Start(); err != nil {
-				logger.Error("Failed to start haloyadm restart", "error", err)
+			if err := spawnRestartHelper(); err != nil {
+				logger.Error("Failed to spawn restart helper", "error", err)
 				return
 			}
 
-			// Don't wait for completion - the container will be replaced
-			logger.Info("haloyadm restart started, container will be replaced")
+			logger.Info("Restart helper container spawned, services will be restarted")
 		}()
 
 		encodeJSON(w, http.StatusAccepted, apitypes.UpgradeResponse{
@@ -109,6 +114,102 @@ func (s *APIServer) handleUpgradeRestart() http.HandlerFunc {
 			Message: "Services are restarting. Poll /v1/version to check when upgrade is complete.",
 		})
 	}
+}
+
+// spawnRestartHelper spawns a separate Docker container that runs haloyadm restart.
+// This is necessary because running haloyadm restart inside haloyd would kill itself
+// before it can start the new containers.
+func spawnRestartHelper() error {
+	dataDir, err := config.DataDir()
+	if err != nil {
+		return fmt.Errorf("failed to get data dir: %w", err)
+	}
+
+	configDir, err := config.ConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get config dir: %w", err)
+	}
+
+	binDir, err := config.BinDir()
+	if err != nil {
+		return fmt.Errorf("failed to get bin dir: %w", err)
+	}
+	haloyadmPath := filepath.Join(binDir, "haloyadm")
+
+	// Get docker group ID for socket access
+	dockerGID := getDockerGroupID()
+
+	// Build environment variables to pass to the restart helper
+	envArgs := []string{
+		"--env", fmt.Sprintf("%s=%s", constants.EnvVarDataDir, dataDir),
+		"--env", fmt.Sprintf("%s=%s", constants.EnvVarConfigDir, configDir),
+		"--env", fmt.Sprintf("%s=%t", constants.EnvVarSystemInstall, config.IsSystemMode()),
+	}
+
+	// Read .env file and pass those vars too (needed for API token, etc.)
+	envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
+	if env, err := godotenv.Read(envFile); err == nil {
+		for k, v := range env {
+			envArgs = append(envArgs, "--env", fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	// Use the same haloyd image for the restart helper to ensure compatibility
+	image := fmt.Sprintf("ghcr.io/haloydev/haloy-haloyd:%s", constants.Version)
+
+	uid := os.Getuid()
+	gid := os.Getgid()
+
+	args := []string{
+		"run", "--rm", "-d",
+		"--name", "haloy-restart-helper",
+		"--user", fmt.Sprintf("%d:%d", uid, gid),
+		"--group-add", dockerGID,
+		"-v", "/var/run/docker.sock:/var/run/docker.sock:rw",
+		"-v", fmt.Sprintf("%s:/usr/local/bin/haloyadm:ro", haloyadmPath),
+		"-v", fmt.Sprintf("%s:%s:rw", dataDir, dataDir),
+		"-v", fmt.Sprintf("%s:%s:ro", configDir, configDir),
+		"--network", constants.DockerNetwork,
+	}
+
+	args = append(args, envArgs...)
+	args = append(args, image, "/usr/local/bin/haloyadm", "restart", "--no-logs")
+
+	cmd := exec.Command("docker", args...)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return fmt.Errorf("docker run failed: %s", stderr.String())
+		}
+		return fmt.Errorf("docker run failed: %w", err)
+	}
+
+	return nil
+}
+
+// getDockerGroupID returns the docker group ID for socket access
+func getDockerGroupID() string {
+	// First try environment variable
+	if gid := os.Getenv("DOCKER_GID"); gid != "" {
+		return gid
+	}
+
+	// Try to get it from getent command
+	cmd := exec.Command("getent", "group", "docker")
+	output, err := cmd.Output()
+	if err == nil {
+		// Parse output like "docker:x:999:user1,user2"
+		parts := bytes.Split(bytes.TrimSpace(output), []byte(":"))
+		if len(parts) >= 3 {
+			return string(parts[2]) // The GID
+		}
+	}
+
+	// Fall back to common default
+	return "999"
 }
 
 // runHaloyadmSelfUpdate executes the haloyadm self-update command
