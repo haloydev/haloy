@@ -24,6 +24,7 @@ func NewRootCmd() *cobra.Command {
 		StopCmd(),
 		APICmd(),
 		SelfUpdateCmd(),
+		VersionCmd(),
 	)
 
 	return cmd
