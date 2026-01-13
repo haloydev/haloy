@@ -17,6 +17,7 @@ import (
 	"github.com/haloydev/haloy/internal/cmdexec"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/ui"
+	"golang.org/x/sync/errgroup"
 )
 
 func ResolveImageBuilds(targets map[string]config.TargetConfig) (map[string]*config.Image, map[string][]*config.Image, map[string][]*config.TargetConfig) {
@@ -194,46 +195,89 @@ func uploadImageLayered(ctx context.Context, api *apiclient.APIClient, imageRef,
 	// Report cache status
 	cachedCount := len(checkResp.Exists)
 	totalCount := len(digests)
-	if cachedCount > 0 {
+	missingCount := len(checkResp.Missing)
+
+	if missingCount == 0 {
 		ui.Info("Server has %d/%d layers cached", cachedCount, totalCount)
-	}
-
-	// Upload missing layers
-	for _, digest := range checkResp.Missing {
-		layerInfo, ok := layers[digest]
-		if !ok {
-			return fmt.Errorf("layer %s not found in tar", digest)
+	} else {
+		if cachedCount > 0 {
+			ui.Info("Server has %d/%d layers cached, uploading %d", cachedCount, totalCount, missingCount)
 		}
 
-		ui.Info("Uploading layer %s...", digest[:19]+"...")
-
-		// Open the tar and seek to the layer
-		layerReader, err := openLayerFromTar(tarPath, layerInfo.tarPath)
-		if err != nil {
-			return fmt.Errorf("failed to open layer %s: %w", digest, err)
+		// Calculate total bytes to upload
+		var totalBytes int64
+		for _, digest := range checkResp.Missing {
+			if info, ok := layers[digest]; ok {
+				totalBytes += info.size
+			}
 		}
 
-		// Create and customize the request
-		req, err := api.NewRequest(ctx, "POST", "images/layers", layerReader)
-		if err != nil {
-			layerReader.Close()
-			return fmt.Errorf("failed to create request for layer %s: %w", digest, err)
-		}
-		req.Header.Set("Content-Type", "application/octet-stream")
-		req.Header.Set("X-Layer-Digest", digest)
+		// Create progress bar
+		progress := ui.NewProgressBar(ui.ProgressBarConfig{
+			Description: "Uploading layers",
+			TotalBytes:  totalBytes,
+			TotalItems:  missingCount,
+			ShowBytes:   true,
+		})
 
-		resp, err := api.Do(req)
-		layerReader.Close()
-		if err != nil {
-			return fmt.Errorf("failed to upload layer %s: %w", digest, err)
+		// Upload missing layers in parallel
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(4) // Max 4 concurrent uploads
+
+		for _, digest := range checkResp.Missing {
+			layerInfo, ok := layers[digest]
+			if !ok {
+				progress.Finish()
+				return fmt.Errorf("layer %s not found in tar", digest)
+			}
+
+			g.Go(func() error {
+				// Open the tar and seek to the layer
+				layerReader, err := openLayerFromTar(tarPath, layerInfo.tarPath)
+				if err != nil {
+					return fmt.Errorf("failed to open layer %s: %w", digest, err)
+				}
+
+				// Wrap reader to track progress
+				trackedReader := &progressReader{
+					reader:   layerReader,
+					progress: progress,
+				}
+
+				// Create and customize the request
+				req, err := api.NewRequest(gctx, "POST", "images/layers", trackedReader)
+				if err != nil {
+					layerReader.Close()
+					return fmt.Errorf("failed to create request for layer %s: %w", digest, err)
+				}
+				req.Header.Set("Content-Type", "application/octet-stream")
+				req.Header.Set("X-Layer-Digest", digest)
+
+				resp, err := api.Do(req)
+				layerReader.Close()
+				if err != nil {
+					return fmt.Errorf("failed to upload layer %s: %w", digest, err)
+				}
+
+				if resp.StatusCode >= 400 {
+					body, _ := io.ReadAll(resp.Body)
+					resp.Body.Close()
+					return fmt.Errorf("failed to upload layer %s: server returned %d: %s", digest, resp.StatusCode, string(body))
+				}
+				resp.Body.Close()
+
+				progress.CompleteItem()
+				return nil
+			})
 		}
 
-		if resp.StatusCode >= 400 {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return fmt.Errorf("failed to upload layer %s: server returned %d: %s", digest, resp.StatusCode, string(body))
+		if err := g.Wait(); err != nil {
+			progress.Finish()
+			return err
 		}
-		resp.Body.Close()
+
+		progress.Finish()
+		ui.Success("Uploaded %d layers", missingCount)
 	}
 
 	// Assemble the image on the server
@@ -413,4 +457,18 @@ type layerReader struct {
 
 func (r *layerReader) Close() error {
 	return r.closer.Close()
+}
+
+// progressReader wraps a reader and reports bytes read to a progress bar
+type progressReader struct {
+	reader   io.Reader
+	progress *ui.ProgressBar
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.progress.Add(int64(n))
+	}
+	return n, err
 }

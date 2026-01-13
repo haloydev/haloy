@@ -34,7 +34,6 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 	tw := tar.NewWriter(tempFile)
 	defer tw.Close()
 
-	// 1. Write manifest.json
 	// Wrap the single manifest entry in an array (docker save format)
 	manifestJSON, err := json.Marshal([]apitypes.ImageManifestEntry{req.Manifest})
 	if err != nil {
@@ -44,14 +43,12 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 		return "", fmt.Errorf("failed to write manifest.json: %w", err)
 	}
 
-	// 2. Write config JSON
 	// The config path is specified in the manifest (e.g., "sha256:abc123.json" or "abc123.json")
 	configPath := req.Manifest.Config
 	if err := writeToTar(tw, configPath, req.Config); err != nil {
 		return "", fmt.Errorf("failed to write config: %w", err)
 	}
 
-	// 3. Write each layer
 	// The manifest.Layers contains paths like "<digest>/layer.tar"
 	for _, layerPath := range req.Manifest.Layers {
 		// Extract the digest from the layer path
@@ -61,18 +58,15 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 			return "", fmt.Errorf("failed to parse layer path %s: %w", layerPath, err)
 		}
 
-		// Get the actual layer file from our store
 		storedLayerPath, err := s.GetLayerPath(digest)
 		if err != nil {
 			return "", fmt.Errorf("layer not found: %s: %w", digest, err)
 		}
 
-		// Copy layer into the tar at the expected path
 		if err := copyFileToTar(tw, layerPath, storedLayerPath); err != nil {
 			return "", fmt.Errorf("failed to copy layer %s: %w", digest, err)
 		}
 
-		// Write VERSION file for this layer directory
 		layerDir := filepath.Dir(layerPath)
 		versionPath := filepath.Join(layerDir, "VERSION")
 		if err := writeToTar(tw, versionPath, []byte("1.0")); err != nil {

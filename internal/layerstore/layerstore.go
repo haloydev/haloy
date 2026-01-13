@@ -54,7 +54,6 @@ func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) 
 
 	expectedHash := strings.TrimPrefix(digest, "sha256:")
 
-	// Create layer directory
 	layerDir := filepath.Join(s.basePath, expectedHash)
 	if err := os.MkdirAll(layerDir, constants.ModeDirPrivate); err != nil {
 		return 0, fmt.Errorf("failed to create layer directory: %w", err)
@@ -62,7 +61,6 @@ func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) 
 
 	layerPath := filepath.Join(layerDir, "layer.tar")
 
-	// Create temporary file in same directory for atomic move
 	tempFile, err := os.CreateTemp(layerDir, "layer-*.tar.tmp")
 	if err != nil {
 		return 0, fmt.Errorf("failed to create temporary file: %w", err)
@@ -73,7 +71,6 @@ func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) 
 		os.Remove(tempPath) // Clean up temp file if we fail
 	}()
 
-	// Write and compute hash simultaneously
 	hasher := sha256.New()
 	writer := io.MultiWriter(tempFile, hasher)
 
@@ -86,18 +83,15 @@ func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) 
 		return 0, fmt.Errorf("failed to close temporary file: %w", err)
 	}
 
-	// Verify hash
 	actualHash := hex.EncodeToString(hasher.Sum(nil))
 	if actualHash != expectedHash {
 		return 0, fmt.Errorf("digest mismatch: expected %s, got %s", expectedHash, actualHash)
 	}
 
-	// Atomic rename
 	if err := os.Rename(tempPath, layerPath); err != nil {
 		return 0, fmt.Errorf("failed to rename layer file: %w", err)
 	}
 
-	// Save to database
 	now := time.Now()
 	layer := storage.Layer{
 		Digest:     digest,
@@ -106,7 +100,6 @@ func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) 
 		LastUsedAt: now,
 	}
 	if err := s.db.SaveLayer(layer); err != nil {
-		// Try to clean up the file if db save fails
 		os.Remove(layerPath)
 		return 0, fmt.Errorf("failed to save layer to database: %w", err)
 	}
@@ -144,12 +137,10 @@ func (s *LayerStore) DeleteLayer(digest string) error {
 	hash := strings.TrimPrefix(digest, "sha256:")
 	layerDir := filepath.Join(s.basePath, hash)
 
-	// Remove from filesystem
 	if err := os.RemoveAll(layerDir); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove layer directory: %w", err)
 	}
 
-	// Remove from database
 	if err := s.db.DeleteLayer(digest); err != nil {
 		return fmt.Errorf("failed to remove layer from database: %w", err)
 	}
