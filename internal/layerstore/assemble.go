@@ -112,11 +112,18 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 }
 
 // extractDigestFromLayerPath extracts the sha256 digest from a layer path
-// Handles formats like "blobs/sha256/<hash>/layer.tar", "sha256:<hash>/layer.tar", or "<hash>/layer.tar"
+// Handles formats like "blobs/sha256/<hash>", "blobs/sha256/<hash>/layer.tar", "sha256:<hash>/layer.tar", or "<hash>/layer.tar"
 func extractDigestFromLayerPath(layerPath string) (string, error) {
 	dir := filepath.Dir(layerPath)
 
-	// Handle modern Docker buildkit format: blobs/sha256/<hash>/layer.tar
+	// Handle modern Docker buildkit OCI format: blobs/sha256/<hash>
+	// where the file itself is named with the hash (no layer.tar subdirectory)
+	if dir == "blobs/sha256" {
+		hash := filepath.Base(layerPath)
+		return "sha256:" + hash, nil
+	}
+
+	// Handle older buildkit format: blobs/sha256/<hash>/layer.tar
 	if strings.HasPrefix(dir, "blobs/sha256/") {
 		hash := strings.TrimPrefix(dir, "blobs/sha256/")
 		return "sha256:" + hash, nil
