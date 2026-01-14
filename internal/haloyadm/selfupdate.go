@@ -165,7 +165,7 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 
 	// Verify the downloaded binary works
 	ui.Info("Verifying download...")
-	verifyCmd := exec.CommandContext(ctx, tmpPath, "--version")
+	verifyCmd := exec.CommandContext(ctx, tmpPath, "version")
 	if output, err := verifyCmd.Output(); err != nil {
 		return fmt.Errorf("downloaded binary verification failed: %w", err)
 	} else {
