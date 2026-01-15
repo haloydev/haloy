@@ -48,8 +48,8 @@ func ServerUpgradeCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 This command will:
   - Verify your haloy CLI is on the latest version
   - Check the current server version(s)
-  - Download and install the latest haloyadm binary
-  - Restart the Haloy services (pulling new container images)
+  - Download and install the latest haloyd binary
+  - Restart the haloyd service
 
 The command can upgrade servers defined in your haloy config file,
 or a specific server using the --server flag.
@@ -525,8 +525,8 @@ func performAPIUpgrade(ctx context.Context, targetConfig *config.TargetConfig, s
 		return &PrefixedError{Err: fmt.Errorf("unable to create API client: %w", err), Prefix: prefix}
 	}
 
-	// Phase 1: Update haloyadm binary
-	pui.Info("Phase 1: Updating haloyadm binary...")
+	// Phase 1: Update haloyd binary
+	pui.Info("Phase 1: Updating haloyd binary...")
 	var upgradeResp apitypes.UpgradeResponse
 	if err := api.Post(ctx, "upgrade", nil, &upgradeResp); err != nil {
 		return &PrefixedError{Err: fmt.Errorf("failed to start upgrade: %w", err), Prefix: prefix}
@@ -541,7 +541,7 @@ func performAPIUpgrade(ctx context.Context, targetConfig *config.TargetConfig, s
 		return nil
 	}
 
-	pui.Info("haloyadm updated from %s to %s", upgradeResp.PreviousVersion, upgradeResp.TargetVersion)
+	pui.Info("haloyd updated from %s to %s", upgradeResp.PreviousVersion, upgradeResp.TargetVersion)
 
 	// Phase 2: Restart services
 	pui.Info("Phase 2: Restarting services...")

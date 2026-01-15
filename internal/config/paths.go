@@ -37,7 +37,7 @@ func DataDir() (string, error) {
 	return constants.SystemDataDir, nil
 }
 
-// ConfigDir returns the configuration directory for haloy/haloyadm
+// ConfigDir returns the configuration directory for haloy/haloyd
 // System mode: /etc/haloy
 // User mode: ~/.config/haloy
 func ConfigDir() (string, error) {
@@ -50,7 +50,7 @@ func ConfigDir() (string, error) {
 		return expandedPath, nil
 	}
 
-	// System mode detection (haloyadm)
+	// System mode detection (haloyd)
 	if IsSystemMode() {
 		return constants.SystemConfigDir, nil
 	}

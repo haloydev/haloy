@@ -51,5 +51,5 @@ fi
 echo "Haloy client has been uninstalled successfully."
 echo ""
 echo "Note: This only removes the client binary and configuration."
-echo "Server-side components (haloyd, haloyadm) are not affected."
+echo "Server-side components (haloyd) are not affected."
 echo "To remove server components, run the server uninstall script on your server."

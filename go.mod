@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/docker/docker v28.0.4+incompatible
 	github.com/docker/go-connections v0.5.0
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-acme/lego/v4 v4.22.2
 	github.com/go-viper/mapstructure/v2 v2.3.0
 	github.com/jinzhu/copier v0.4.0
@@ -39,7 +40,6 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

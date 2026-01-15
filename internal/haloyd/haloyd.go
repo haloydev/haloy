@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,6 +22,7 @@ import (
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/logging"
+	"github.com/haloydev/haloy/internal/proxy"
 	"github.com/haloydev/haloy/internal/storage"
 )
 
@@ -57,7 +57,7 @@ func Run(debug bool) {
 		"debug", debug)
 
 	if debug {
-		logger.Info("Debug mode enabled: No changes will be applied to HAProxy. Staging certificates will be used for all domains.")
+		logger.Info("Debug mode enabled: Staging certificates will be used for all domains.")
 	}
 
 	db, err := storage.New()
@@ -101,17 +101,32 @@ func Run(debug bool) {
 	}
 
 	apiServer := api.NewServer(apiToken, logBroker, logLevel)
-	go func() {
-		logger.Info(fmt.Sprintf("Starting API server on :%s...", constants.APIServerPort))
-		if err := apiServer.ListenAndServe(fmt.Sprintf(":%s", constants.APIServerPort)); err != nil && err != http.ErrServerClosed {
-			logging.LogFatal(logger, "API server failed", "error", err)
-		}
-	}()
+
+	// Initialize proxy certificate manager
+	certDir := filepath.Join(dataDir, constants.CertStorageDir)
+	proxyCertManager, err := proxy.NewCertManager(certDir, logger)
+	if err != nil {
+		logging.LogFatal(logger, "Failed to create proxy certificate manager", "error", err)
+	}
+
+	// Start watching for certificate changes
+	if err := proxyCertManager.StartWatching(); err != nil {
+		logger.Warn("Failed to start certificate watcher", "error", err)
+	}
+
+	// Create and start the proxy with the API server handler
+	proxyServer := proxy.New(logger, proxyCertManager, apiServer.Handler())
+
+	// Start proxy on HTTP and HTTPS ports
+	if err := proxyServer.Start(":80", ":443"); err != nil {
+		logging.LogFatal(logger, "Failed to start proxy", "error", err)
+	}
+	logger.Info("Proxy started", "http", ":80", "https", ":443")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Channel for signaling cert updates needing HAProxy reload
+	// Channel for signaling cert updates needing proxy reload
 	certUpdateSignal := make(chan string, 5)
 
 	deploymentManager := NewDeploymentManager(cli, haloydConfig)
@@ -124,12 +139,19 @@ func Run(debug bool) {
 	if err != nil {
 		logging.LogFatal(logger, "Failed to create certificate manager", "error", err)
 	}
-	haproxyManager := NewHAProxyManager(cli, haloydConfig, filepath.Join(dataDir, constants.HAProxyConfigDir), debug)
+
+	// Get API domain for proxy routing
+	apiDomain := ""
+	if haloydConfig != nil {
+		apiDomain = haloydConfig.API.Domain
+	}
+
 	updaterConfig := UpdaterConfig{
 		Cli:               cli,
 		DeploymentManager: deploymentManager,
 		CertManager:       certManager,
-		HAProxyManager:    haproxyManager,
+		Proxy:             proxyServer,
+		APIDomain:         apiDomain,
 	}
 
 	updater := NewUpdater(updaterConfig)
@@ -138,7 +160,7 @@ func Run(debug bool) {
 	}
 
 	logger.Info("haloyd successfully initialized",
-		logging.AttrHaloydInitComplete, true, // signal that the initialization is complete (haloyadm init), used for logs.
+		logging.AttrHaloydInitComplete, true, // signal that the initialization is complete (haloyd init), used for logs.
 	)
 
 	// Docker event listener
@@ -246,22 +268,15 @@ func Run(debug bool) {
 
 		case domainUpdated := <-certUpdateSignal:
 			logger.Info("Received cert update signal", "domain", domainUpdated)
-
-			go func() {
-				// Use a timeout context for this specific task
-				updateCtx, cancelUpdate := context.WithTimeout(ctx, 60*time.Second)
-				defer cancelUpdate()
-
-				// Update only needs to apply config, not full build/check
-				// We assume the deployment state triggering the cert update is still valid.
-				currentDeployments := updater.deploymentManager.Deployments()
-				if err := updater.haproxyManager.ApplyConfig(updateCtx, logger, currentDeployments); err != nil {
-					logger.Error("Background HAProxy update failed",
-						"reason", "cert update",
-						"domain", domainUpdated,
-						"error", err)
-				}
-			}()
+			// Certificate updates are handled automatically by the proxy's CertManager
+			// via fsnotify watching, so we just need to reload certificates explicitly
+			// to ensure they're picked up immediately.
+			if err := proxyCertManager.ReloadCertificates(); err != nil {
+				logger.Error("Failed to reload certificates",
+					"reason", "cert update",
+					"domain", domainUpdated,
+					"error", err)
+			}
 
 		case <-maintenanceTicker.C:
 			logger.Info("Performing periodic maintenance...")

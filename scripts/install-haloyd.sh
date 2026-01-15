@@ -13,7 +13,7 @@ fi
 # The directory to install the binary to. Can be overridden by setting the DIR environment variable.
 DIR="${DIR:-"$DEFAULT_DIR"}"
 
-echo "Installing Haloy admin tool to: $DIR"
+echo "Installing Haloy daemon to: $DIR"
 
 # Check permissions for system installation
 if [ "$DIR" = "/usr/local/bin" ] && [ "$(id -u)" -ne 0 ]; then
@@ -24,11 +24,11 @@ if [ "$DIR" = "/usr/local/bin" ] && [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Warn if installing to user directory for admin tool
+# Warn if installing to user directory for daemon
 if [ "$DIR" = "$HOME/.local/bin" ] && [ "$(id -u)" -ne 0 ]; then
     echo "Warning: Installing to user directory ($DIR)"
     echo "   For system-wide installation, run with sudo:"
-    echo "   sudo curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyadm.sh | sh"
+    echo "   sudo curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyd.sh | sh"
     echo ""
 fi
 
@@ -36,8 +36,7 @@ fi
 OS=$(uname -s)
 case "$OS" in
     Linux*)   PLATFORM="linux" ;;
-    Darwin*)  PLATFORM="darwin" ;;
-    *)        echo "Error: Unsupported OS '$OS'. Haloy supports Linux and macOS." >&2; exit 1 ;;
+    *)        echo "Error: Unsupported OS '$OS'. haloyd is only supported on Linux servers." >&2; exit 1 ;;
 esac
 
 ARCH=$(uname -m)
@@ -67,30 +66,30 @@ fi
 echo "Found version: $GITHUB_LATEST_VERSION"
 
 # --- Download and Install ---
-BINARY_NAME="haloyadm-${PLATFORM}-${ARCH}"
+BINARY_NAME="haloyd-${PLATFORM}-${ARCH}"
 DOWNLOAD_URL="https://github.com/haloydev/haloy/releases/download/${GITHUB_LATEST_VERSION}/${BINARY_NAME}"
-INSTALL_PATH="$DIR/haloyadm"
+INSTALL_PATH="$DIR/haloyd"
 
 # Create the installation directory if it doesn't exist
 mkdir -p "$DIR"
 
-echo "Downloading Haloy admin tool ${GITHUB_LATEST_VERSION} for ${PLATFORM}/${ARCH}..."
+echo "Downloading haloyd ${GITHUB_LATEST_VERSION} for ${PLATFORM}/${ARCH}..."
 curl -L -o "$INSTALL_PATH" "$DOWNLOAD_URL"
 chmod +x "$INSTALL_PATH"
 
 echo ""
-echo "Haloy admin tool (haloyadm) has been installed to '$INSTALL_PATH'"
+echo "Haloy daemon (haloyd) has been installed to '$INSTALL_PATH'"
 echo ""
 
 # Show appropriate PATH instructions based on installation location
 if [ "$DIR" = "/usr/local/bin" ]; then
     echo "The binary is installed in /usr/local/bin which should already be in your PATH."
-    echo "You can now run: sudo haloyadm init"
+    echo "You can now run: sudo haloyd init"
 else
     echo "Please ensure '$DIR' is in your system's PATH."
     echo "You can check by running: 'echo \$PATH'"
     echo "If not, add it to your shell's profile (e.g., ~/.bashrc, ~/.zshrc):"
     echo "   export PATH=\"$DIR:\$PATH\""
     echo ""
-    echo "You can now run: haloyadm init --local-install"
+    echo "You can now run: haloyd init --local-install"
 fi

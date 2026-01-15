@@ -128,7 +128,7 @@ func (cm *CertificatesClientManager) LoadOrRegisterClient(email string) (*lego.C
 	}
 
 	// Configure HTTP challenge provider using a server that listens on port 8080
-	// HAProxy is configured to forward /.well-known/acme-challenge/* requests to this server
+	// The proxy forwards /.well-known/acme-challenge/* requests to this server
 	err = client.Challenge.SetHTTP01Provider(cm.sharedHTTPProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set HTTP challenge provider: %w", err)
@@ -242,7 +242,7 @@ func (cm *CertificatesManager) Refresh(logger *slog.Logger, domains []Certificat
 			logger.Error("Certificate refresh failed", "error", err)
 			return
 		}
-		// Signal the update channel to update HAProxy if certificates were renewed.
+		// Signal the update channel to reload certificates if any were renewed.
 		if len(renewedDomains) > 0 {
 			if cm.updateSignal != nil {
 				cm.updateSignal <- "certificates_renewed"

@@ -3,11 +3,9 @@ package constants
 import "os"
 
 const (
-	Version                  = "0.1.0-beta.27"
-	HAProxyVersion           = "3.2"
-	HaloydContainerName      = "haloyd"
-	HAProxyContainerName     = "haloy-haproxy"
-	DockerNetwork            = "haloy"
+	Version       = "0.1.0-beta.27"
+	ProxyVersion  = "embedded" // Previously HAProxy, now embedded Go proxy
+	DockerNetwork = "haloy"
 	DefaultDeploymentsToKeep = 6
 	DefaultHealthCheckPath   = "/"
 	DefaultContainerPort     = "8080"
@@ -33,17 +31,15 @@ const (
 	UserBinDir      = "~/.local/bin"
 
 	// Subdirectories
-	DBDir            = "db"
-	HAProxyConfigDir = "haproxy-config"
-	CertStorageDir   = "cert-storage"
-	LayersDir        = "layers"
+	DBDir          = "db"
+	CertStorageDir = "cert-storage"
+	LayersDir      = "layers"
 
 	// File names
 	HaloydConfigFileName   = "haloyd.yaml"
 	ClientConfigFileName   = "client.yaml"
 	ConfigEnvFileName      = ".env"
 	ConfigEnvLocalFileName = ".env.local"
-	HAProxyConfigFileName  = "haproxy.cfg"
 	DBFileName             = "haloy.db"
 )
 

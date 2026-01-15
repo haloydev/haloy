@@ -11,7 +11,7 @@ func (s *APIServer) handleVersion() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		response := apitypes.VersionResponse{
 			Version:        constants.Version,
-			HAProxyVersion: constants.HAProxyVersion,
+			HAProxyVersion: constants.ProxyVersion, // "embedded" - using Go proxy instead of HAProxy
 			Capabilities:   []string{"layer-upload"},
 		}
 

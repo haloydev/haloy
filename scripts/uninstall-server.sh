@@ -3,7 +3,7 @@
 set -e
 
 echo "Uninstalling Haloy server components..."
-echo "⚠️  This will remove haloyd, HAProxy, and all associated configuration files."
+echo "This will remove haloyd and all associated configuration files."
 echo ""
 
 # Check if running as root for system-wide uninstall
@@ -14,34 +14,31 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-echo "Stopping services..."
+echo "Stopping haloyd service..."
 
-# Stop services using haloyadm if available
-if command -v haloyadm >/dev/null 2>&1; then
-    echo "Stopping haloyd and HAProxy services..."
-    haloyadm stop 2>/dev/null || echo "Failed to stop services with haloyadm (continuing anyway)"
-else
-    echo "haloyadm not found, stopping containers manually..."
-    # Stop containers manually if haloyadm is not available
-    docker stop haloyd 2>/dev/null || echo "haloyd container not running"
-    docker stop haloy-haproxy 2>/dev/null || echo "haloy-haproxy container not running"
+# Stop and disable systemd service if it exists
+if systemctl is-active --quiet haloyd 2>/dev/null; then
+    systemctl stop haloyd
+    echo "Stopped haloyd service"
 fi
 
-echo "Removing containers and images..."
+if systemctl is-enabled --quiet haloyd 2>/dev/null; then
+    systemctl disable haloyd
+    echo "Disabled haloyd service"
+fi
 
-# Remove containers
-docker rm -f haloyd 2>/dev/null || echo "haloyd container not found"
-docker rm -f haloy-haproxy 2>/dev/null || echo "haloy-haproxy container not found"
-
-# Remove Haloy images (try both possible naming conventions)
-docker image rm -f ghcr.io/haloydev/haloy-haloyd 2>/dev/null || true
-docker image rm -f haloyd 2>/dev/null || true
+# Remove systemd service file
+if [ -f "/etc/systemd/system/haloyd.service" ]; then
+    rm -f /etc/systemd/system/haloyd.service
+    systemctl daemon-reload
+    echo "Removed systemd service file"
+fi
 
 echo "Removing binaries..."
 
 # Remove binaries
-rm -f /usr/local/bin/haloyadm
-rm -f "$HOME/.local/bin/haloyadm"
+rm -f /usr/local/bin/haloyd
+rm -f "$HOME/.local/bin/haloyd"
 
 echo "Removing configuration and data..."
 
@@ -56,12 +53,11 @@ rm -rf "$HOME/.config/haloy/"
 rm -rf "$HOME/.local/share/haloy/"
 
 echo ""
-echo "✅ Haloy server components have been completely removed."
+echo "Haloy server components have been completely removed."
 echo ""
 echo "Removed components:"
-echo "  - haloyd daemon container"
-echo "  - HAProxy container"
-echo "  - haloyadm admin tool"
+echo "  - haloyd daemon binary"
+echo "  - systemd service"
 echo "  - Configuration files"
 echo "  - SSL certificates"
 echo "  - Deployment data"

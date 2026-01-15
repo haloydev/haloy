@@ -45,7 +45,7 @@ bun add -g haloy
 
 ### 2. Server Setup
 
-Use the `server setup` command to provision your server automatically. This command will SSH into your server as `root` (default), install Docker if needed, install `haloyadm`, and configure the remote `haloyd` service.
+Use the `server setup` command to provision your server automatically. This command will SSH into your server as `root` (default), install Docker if needed, install `haloyd`, and configure the remote haloyd service via systemd.
 
 ```bash
 haloy server setup <server-ip> --api-domain haloy.yourserver.com --acme-email you@email.com

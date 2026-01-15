@@ -8,7 +8,7 @@ else
     LOCAL_BIN_DIR="$HOME/.local/bin"
 fi
 SYSTEM_BIN_DIR="/usr/local/bin"
-BINARY_NAME="haloyadm"
+BINARY_NAME="haloyd"
 
 if [ ! -f "$LOCAL_BIN_DIR/$BINARY_NAME" ]; then
     echo "Error: $BINARY_NAME not found in $LOCAL_BIN_DIR"

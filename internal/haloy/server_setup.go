@@ -12,21 +12,19 @@ import (
 )
 
 const (
-	installHaloyadmScript = "curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyadm.sh | sh"
-	checkDockerCmd        = "command -v docker >/dev/null 2>&1 && echo 'installed' || echo 'missing'"
-	installDockerScript   = "curl -fsSL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-docker.sh | sh"
+	installHaloydScript = "curl -sL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-haloyd.sh | sh"
+	checkDockerCmd      = "command -v docker >/dev/null 2>&1 && echo 'installed' || echo 'missing'"
+	installDockerScript = "curl -fsSL https://raw.githubusercontent.com/haloydev/haloy/main/scripts/install-docker.sh | sh"
 )
 
 func ServerSetupCmd() *cobra.Command {
 	var (
-		user       string
-		port       int
-		apiDomain  string
-		acmeEmail  string
-		override   bool
-		noServices bool
-		noLogs     bool
-		identity   string
+		user      string
+		port      int
+		apiDomain string
+		acmeEmail string
+		override  bool
+		identity  string
 	)
 
 	cmd := &cobra.Command{
@@ -36,8 +34,8 @@ func ServerSetupCmd() *cobra.Command {
 
 This will:
   - SSH into the remote host
-  - Install the haloyadm admin tool
-  - Run 'haloyadm init' with your domain/email
+  - Install the haloyd daemon
+  - Run 'haloyd init' with your domain/email
   - Read the API token from the server
   - Add the server to your local haloy config
 
@@ -92,25 +90,25 @@ Examples:
 				ui.Info("Docker is already installed")
 			}
 
-			ui.Info("Installing haloyadm on remote server...")
-			if _, err := sshrunner.RunStreaming(ctx, sshCfg, installHaloyadmScript, os.Stdout, os.Stderr); err != nil {
-				return fmt.Errorf("failed to install haloyadm on remote server: %w", err)
+			ui.Info("Installing haloyd on remote server...")
+			if _, err := sshrunner.RunStreaming(ctx, sshCfg, installHaloydScript, os.Stdout, os.Stderr); err != nil {
+				return fmt.Errorf("failed to install haloyd on remote server: %w", err)
 			}
 
-			initCmd := buildInitCommand(apiDomain, acmeEmail, override, noServices, noLogs)
+			initCmd := buildInitCommand(apiDomain, acmeEmail, override)
 			ui.Info("Running remote: %s", initCmd)
 
 			if _, err := sshrunner.RunStreaming(ctx, sshCfg, initCmd, os.Stdout, os.Stderr); err != nil {
-				return fmt.Errorf("remote haloyadm init failed: %w", err)
+				return fmt.Errorf("remote haloyd init failed: %w", err)
 			}
 
 			ui.Info("Reading API token from remote server...")
-			tokenRes, err := sshrunner.Run(ctx, sshCfg, "/usr/local/bin/haloyadm api token --raw")
+			tokenRes, err := sshrunner.Run(ctx, sshCfg, "/usr/local/bin/haloyd config get api-token --raw")
 			if err != nil {
 				serverURL := serverURLFromDomainOrHost(apiDomain, host)
 				ui.Warn("Could not retrieve API token from remote server.")
 				ui.Info("You can still add the server manually:")
-				ui.Info("  On the server, run: haloyadm api token")
+				ui.Info("  On the server, run: haloyd config get api-token")
 				ui.Info("  Then locally, run: haloy server add %s <token>", serverURL)
 				return fmt.Errorf("failed to get API token: %w", err)
 			}
@@ -120,7 +118,7 @@ Examples:
 				serverURL := serverURLFromDomainOrHost(apiDomain, host)
 				ui.Warn("API token is empty.")
 				ui.Info("You can still add the server manually:")
-				ui.Info("  On the server, run: haloyadm api token")
+				ui.Info("  On the server, run: haloyd config get api-token")
 				ui.Info("  Then locally, run: haloy server add %s <token>", serverURL)
 				return fmt.Errorf("API token is empty")
 			}
@@ -142,15 +140,13 @@ Examples:
 	cmd.Flags().StringVar(&apiDomain, "api-domain", "", "Domain for the haloyd API (e.g., api.yourserver.com)")
 	cmd.Flags().StringVar(&acmeEmail, "acme-email", "", "Email address for Let's Encrypt certificate registration")
 	cmd.Flags().BoolVar(&override, "override", false, "Override existing Haloy data/config on server")
-	cmd.Flags().BoolVar(&noServices, "no-services", false, "Don't start HAProxy and haloyd containers on server")
-	cmd.Flags().BoolVar(&noLogs, "no-logs", false, "Don't stream haloyd initialization logs on server")
 	cmd.Flags().StringVar(&identity, "ssh-identity", "", "Path to SSH private key (optional; uses default ssh behavior if not set)")
 
 	return cmd
 }
 
-func buildInitCommand(apiDomain, acmeEmail string, override, noServices, noLogs bool) string {
-	args := []string{"/usr/local/bin/haloyadm", "init", "--remote-install"}
+func buildInitCommand(apiDomain, acmeEmail string, override bool) string {
+	args := []string{"/usr/local/bin/haloyd", "init"}
 
 	if apiDomain != "" {
 		args = append(args, "--api-domain", apiDomain)
@@ -160,12 +156,6 @@ func buildInitCommand(apiDomain, acmeEmail string, override, noServices, noLogs 
 	}
 	if override {
 		args = append(args, "--override")
-	}
-	if noServices {
-		args = append(args, "--no-services")
-	}
-	if noLogs {
-		args = append(args, "--no-logs")
 	}
 
 	return strings.Join(args, " ")

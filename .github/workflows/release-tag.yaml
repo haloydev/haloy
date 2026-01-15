@@ -150,18 +150,18 @@ jobs:
             CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloy
           done
 
-          # haloyadm CLI - server administration tool (typically used on Linux servers)
-          HALOYADM_PLATFORMS=("linux/amd64" "linux/arm64")
+          # haloyd daemon - server-side binary (runs natively via systemd on Linux servers)
+          HALOYD_PLATFORMS=("linux/amd64" "linux/arm64")
 
-          for platform in "${HALOYADM_PLATFORMS[@]}"; do
+          for platform in "${HALOYD_PLATFORMS[@]}"; do
             IFS="/" read -r -a parts <<< "$platform"
             GOOS="${parts[0]}"
             GOARCH="${parts[1]}"
 
-            OUTPUT_NAME="haloyadm-${GOOS}-${GOARCH}"
+            OUTPUT_NAME="haloyd-${GOOS}-${GOARCH}"
 
-            echo "Building haloyadm for $GOOS/$GOARCH..."
-            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloyadm
+            echo "Building haloyd for $GOOS/$GOARCH..."
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloyd
           done
 
           # Create checksums for all built artifacts
@@ -198,8 +198,8 @@ jobs:
             dist/haloy-darwin-arm64
             dist/haloy-windows-amd64.exe
             dist/haloy-windows-arm64.exe
-            dist/haloyadm-linux-amd64
-            dist/haloyadm-linux-arm64
+            dist/haloyd-linux-amd64
+            dist/haloyd-linux-arm64
             dist/checksums.txt
           draft: false
           prerelease: ${{ contains(needs.build-and-publish.outputs.version, 'alpha') || contains(needs.build-and-publish.outputs.version, 'beta') || contains(needs.build-and-publish.outputs.version, 'rc') }}

@@ -1,4 +1,4 @@
-package haloyadm
+package main
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -17,16 +18,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func SelfUpdateCmd() *cobra.Command {
-	var (
-		checkOnly bool
-		force     bool
-	)
+func newUpgradeCmd() *cobra.Command {
+	var checkOnly bool
+	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "self-update",
-		Short: "Update haloyadm to the latest version",
-		Long: `Update haloyadm to the latest version from GitHub releases.
+		Use:   "upgrade",
+		Short: "Upgrade haloyd to the latest version",
+		Long: `Upgrade haloyd to the latest version from GitHub releases.
 
 This command will:
   - Check for the latest version on GitHub
@@ -34,33 +33,34 @@ This command will:
   - Backup the existing binary
   - Install the new version
 
+After upgrading, restart haloyd with: systemctl restart haloyd
+
 Examples:
-  # Update to latest version
-  haloyadm self-update
+  # Upgrade to latest version
+  haloyd upgrade
 
-  # Check if update is available without installing
-  haloyadm self-update --check
+  # Check if upgrade is available without installing
+  haloyd upgrade --check
 
-  # Force update even if already on latest
-  haloyadm self-update --force`,
+  # Force upgrade even if already on latest
+  haloyd upgrade --force`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runSelfUpdate(ctx, checkOnly, force)
+			return runUpgrade(ctx, checkOnly, force)
 		},
 	}
 
-	cmd.Flags().BoolVar(&checkOnly, "check", false, "Only check if an update is available, don't install")
-	cmd.Flags().BoolVar(&force, "force", false, "Force update even if already on the latest version")
+	cmd.Flags().BoolVar(&checkOnly, "check", false, "Only check if an upgrade is available, don't install")
+	cmd.Flags().BoolVar(&force, "force", false, "Force upgrade even if already on the latest version")
 
 	return cmd
 }
 
-func runSelfUpdate(ctx context.Context, checkOnly, force bool) error {
+func runUpgrade(ctx context.Context, checkOnly, force bool) error {
 	currentVersion := constants.Version
 	ui.Info("Current version: %s", currentVersion)
 
-	// Fetch latest version from GitHub
 	ui.Info("Checking for updates...")
 	latestVersion, err := github.FetchLatestVersion(ctx)
 	if err != nil {
@@ -69,11 +69,9 @@ func runSelfUpdate(ctx context.Context, checkOnly, force bool) error {
 
 	ui.Info("Latest version: %s", latestVersion)
 
-	// Normalize versions for comparison (strip 'v' prefix if present)
 	normalizedCurrent := helpers.NormalizeVersion(currentVersion)
 	normalizedLatest := helpers.NormalizeVersion(latestVersion)
 
-	// Check if update is needed
 	if normalizedCurrent == normalizedLatest && !force {
 		ui.Success("Already running the latest version!")
 		return nil
@@ -86,51 +84,45 @@ func runSelfUpdate(ctx context.Context, checkOnly, force bool) error {
 		return nil
 	}
 
-	// Find current binary path
 	execPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to determine executable path: %w", err)
 	}
 
-	// Resolve symlinks to get the actual binary path
 	execPath, err = resolveSymlinks(execPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve executable path: %w", err)
 	}
 
-	ui.Info("Updating haloyadm...")
+	ui.Info("Upgrading haloyd...")
 	ui.Info("Binary path: %s", execPath)
 
-	// Download and install
 	if err := downloadAndInstall(ctx, execPath, latestVersion); err != nil {
 		return err
 	}
 
-	ui.Success("Successfully updated haloyadm to %s!", latestVersion)
+	ui.Success("Successfully upgraded haloyd to %s!", latestVersion)
+	ui.Info("Restart haloyd with: systemctl restart haloyd")
+
 	return nil
 }
 
-// downloadAndInstall downloads and installs the new haloyadm binary
 func downloadAndInstall(ctx context.Context, currentPath, version string) error {
-	// Detect platform and architecture
 	platform := runtime.GOOS
 	arch := runtime.GOARCH
 
-	// Construct download URL
-	binaryName := fmt.Sprintf("haloyadm-%s-%s", platform, arch)
+	binaryName := fmt.Sprintf("haloyd-%s-%s", platform, arch)
 	downloadURL := fmt.Sprintf("https://github.com/haloydev/haloy/releases/download/%s/%s", version, binaryName)
 
 	ui.Info("Downloading %s...", binaryName)
 
-	// Download to temp file
-	tmpFile, err := os.CreateTemp("", "haloyadm-update-*")
+	tmpFile, err := os.CreateTemp("", "haloyd-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) // Clean up on error
+	defer os.Remove(tmpPath)
 
-	// Download the binary
 	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
 		tmpFile.Close()
@@ -150,7 +142,6 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 		return fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
 
-	// Write to temp file
 	_, err = io.Copy(tmpFile, resp.Body)
 	if err != nil {
 		tmpFile.Close()
@@ -158,12 +149,10 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 	}
 	tmpFile.Close()
 
-	// Make executable
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		return fmt.Errorf("failed to make binary executable: %w", err)
 	}
 
-	// Verify the downloaded binary works
 	ui.Info("Verifying download...")
 	verifyCmd := exec.CommandContext(ctx, tmpPath, "version")
 	if output, err := verifyCmd.Output(); err != nil {
@@ -172,17 +161,14 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 		ui.Info("Downloaded version: %s", string(output))
 	}
 
-	// Backup existing binary
 	backupPath := currentPath + ".backup"
 	ui.Info("Backing up current binary to %s", backupPath)
 	if err := copyFile(currentPath, backupPath); err != nil {
 		return fmt.Errorf("failed to backup current binary: %w", err)
 	}
 
-	// Install new binary
 	ui.Info("Installing new binary...")
 	if err := copyFile(tmpPath, currentPath); err != nil {
-		// Try to restore backup
 		ui.Warn("Installation failed, restoring backup...")
 		if restoreErr := copyFile(backupPath, currentPath); restoreErr != nil {
 			return fmt.Errorf("installation failed and could not restore backup: %w (restore error: %v)", err, restoreErr)
@@ -190,55 +176,15 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 		return fmt.Errorf("installation failed (backup restored): %w", err)
 	}
 
-	// Clean up backup on success
 	os.Remove(backupPath)
 
 	return nil
 }
 
-// resolveSymlinks resolves symlinks to get the actual file path
 func resolveSymlinks(path string) (string, error) {
-	resolved, err := os.Readlink(path)
-	if err != nil {
-		// Not a symlink, return original path
-		if os.IsNotExist(err) {
-			return "", err
-		}
-		return path, nil
-	}
-
-	// If the resolved path is relative, make it absolute
-	if !isAbsolutePath(resolved) {
-		dir := dirPath(path)
-		resolved = dir + "/" + resolved
-	}
-
-	// Recursively resolve in case of chained symlinks
-	return resolveSymlinks(resolved)
+	return filepath.EvalSymlinks(path)
 }
 
-// isAbsolutePath checks if a path is absolute
-func isAbsolutePath(path string) bool {
-	if len(path) == 0 {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return len(path) >= 2 && path[1] == ':'
-	}
-	return path[0] == '/'
-}
-
-// dirPath returns the directory portion of a path
-func dirPath(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' || path[i] == '\\' {
-			return path[:i]
-		}
-	}
-	return "."
-}
-
-// copyFile copies a file from src to dst, preserving permissions
 func copyFile(src, dst string) error {
 	sourceFile, err := os.Open(src)
 	if err != nil {
@@ -246,7 +192,6 @@ func copyFile(src, dst string) error {
 	}
 	defer sourceFile.Close()
 
-	// Get source file info for permissions
 	sourceInfo, err := sourceFile.Stat()
 	if err != nil {
 		return err

@@ -8,18 +8,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-# Check if CGO dependencies are available
-if ! command -v gcc &> /dev/null; then
-    echo "Error: gcc not found. Install build dependencies:"
-    echo "  On Debian/Ubuntu: sudo apt install build-essential"
-    echo "  On Alpine: apk add gcc musl-dev"
-    echo "  On CentOS/RHEL: sudo yum install gcc glibc-devel"
-    echo "  On macOS: xcode-select --install"
-    exit 1
-fi
-
 CLI_BINARY_NAME=haloy
-CLI_ADM_BINARY_NAME=haloyadm
 
 HOSTNAME=$1
 
@@ -73,10 +62,9 @@ else
     echo "Building for remote platform: $GOOS/$GOARCH"
 fi
 
-# Build the CLI binaries using detected/default platform
+# Build the CLI binary using detected/default platform
 # Using same flags as production: -s -w strips debug symbols, -trimpath for reproducible builds
 CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=$version'" -o $CLI_BINARY_NAME ../cmd/haloy
-CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=$version'" -o $CLI_ADM_BINARY_NAME ../cmd/haloyadm
 
 # Support localhost: If HOSTNAME is localhost (or 127.0.0.1), use local commands instead of SSH/SCP.
 if [ "$HOSTNAME" = "localhost" ] || [ "$HOSTNAME" = "127.0.0.1" ]; then
@@ -93,24 +81,17 @@ if [ "$HOSTNAME" = "localhost" ] || [ "$HOSTNAME" = "127.0.0.1" ]; then
 
     mkdir -p "$LOCAL_BIN_DIR"
     cp $CLI_BINARY_NAME "$LOCAL_BIN_DIR/$CLI_BINARY_NAME"
-    cp $CLI_ADM_BINARY_NAME "$LOCAL_BIN_DIR/$CLI_ADM_BINARY_NAME"
 
-    # Make binaries executable
+    # Make binary executable
     chmod +x "$LOCAL_BIN_DIR/$CLI_BINARY_NAME"
-    chmod +x "$LOCAL_BIN_DIR/$CLI_ADM_BINARY_NAME"
 else
     ssh "${USERNAME}@${HOSTNAME}" "mkdir -p /home/${USERNAME}/.local/bin"
     scp $CLI_BINARY_NAME ${USERNAME}@"$HOSTNAME":/home/${USERNAME}/.local/bin/$CLI_BINARY_NAME
-    scp $CLI_ADM_BINARY_NAME ${USERNAME}@"$HOSTNAME":/home/${USERNAME}/.local/bin/$CLI_ADM_BINARY_NAME
 fi
 
-# Remove binaries after copying
+# Remove binary after copying
 if [ -f "$CLI_BINARY_NAME" ]; then
     rm "$CLI_BINARY_NAME"
 fi
 
-if [ -f "$CLI_ADM_BINARY_NAME" ]; then
-    rm "$CLI_ADM_BINARY_NAME"
-fi
-
-echo "Successfully built and deployed CLI binaries for $GOOS/$GOARCH."
+echo "Successfully built and deployed haloy CLI for $GOOS/$GOARCH."
