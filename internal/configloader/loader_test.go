@@ -313,8 +313,9 @@ func TestMergeToTarget(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Preset: config.PresetService,
 			},
-			targetName:   "service-target",
-			expectedName: "service-target",
+			targetName:     "service-target",
+			expectedName:   "service-target",
+			expectedServer: "localhost",
 			expectedImage: config.Image{
 				Repository: "nginx",
 				History: &config.ImageHistory{
@@ -332,8 +333,9 @@ func TestMergeToTarget(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Preset: config.PresetDatabase,
 			},
-			targetName:   "db-target",
-			expectedName: "db-target",
+			targetName:     "db-target",
+			expectedName:   "db-target",
+			expectedServer: "localhost",
 			expectedImage: config.Image{
 				Repository: "postgres",
 				History: &config.ImageHistory{
@@ -356,8 +358,9 @@ func TestMergeToTarget(t *testing.T) {
 					},
 				},
 			},
-			targetName:   "explicit-override",
-			expectedName: "explicit-override",
+			targetName:     "explicit-override",
+			expectedName:   "explicit-override",
+			expectedServer: "localhost",
 			expectedImage: config.Image{
 				Repository: "nginx",
 				History: &config.ImageHistory{
@@ -396,8 +399,9 @@ func TestMergeToTarget(t *testing.T) {
 				Preset:   config.PresetService,
 				ImageKey: "my-img",
 			},
-			targetName:   "key-target",
-			expectedName: "key-target",
+			targetName:     "key-target",
+			expectedName:   "key-target",
+			expectedServer: "localhost",
 			expectedImage: config.Image{
 				Repository: "resolved-repo",
 				History: &config.ImageHistory{

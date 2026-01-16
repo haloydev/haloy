@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
-	"github.com/haloydev/haloy/internal/embed"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -114,11 +112,6 @@ The data directory can be customized by setting the %s environment variable.`,
 			}
 			if err := createSubdirectories(dataDir, subdirs); err != nil {
 				return fmt.Errorf("failed to create subdirectories: %w", err)
-			}
-
-			// Copy error page files
-			if err := copyEmbeddedDataFiles(dataDir); err != nil {
-				return fmt.Errorf("failed to copy data files: %w", err)
 			}
 
 			// Create Docker network
@@ -231,42 +224,6 @@ func createSubdirectories(dataDir string, subdirs []string) error {
 	return nil
 }
 
-func copyEmbeddedDataFiles(dataDir string) error {
-	return fs.WalkDir(embed.DataFS, "data", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel("data", path)
-		if err != nil {
-			return err
-		}
-
-		targetPath := filepath.Join(dataDir, relPath)
-
-		if d.IsDir() {
-			return os.MkdirAll(targetPath, constants.ModeDirPrivate)
-		}
-
-		// Skip HAProxy-related files
-		if strings.Contains(path, "haproxy") {
-			return nil
-		}
-
-		data, err := embed.DataFS.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		fileMode := constants.ModeFileDefault
-		if filepath.Ext(targetPath) == ".sh" {
-			fileMode = constants.ModeFileExec
-		}
-
-		return os.WriteFile(targetPath, data, fileMode)
-	})
-}
-
 func ensureDockerNetwork(ctx interface{ Done() <-chan struct{} }) error {
 	// Check if network exists
 	checkCmd := exec.Command("docker", "network", "inspect", constants.DockerNetwork)
@@ -339,7 +296,7 @@ WantedBy=multi-user.target
 `
 
 	servicePath := "/etc/systemd/system/haloyd.service"
-	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+	if err := os.WriteFile(servicePath, []byte(serviceContent), 0o644); err != nil {
 		return fmt.Errorf("failed to write service file: %w", err)
 	}
 

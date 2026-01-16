@@ -3,9 +3,9 @@ package constants
 import "os"
 
 const (
-	Version       = "0.1.0-beta.27"
-	ProxyVersion  = "embedded" // Previously HAProxy, now embedded Go proxy
-	DockerNetwork = "haloy"
+	Version                  = "0.1.0-beta.27"
+	ProxyVersion             = "embedded" // Previously HAProxy, now embedded Go proxy
+	DockerNetwork            = "haloy"
 	DefaultDeploymentsToKeep = 6
 	DefaultHealthCheckPath   = "/"
 	DefaultContainerPort     = "8080"

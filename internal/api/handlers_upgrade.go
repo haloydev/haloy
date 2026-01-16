@@ -111,7 +111,8 @@ func (s *APIServer) handleUpgradeRestart() http.HandlerFunc {
 func downloadAndInstallBinary(ctx context.Context, version string, logger interface {
 	Info(msg string, args ...any)
 	Error(msg string, args ...any)
-}) error {
+},
+) error {
 	platform := runtime.GOOS
 	arch := runtime.GOARCH
 
