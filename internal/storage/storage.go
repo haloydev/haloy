@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
@@ -28,6 +29,10 @@ func New() (*DB, error) {
 	}
 
 	if err := database.Ping(); err != nil {
+		// SQLite error 14 (SQLITE_CANTOPEN) often means another process has the lock
+		if strings.Contains(err.Error(), "out of memory (14)") || strings.Contains(err.Error(), "database is locked") {
+			return nil, fmt.Errorf("database is locked - another haloyd process may already be running (check with: pgrep -a haloyd)")
+		}
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 

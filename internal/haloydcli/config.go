@@ -224,7 +224,7 @@ the token in your haloy CLI configuration after running this command.`,
 
 			ui.Success("New API token generated: %s", newToken)
 			ui.Info("Restart haloyd for the new token to take effect: systemctl restart haloyd")
-			ui.Info("Update your haloy CLI with: haloy server update <server-name> --token %s", newToken)
+			ui.Info("Update your haloy CLI with: haloy server add <server-name> %s --force", newToken)
 
 			return nil
 		},

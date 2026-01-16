@@ -27,33 +27,30 @@ func TunnelCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "tunnel <local-port>",
+		Use:   "tunnel [local-port]",
 		Short: "Create a TCP tunnel to a container",
 		Long: `Create a TCP tunnel to a running container, allowing local connections to be
 forwarded to the container's port.
 
-The remote port defaults to the port configured in haloy.yaml. Use --port to override.
+If local-port is omitted, it defaults to the port configured for the target in haloy.yaml.
+The remote port also defaults to the configured port. Use --port to override the remote port.
 
 Examples:
-  # Tunnel to a database container (uses port from config)
-  haloy tunnel 15432
+  # Tunnel to postgres (uses port 5432 from config for both local and remote)
+  haloy tunnel -t postgres
+  # Then connect: psql -h localhost -p 5432
+
+  # Use a different local port
+  haloy tunnel 15432 -t postgres
   # Then connect: psql -h localhost -p 15432
 
-  # Override the remote port
-  haloy tunnel 15432 --port 5432
-
   # Tunnel to a specific container (for apps with replicas)
-  haloy tunnel 15432 --container abc123`,
-		Args: cobra.ExactArgs(1),
+  haloy tunnel --container abc123`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			localPort := args[0]
-
-			if err := helpers.ValidatePort(localPort); err != nil {
-				return fmt.Errorf("invalid port: %w", err)
-			}
-
+			// Validate remote port override if provided
 			if port != "" {
 				if err := helpers.ValidatePort(port); err != nil {
 					return fmt.Errorf("invalid remote port: %w", err)
@@ -84,6 +81,22 @@ Examples:
 				target = t
 				break
 			}
+
+			// Determine local port: use argument if provided, otherwise default to target's configured port
+			var localPort string
+			if len(args) > 0 {
+				localPort = args[0]
+			} else {
+				if target.Port == "" {
+					return fmt.Errorf("no port configured for target %q; specify local port as argument", target.Name)
+				}
+				localPort = target.Port.String()
+			}
+
+			if err := helpers.ValidatePort(localPort); err != nil {
+				return fmt.Errorf("invalid port: %w", err)
+			}
+
 			return runTunnel(ctx, &target, localPort, port, containerID)
 		},
 	}

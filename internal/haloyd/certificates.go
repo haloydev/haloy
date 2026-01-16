@@ -372,6 +372,18 @@ func (cm *CertificatesManager) hasConfigurationChanged(logger *slog.Logger, doma
 		return true, nil
 	}
 
+	// Check if staging/production mode changed
+	// Staging certs have "(STAGING)" in the issuer name
+	isStagingCert := strings.Contains(parsedCert.Issuer.String(), "(STAGING)")
+	if isStagingCert != cm.config.TlsStaging {
+		if cm.config.TlsStaging {
+			logger.Debug("Production cert exists but staging mode enabled, needs new staging cert", "domain", domain.Canonical)
+		} else {
+			logger.Debug("Staging cert exists but production mode enabled, needs new production cert", "domain", domain.Canonical)
+		}
+		return true, nil
+	}
+
 	requiredDomains := []string{domain.Canonical}
 	requiredDomains = append(requiredDomains, domain.Aliases...)
 	sort.Strings(requiredDomains)

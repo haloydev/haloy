@@ -138,7 +138,21 @@ health_monitor:
 - `internal/haloyd/haloyd.go` - Starts `HealthMonitor` on daemon startup if enabled in config
 - `internal/haloyd/health_updater.go` - New file implementing `ConfigUpdater` to rebuild proxy config with only healthy backends
 
-### 6. Other Changes
+### 6. Tunnel Command Improvements
+
+The `haloy tunnel` command now supports defaulting the local port to the target's configured port:
+
+```bash
+# Before: local port was required
+haloy tunnel 5432 -t postgres
+
+# After: local port is optional, defaults to target's port from haloy.yaml
+haloy tunnel -t postgres
+```
+
+This reduces user error and makes the common case simpler.
+
+### 7. Other Changes
 
 - **Build scripts updated** (`dev/build-upload-cli-haloyd.sh`) - Builds haloyd as a standalone binary
 - **Installer script renamed** - `install-haloyadm.sh` -> `install-haloyd.sh`
