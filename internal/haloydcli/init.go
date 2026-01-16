@@ -188,27 +188,25 @@ func createConfigFiles(apiToken, domain, acmeEmail, configDir string) error {
 		return fmt.Errorf("failed to set %s permissions: %w", constants.ConfigEnvFileName, err)
 	}
 
-	// Write haloyd.yaml if domain is specified
-	if domain != "" {
-		haloydConfig := &config.HaloydConfig{}
-		haloydConfig.API.Domain = domain
-		haloydConfig.Certificates.AcmeEmail = acmeEmail
-		haloydConfig.HealthMonitor = config.HealthMonitorConfig{
-			Enabled:  false,
-			Interval: "15s",
-			Fall:     3,
-			Rise:     2,
-			Timeout:  "5s",
-		}
+	// Always write haloyd.yaml with defaults
+	haloydConfig := &config.HaloydConfig{}
+	haloydConfig.API.Domain = domain           // may be empty
+	haloydConfig.Certificates.AcmeEmail = acmeEmail // may be empty
+	haloydConfig.HealthMonitor = config.HealthMonitorConfig{
+		Enabled:  false,
+		Interval: "15s",
+		Fall:     3,
+		Rise:     2,
+		Timeout:  "5s",
+	}
 
-		if err := haloydConfig.Validate(); err != nil {
-			return fmt.Errorf("invalid haloyd config: %w", err)
-		}
+	if err := haloydConfig.Validate(); err != nil {
+		return fmt.Errorf("invalid haloyd config: %w", err)
+	}
 
-		haloydConfigPath := filepath.Join(configDir, constants.HaloydConfigFileName)
-		if err := config.SaveHaloydConfig(haloydConfig, haloydConfigPath); err != nil {
-			return fmt.Errorf("failed to save haloyd config: %w", err)
-		}
+	haloydConfigPath := filepath.Join(configDir, constants.HaloydConfigFileName)
+	if err := config.SaveHaloydConfig(haloydConfig, haloydConfigPath); err != nil {
+		return fmt.Errorf("failed to save haloyd config: %w", err)
 	}
 
 	return nil
