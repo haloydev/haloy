@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -156,38 +157,31 @@ func (c *HTTPChecker) CheckAll(ctx context.Context, targets []Target, maxConcurr
 
 	results := make([]Result, len(targets))
 	sem := make(chan struct{}, maxConcurrent)
-	done := make(chan struct{})
+	var wg sync.WaitGroup
 
-	go func() {
-		for i, target := range targets {
-			select {
-			case <-ctx.Done():
-				// Fill remaining results with context error
-				for j := i; j < len(targets); j++ {
-					results[j] = Result{
-						Target:  targets[j],
-						Healthy: false,
-						Err:     ctx.Err(),
-					}
+	for i, target := range targets {
+		select {
+		case <-ctx.Done():
+			for j := i; j < len(targets); j++ {
+				results[j] = Result{
+					Target:  targets[j],
+					Healthy: false,
+					Err:     ctx.Err(),
 				}
-				close(done)
-				return
-			case sem <- struct{}{}:
 			}
-
-			go func(idx int, t Target) {
-				defer func() { <-sem }()
-				results[idx] = c.Check(ctx, t)
-			}(i, target)
+			wg.Wait()
+			return results
+		case sem <- struct{}{}:
 		}
 
-		// Wait for all goroutines to finish
-		for i := 0; i < maxConcurrent; i++ {
-			sem <- struct{}{}
-		}
-		close(done)
-	}()
+		wg.Add(1)
+		go func(idx int, t Target) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[idx] = c.Check(ctx, t)
+		}(i, target)
+	}
 
-	<-done
+	wg.Wait()
 	return results
 }

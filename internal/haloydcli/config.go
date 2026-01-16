@@ -176,12 +176,12 @@ func configReloadCertsCmd() *cobra.Command {
 		Long: `Trigger an immediate reload of TLS certificates.
 
 This is useful after manually adding certificate files to the cert-storage directory.
-Normally, certificates are automatically reloaded when files change.`,
+Certificate reloads happen only when explicitly triggered.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// This command would need to communicate with the running haloyd
 			// For now, we'll just print a message suggesting a restart
 			ui.Info("To reload certificates, restart haloyd: systemctl restart haloyd")
-			ui.Info("Alternatively, certificates are automatically reloaded when files change in the cert-storage directory.")
+			ui.Info("Certificate reloads occur only when explicitly triggered.")
 			return nil
 		},
 	}

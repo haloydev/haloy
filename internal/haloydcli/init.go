@@ -133,7 +133,7 @@ The data directory can be customized by setting the %s environment variable.`,
 			// Install systemd service if running as root and not disabled
 			if !noSystemd && config.IsSystemMode() {
 				ui.Info("\nInstalling systemd service...")
-				if err := installSystemdService(); err != nil {
+				if err := installSystemdService(dataDir, configDir); err != nil {
 					ui.Warn("Failed to install systemd service: %v", err)
 					ui.Info("You can start haloyd manually with: haloyd serve")
 				} else {
@@ -190,7 +190,7 @@ func createConfigFiles(apiToken, domain, acmeEmail, configDir string) error {
 
 	// Always write haloyd.yaml with defaults
 	haloydConfig := &config.HaloydConfig{}
-	haloydConfig.API.Domain = domain           // may be empty
+	haloydConfig.API.Domain = domain                // may be empty
 	haloydConfig.Certificates.AcmeEmail = acmeEmail // may be empty
 	haloydConfig.HealthMonitor = config.HealthMonitorConfig{
 		// Enabled is nil by default, which means enabled (see IsEnabled())
@@ -274,8 +274,8 @@ func cleanupDirectories(dirs []string) {
 	}
 }
 
-func installSystemdService() error {
-	serviceContent := `[Unit]
+func installSystemdService(dataDir, configDir string) error {
+	serviceContent := fmt.Sprintf(`[Unit]
 Description=Haloy Daemon
 After=network-online.target docker.service
 Requires=docker.service
@@ -286,12 +286,12 @@ Type=simple
 ExecStart=/usr/local/bin/haloyd serve
 Restart=always
 RestartSec=5
-Environment=HALOY_DATA_DIR=/var/lib/haloy
-Environment=HALOY_CONFIG_DIR=/etc/haloy
+Environment=HALOY_DATA_DIR=%s
+Environment=HALOY_CONFIG_DIR=%s
 
 [Install]
 WantedBy=multi-user.target
-`
+`, dataDir, configDir)
 
 	servicePath := "/etc/systemd/system/haloyd.service"
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0o644); err != nil {
