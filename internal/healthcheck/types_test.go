@@ -8,8 +8,8 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
-	if config.Enabled {
-		t.Error("DefaultConfig().Enabled should be false")
+	if !config.Enabled {
+		t.Error("DefaultConfig().Enabled should be true (enabled by default)")
 	}
 	if config.Interval != 15*time.Second {
 		t.Errorf("DefaultConfig().Interval = %v, want %v", config.Interval, 15*time.Second)

@@ -151,6 +151,20 @@ func Run(debug bool) {
 	}
 
 	updater := NewUpdater(updaterConfig)
+
+	// Start Docker event listener BEFORE initial update so events aren't lost
+	// during long-running health check retries. Buffer allows events to queue.
+	eventsChan := make(chan ContainerEvent, 100)
+	errorsChan := make(chan error)
+	go listenForDockerEvents(ctx, cli, eventsChan, errorsChan, logger)
+
+	debouncedEventsChan := make(chan debouncedAppEvent)
+	defer close(debouncedEventsChan)
+
+	appDebouncer := newAppDebouncer(eventDebounceDelay, debouncedEventsChan, logger)
+	defer appDebouncer.stop()
+
+	// Run initial update (Docker events will queue in buffered channel)
 	if _, err := updater.Update(ctx, logger, TriggerReasonInitial, nil); err != nil {
 		logger.Error("Initial update failed", "error", err)
 	}
@@ -159,15 +173,20 @@ func Run(debug bool) {
 		logging.AttrHaloydInitComplete, true, // signal that the initialization is complete (haloyd init), used for logs.
 	)
 
-	// Start health monitor if enabled
+	// Start health monitor (enabled by default)
 	var healthMonitor *healthcheck.HealthMonitor
-	if haloydConfig != nil && haloydConfig.HealthMonitor.Enabled {
-		healthConfig := healthcheck.Config{
-			Enabled:  true,
-			Interval: haloydConfig.HealthMonitor.GetInterval(),
-			Fall:     haloydConfig.HealthMonitor.GetFall(),
-			Rise:     haloydConfig.HealthMonitor.GetRise(),
-			Timeout:  haloydConfig.HealthMonitor.GetTimeout(),
+	if haloydConfig == nil || haloydConfig.HealthMonitor.IsEnabled() {
+		var healthConfig healthcheck.Config
+		if haloydConfig != nil {
+			healthConfig = healthcheck.Config{
+				Enabled:  true,
+				Interval: haloydConfig.HealthMonitor.GetInterval(),
+				Fall:     haloydConfig.HealthMonitor.GetFall(),
+				Rise:     haloydConfig.HealthMonitor.GetRise(),
+				Timeout:  haloydConfig.HealthMonitor.GetTimeout(),
+			}
+		} else {
+			healthConfig = healthcheck.DefaultConfig()
 		}
 
 		healthUpdater := NewHealthConfigUpdater(deploymentManager, proxyServer, apiDomain, logger)
@@ -178,17 +197,6 @@ func Run(debug bool) {
 			"fall", healthConfig.Fall,
 			"rise", healthConfig.Rise)
 	}
-
-	// Docker event listener
-	eventsChan := make(chan ContainerEvent)
-	errorsChan := make(chan error)
-	go listenForDockerEvents(ctx, cli, eventsChan, errorsChan, logger)
-
-	debouncedEventsChan := make(chan debouncedAppEvent)
-	defer close(debouncedEventsChan)
-
-	appDebouncer := newAppDebouncer(eventDebounceDelay, debouncedEventsChan, logger)
-	defer appDebouncer.stop()
 
 	maintenanceTicker := time.NewTicker(maintenanceInterval)
 	defer maintenanceTicker.Stop()

@@ -31,7 +31,7 @@ type Config struct {
 // DefaultConfig returns the default health monitor configuration.
 func DefaultConfig() Config {
 	return Config{
-		Enabled:  false,
+		Enabled:  true,
 		Interval: 15 * time.Second,
 		Fall:     3,
 		Rise:     2,

@@ -193,7 +193,7 @@ func createConfigFiles(apiToken, domain, acmeEmail, configDir string) error {
 	haloydConfig.API.Domain = domain           // may be empty
 	haloydConfig.Certificates.AcmeEmail = acmeEmail // may be empty
 	haloydConfig.HealthMonitor = config.HealthMonitorConfig{
-		Enabled:  false,
+		// Enabled is nil by default, which means enabled (see IsEnabled())
 		Interval: "15s",
 		Fall:     3,
 		Rise:     2,

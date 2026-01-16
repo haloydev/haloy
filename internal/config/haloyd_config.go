@@ -26,11 +26,20 @@ type HaloydConfig struct {
 
 // HealthMonitorConfig holds configuration for continuous health monitoring.
 type HealthMonitorConfig struct {
-	Enabled  bool   `json:"enabled" yaml:"enabled" toml:"enabled"`
+	Enabled  *bool  `json:"enabled" yaml:"enabled" toml:"enabled"`    // nil means enabled (default)
 	Interval string `json:"interval" yaml:"interval" toml:"interval"` // e.g., "15s"
 	Fall     int    `json:"fall" yaml:"fall" toml:"fall"`             // Mark unhealthy after N failures
 	Rise     int    `json:"rise" yaml:"rise" toml:"rise"`             // Mark healthy after N successes
 	Timeout  string `json:"timeout" yaml:"timeout" toml:"timeout"`    // Per-check timeout, e.g., "5s"
+}
+
+// IsEnabled returns whether health monitoring is enabled.
+// Defaults to true if not explicitly set.
+func (c *HealthMonitorConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true // Enabled by default
+	}
+	return *c.Enabled
 }
 
 // GetInterval parses the interval string and returns the duration.
