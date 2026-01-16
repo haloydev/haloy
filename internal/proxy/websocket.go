@@ -27,7 +27,6 @@ func (p *Proxy) handleWebSocket(w http.ResponseWriter, r *http.Request, route *R
 	backend := p.selectBackend(route)
 	backendAddr := net.JoinHostPort(backend.IP, backend.Port)
 
-	// Connect to backend
 	backendConn, err := net.DialTimeout("tcp", backendAddr, 10*time.Second)
 	if err != nil {
 		p.logger.Error("WebSocket: failed to connect to backend",
