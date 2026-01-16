@@ -109,11 +109,6 @@ func Run(debug bool) {
 		logging.LogFatal(logger, "Failed to create proxy certificate manager", "error", err)
 	}
 
-	// Start watching for certificate changes
-	if err := proxyCertManager.StartWatching(); err != nil {
-		logger.Warn("Failed to start certificate watcher", "error", err)
-	}
-
 	// Create and start the proxy with the API server handler
 	proxyServer := proxy.New(logger, proxyCertManager, apiServer.Handler())
 
@@ -140,9 +135,9 @@ func Run(debug bool) {
 		logging.LogFatal(logger, "Failed to create certificate manager", "error", err)
 	}
 
-	// Get API domain for proxy routing
-	apiDomain := ""
-	if haloydConfig != nil {
+	// Get API domain for proxy routing (default to localhost for local development)
+	apiDomain := "localhost"
+	if haloydConfig != nil && haloydConfig.API.Domain != "" {
 		apiDomain = haloydConfig.API.Domain
 	}
 
@@ -268,9 +263,6 @@ func Run(debug bool) {
 
 		case domainUpdated := <-certUpdateSignal:
 			logger.Info("Received cert update signal", "domain", domainUpdated)
-			// Certificate updates are handled automatically by the proxy's CertManager
-			// via fsnotify watching, so we just need to reload certificates explicitly
-			// to ensure they're picked up immediately.
 			if err := proxyCertManager.ReloadCertificates(); err != nil {
 				logger.Error("Failed to reload certificates",
 					"reason", "cert update",

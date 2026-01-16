@@ -24,7 +24,7 @@ func (p *Proxy) handleWebSocket(w http.ResponseWriter, r *http.Request, route *R
 		return
 	}
 
-	backend := route.Backends[0] // TODO: implement proper load balancing
+	backend := p.selectBackend(route)
 	backendAddr := net.JoinHostPort(backend.IP, backend.Port)
 
 	// Connect to backend

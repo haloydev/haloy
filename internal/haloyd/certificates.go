@@ -225,9 +225,12 @@ func (m *CertificatesManager) Stop() {
 }
 
 func (cm *CertificatesManager) RefreshSync(logger *slog.Logger, domains []CertificatesDomain) error {
-	_, err := cm.checkRenewals(logger, domains)
+	renewedDomains, err := cm.checkRenewals(logger, domains)
 	if err != nil {
 		return err
+	}
+	if len(renewedDomains) > 0 && cm.updateSignal != nil {
+		cm.updateSignal <- "certificates_renewed"
 	}
 	return nil
 }

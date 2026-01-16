@@ -297,6 +297,10 @@ func applyPreset(tc *config.TargetConfig) error {
 
 // normalizeTargetConfig applies default values to a target config
 func normalizeTargetConfig(tc *config.TargetConfig) {
+	if tc.Server == "" {
+		tc.Server = "localhost"
+	}
+
 	if tc.Image == nil {
 		tc.Image = &config.Image{
 			Repository: tc.Name,

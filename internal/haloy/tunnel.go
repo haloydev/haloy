@@ -117,7 +117,7 @@ func runTunnel(ctx context.Context, targetConfig *config.TargetConfig, localPort
 	}
 
 	// Determine TLS based on localhost check (same logic as BuildServerURL)
-	useTLS := !strings.Contains(normalizedURL, "localhost") && !strings.Contains(normalizedURL, "127.0.0.1")
+	useTLS := !helpers.IsLocalhost(normalizedURL)
 
 	// Add default port if not specified
 	host := normalizedURL

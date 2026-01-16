@@ -74,7 +74,7 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				}
 			}
 
-			builds, pushes, uploads := ResolveImageBuilds(resolvedTargets)
+			builds, pushes, uploads, localBuilds := ResolveImageBuilds(resolvedTargets)
 
 			// Check Docker availability before building
 			if len(builds) > 0 {
@@ -92,10 +92,17 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 					return err
 				}
 			}
+
+			// Upload images only to remote servers (skip localhost - image already in shared daemon)
 			for imageRef, targetConfigs := range uploads {
 				if err := UploadImage(ctx, imageRef, targetConfigs); err != nil {
 					return err
 				}
+			}
+
+			// Log skipped localhost uploads for visibility
+			for imageRef := range localBuilds {
+				ui.Info("Skipping upload for %s (localhost shares Docker daemon)", imageRef)
 			}
 
 			if len(pushes) > 0 {

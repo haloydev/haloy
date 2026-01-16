@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
 )
 
 // Backend represents a backend server that can receive traffic.
@@ -54,6 +55,10 @@ type Proxy struct {
 	// For graceful shutdown
 	shutdownMu sync.Mutex
 	isShutdown bool
+
+	// Round-robin load balancing state
+	rrMu      sync.Mutex
+	rrIndexes map[string]uint32 // canonical domain -> next backend index
 }
 
 // CertLoader is an interface for loading TLS certificates.
@@ -77,6 +82,7 @@ func New(logger *slog.Logger, certLoader CertLoader, apiHandler http.Handler) *P
 			IdleConnTimeout:     90 * time.Second,
 			TLSHandshakeTimeout: 10 * time.Second,
 		},
+		rrIndexes: make(map[string]uint32),
 	}
 
 	// Initialize with empty config
@@ -98,6 +104,20 @@ func (p *Proxy) UpdateConfig(config *Config) {
 // GetConfig returns the current proxy configuration.
 func (p *Proxy) GetConfig() *Config {
 	return p.config.Load()
+}
+
+// selectBackend picks the next backend using round-robin selection.
+func (p *Proxy) selectBackend(route *Route) Backend {
+	if len(route.Backends) == 1 {
+		return route.Backends[0]
+	}
+
+	p.rrMu.Lock()
+	index := p.rrIndexes[route.Canonical]
+	p.rrIndexes[route.Canonical] = index + 1
+	p.rrMu.Unlock()
+
+	return route.Backends[index%uint32(len(route.Backends))]
 }
 
 // Start starts both HTTP and HTTPS servers.
@@ -194,7 +214,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 }
 
 // httpHandler handles HTTP requests (port 80).
-// It redirects to HTTPS except for ACME challenges.
+// It redirects to HTTPS except for ACME challenges and localhost API access.
 // For known routes, it redirects directly to the canonical domain.
 func (p *Proxy) httpHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +226,12 @@ func (p *Proxy) httpHandler() http.Handler {
 
 		// Get host without port
 		host := extractHost(r.Host)
+
+		// Always serve API over HTTP for localhost (local development)
+		if helpers.IsLocalhost(host) {
+			p.apiHandler.ServeHTTP(w, r)
+			return
+		}
 
 		// Determine redirect target (default: same host for unknown domains)
 		targetHost := host
@@ -287,7 +313,7 @@ func (p *Proxy) httpsHandler() http.Handler {
 			return
 		}
 
-		backend := route.Backends[0] // TODO: implement proper load balancing
+		backend := p.selectBackend(route)
 		backendAddr := net.JoinHostPort(backend.IP, backend.Port)
 
 		p.proxyToBackend(w, r, backendAddr, startTime)

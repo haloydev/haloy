@@ -16,14 +16,21 @@ import (
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/cmdexec"
 	"github.com/haloydev/haloy/internal/config"
+	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
 	"golang.org/x/sync/errgroup"
 )
 
-func ResolveImageBuilds(targets map[string]config.TargetConfig) (map[string]*config.Image, map[string][]*config.Image, map[string][]*config.TargetConfig) {
-	builds := make(map[string]*config.Image) // imageRef is key
-	uploads := make(map[string][]*config.TargetConfig)
-	pushes := make(map[string][]*config.Image)
+func ResolveImageBuilds(targets map[string]config.TargetConfig) (
+	builds map[string]*config.Image,
+	pushes map[string][]*config.Image,
+	uploads map[string][]*config.TargetConfig,
+	localBuilds map[string][]*config.TargetConfig,
+) {
+	builds = make(map[string]*config.Image) // imageRef is key
+	uploads = make(map[string][]*config.TargetConfig)
+	pushes = make(map[string][]*config.Image)
+	localBuilds = make(map[string][]*config.TargetConfig)
 
 	for _, target := range targets {
 		image := target.Image
@@ -39,13 +46,18 @@ func ResolveImageBuilds(targets map[string]config.TargetConfig) (map[string]*con
 
 		pushStrategy := image.GetEffectivePushStrategy()
 		if pushStrategy == config.BuildPushOptionServer {
-			uploads[imageRef] = append(uploads[imageRef], &target)
+			if helpers.IsLocalhost(target.Server) {
+				// Localhost: image already in shared Docker daemon after build, skip upload
+				localBuilds[imageRef] = append(localBuilds[imageRef], &target)
+			} else {
+				uploads[imageRef] = append(uploads[imageRef], &target)
+			}
 		} else if pushStrategy == config.BuildPushOptionRegistry && image.RegistryAuth != nil {
 			pushes[imageRef] = append(pushes[imageRef], target.Image)
 		}
 	}
 
-	return builds, pushes, uploads
+	return builds, pushes, uploads, localBuilds
 }
 
 // BuildImage builds a Docker image using the provided image configuration

@@ -8,30 +8,24 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/fsnotify/fsnotify"
 )
 
 // CertManager manages TLS certificates for the proxy.
-// It loads certificates from disk and supports hot-reloading.
+// It loads certificates from disk and reloads when explicitly told to via ReloadCertificates().
 type CertManager struct {
 	certDir string
 	logger  *slog.Logger
 
 	mu    sync.RWMutex
 	certs map[string]*tls.Certificate // domain -> certificate
-
-	watcher  *fsnotify.Watcher
-	stopChan chan struct{}
 }
 
 // NewCertManager creates a new certificate manager.
 func NewCertManager(certDir string, logger *slog.Logger) (*CertManager, error) {
 	cm := &CertManager{
-		certDir:  certDir,
-		logger:   logger,
-		certs:    make(map[string]*tls.Certificate),
-		stopChan: make(chan struct{}),
+		certDir: certDir,
+		logger:  logger,
+		certs:   make(map[string]*tls.Certificate),
 	}
 
 	// Initial load of certificates
@@ -42,31 +36,10 @@ func NewCertManager(certDir string, logger *slog.Logger) (*CertManager, error) {
 	return cm, nil
 }
 
-// StartWatching starts watching the certificate directory for changes.
-func (cm *CertManager) StartWatching() error {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("failed to create file watcher: %w", err)
-	}
-	cm.watcher = watcher
-
-	if err := watcher.Add(cm.certDir); err != nil {
-		watcher.Close()
-		return fmt.Errorf("failed to watch certificate directory: %w", err)
-	}
-
-	go cm.watchLoop()
-
-	cm.logger.Info("Certificate watcher started", "dir", cm.certDir)
-	return nil
-}
-
-// Stop stops the certificate manager and its file watcher.
+// Stop stops the certificate manager (no-op, retained for interface compatibility).
 func (cm *CertManager) Stop() {
-	close(cm.stopChan)
-	if cm.watcher != nil {
-		cm.watcher.Close()
-	}
+	// No-op: fsnotify watcher has been removed.
+	// Certificate reloading is now handled explicitly via ReloadCertificates().
 }
 
 // GetCertificate implements the tls.Config.GetCertificate callback.
@@ -163,45 +136,6 @@ func (cm *CertManager) loadCertificate(domain string) (*tls.Certificate, error) 
 	}
 
 	return &cert, nil
-}
-
-// watchLoop watches for file system changes in the certificate directory.
-func (cm *CertManager) watchLoop() {
-	for {
-		select {
-		case <-cm.stopChan:
-			return
-
-		case event, ok := <-cm.watcher.Events:
-			if !ok {
-				return
-			}
-
-			// Only handle .pem files
-			if !strings.HasSuffix(event.Name, ".pem") {
-				continue
-			}
-
-			// Handle create, write, and remove events
-			if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove) != 0 {
-				cm.logger.Debug("Certificate file changed",
-					"file", event.Name,
-					"op", event.Op.String())
-
-				// Reload all certificates on any change
-				// This is simpler than tracking individual changes
-				if err := cm.loadAllCertificates(); err != nil {
-					cm.logger.Error("Failed to reload certificates", "error", err)
-				}
-			}
-
-		case err, ok := <-cm.watcher.Errors:
-			if !ok {
-				return
-			}
-			cm.logger.Error("Certificate watcher error", "error", err)
-		}
-	}
 }
 
 // HasCertificate checks if a certificate exists for the given domain.
