@@ -192,10 +192,6 @@ func Run(debug bool) {
 		healthUpdater := NewHealthConfigUpdater(deploymentManager, proxyServer, apiDomain, logger)
 		healthMonitor = healthcheck.NewHealthMonitor(healthConfig, deploymentManager, healthUpdater, logger)
 		healthMonitor.Start()
-		logger.Info("Health monitor started",
-			"interval", healthConfig.Interval,
-			"fall", healthConfig.Fall,
-			"rise", healthConfig.Rise)
 	}
 
 	maintenanceTicker := time.NewTicker(maintenanceInterval)

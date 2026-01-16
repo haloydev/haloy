@@ -5,36 +5,6 @@
 
 set -e
 
-FORCE=false
-
-# Parse arguments
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -f|--force)
-            FORCE=true
-            shift
-            ;;
-        -h|--help)
-            echo "Usage: $0 [-f|--force]"
-            echo ""
-            echo "Completely removes all haloy-related files from the system."
-            echo ""
-            echo "Options:"
-            echo "  -f, --force    Skip confirmation prompt"
-            echo "  -h, --help     Show this help message"
-            echo ""
-            echo "When run as root, removes system-wide installations."
-            echo "Always removes user-local files for the current user."
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1" >&2
-            echo "Use -h for help" >&2
-            exit 1
-            ;;
-    esac
-done
-
 IS_ROOT=false
 if [ "$(id -u)" -eq 0 ]; then
     IS_ROOT=true
@@ -79,19 +49,6 @@ echo "Docker:"
 echo "  - haloy network"
 echo ""
 
-if [ "$FORCE" = false ]; then
-    printf "Are you sure you want to continue? [y/N] "
-    read -r response
-    case "$response" in
-        [yY][eE][sS]|[yY])
-            ;;
-        *)
-            echo "Aborted."
-            exit 0
-            ;;
-    esac
-    echo ""
-fi
 
 # Helper function to remove a file/directory with feedback
 remove_path() {
@@ -174,7 +131,7 @@ echo "Haloy cleanup complete."
 echo ""
 echo "Note: Application containers deployed by Haloy are not automatically removed."
 echo "To list haloy-managed containers:"
-echo "  docker ps -a --filter label=dev.haloy.role=app"
+echo "  docker ps -a --filter label=dev.haloy.appName"
 echo ""
 echo "To remove all haloy-managed containers:"
-echo "  docker rm -f \$(docker ps -aq --filter label=dev.haloy.role=app)"
+echo "  docker ps -aq --filter label=dev.haloy.appName | xargs -r docker rm -f"
