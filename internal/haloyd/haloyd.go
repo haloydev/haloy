@@ -20,6 +20,7 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/docker"
+	"github.com/haloydev/haloy/internal/healthcheck"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/proxy"
@@ -158,6 +159,26 @@ func Run(debug bool) {
 		logging.AttrHaloydInitComplete, true, // signal that the initialization is complete (haloyd init), used for logs.
 	)
 
+	// Start health monitor if enabled
+	var healthMonitor *healthcheck.HealthMonitor
+	if haloydConfig != nil && haloydConfig.HealthMonitor.Enabled {
+		healthConfig := healthcheck.Config{
+			Enabled:  true,
+			Interval: haloydConfig.HealthMonitor.GetInterval(),
+			Fall:     haloydConfig.HealthMonitor.GetFall(),
+			Rise:     haloydConfig.HealthMonitor.GetRise(),
+			Timeout:  haloydConfig.HealthMonitor.GetTimeout(),
+		}
+
+		healthUpdater := NewHealthConfigUpdater(deploymentManager, proxyServer, apiDomain, logger)
+		healthMonitor = healthcheck.NewHealthMonitor(healthConfig, deploymentManager, healthUpdater, logger)
+		healthMonitor.Start()
+		logger.Info("Health monitor started",
+			"interval", healthConfig.Interval,
+			"fall", healthConfig.Fall,
+			"rise", healthConfig.Rise)
+	}
+
 	// Docker event listener
 	eventsChan := make(chan ContainerEvent)
 	errorsChan := make(chan error)
@@ -290,6 +311,9 @@ func Run(debug bool) {
 
 		case <-sigChan:
 			logger.Info("Received shutdown signal, stopping haloyd...")
+			if healthMonitor != nil {
+				healthMonitor.Stop()
+			}
 			if certManager != nil {
 				certManager.Stop()
 			}

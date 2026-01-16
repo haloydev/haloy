@@ -106,7 +106,39 @@ The `haloyadm` binary has been completely removed. Its functionality has been ab
 - Uses systemd to restart the service
 - No longer needs to manage Docker container updates
 
-### 5. Other Changes
+### 5. Unified Health Check Package
+
+A new `internal/healthcheck/` package provides a centralized, reusable health checking system:
+
+**New files:**
+- **`types.go`** - Core types: `Target`, `Result`, `Config`, `TargetState`, and interfaces (`TargetProvider`, `ConfigUpdater`)
+- **`checker.go`** - HTTP health checker with single checks, concurrent batch checks (`CheckAll`), and retry-with-backoff (`CheckWithRetry`)
+- **`monitor.go`** - `HealthMonitor` for continuous background health checks with configurable interval, fall/rise thresholds
+- **`state.go`** - `StateTracker` for tracking health state transitions using fall/rise counters
+
+**Key features:**
+- **Fall/Rise thresholds** - Backends are only marked unhealthy after N consecutive failures (fall), and only marked healthy after N consecutive successes (rise). Prevents flapping.
+- **Concurrent checks** - `CheckAll` runs health checks in parallel with configurable concurrency limit (default: 10)
+- **Configurable via haloyd.yaml** - Enable/disable monitoring, set interval, fall, rise, and timeout values
+- **Proxy integration** - `HealthConfigUpdater` bridges the monitor to the proxy, automatically removing unhealthy backends from routing
+
+**Configuration example:**
+```yaml
+health_monitor:
+  enabled: true
+  interval: "15s"  # Check every 15 seconds
+  fall: 3          # Mark unhealthy after 3 failures
+  rise: 2          # Mark healthy after 2 successes
+  timeout: "5s"    # Per-check timeout
+```
+
+**Refactored code:**
+- `internal/docker/container.go` - `HealthCheckContainer` now uses the unified `healthcheck.HTTPChecker` with `CheckWithRetry` instead of inline retry logic
+- `internal/haloyd/deployments.go` - Added `GetHealthCheckTargets()` method implementing the `TargetProvider` interface
+- `internal/haloyd/haloyd.go` - Starts `HealthMonitor` on daemon startup if enabled in config
+- `internal/haloyd/health_updater.go` - New file implementing `ConfigUpdater` to rebuild proxy config with only healthy backends
+
+### 6. Other Changes
 
 - **Build scripts updated** (`dev/build-upload-cli-haloyd.sh`) - Builds haloyd as a standalone binary
 - **Installer script renamed** - `install-haloyadm.sh` -> `install-haloyd.sh`

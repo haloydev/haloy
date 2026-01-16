@@ -200,6 +200,13 @@ func createConfigFiles(apiToken, domain, acmeEmail, configDir string) error {
 		haloydConfig := &config.HaloydConfig{}
 		haloydConfig.API.Domain = domain
 		haloydConfig.Certificates.AcmeEmail = acmeEmail
+		haloydConfig.HealthMonitor = config.HealthMonitorConfig{
+			Enabled:  false,
+			Interval: "15s",
+			Fall:     3,
+			Rise:     2,
+			Timeout:  "5s",
+		}
 
 		if err := haloydConfig.Validate(); err != nil {
 			return fmt.Errorf("invalid haloyd config: %w", err)

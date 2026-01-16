@@ -14,6 +14,7 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/docker"
+	"github.com/haloydev/haloy/internal/healthcheck"
 	"github.com/haloydev/haloy/internal/helpers"
 )
 
@@ -239,6 +240,32 @@ func (dm *DeploymentManager) Deployments() map[string]Deployment {
 	deploymentsCopy := make(map[string]Deployment, len(dm.deployments))
 	maps.Copy(deploymentsCopy, dm.deployments)
 	return deploymentsCopy
+}
+
+// GetHealthCheckTargets returns all instances as health check targets.
+// This method is used by the HealthMonitor to know what backends to check.
+func (dm *DeploymentManager) GetHealthCheckTargets() []healthcheck.Target {
+	dm.deploymentsMutex.RLock()
+	defer dm.deploymentsMutex.RUnlock()
+
+	var targets []healthcheck.Target
+	for _, deployment := range dm.deployments {
+		healthCheckPath := deployment.Labels.HealthCheckPath
+		if healthCheckPath == "" {
+			healthCheckPath = constants.DefaultHealthCheckPath
+		}
+
+		for _, instance := range deployment.Instances {
+			targets = append(targets, healthcheck.Target{
+				ID:              instance.ContainerID,
+				AppName:         deployment.Labels.AppName,
+				IP:              instance.IP,
+				Port:            instance.Port,
+				HealthCheckPath: healthCheckPath,
+			})
+		}
+	}
+	return targets
 }
 
 // GetCertificateDomains collects all canonical domains and their aliases for certificate management.
