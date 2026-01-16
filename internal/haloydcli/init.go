@@ -20,7 +20,7 @@ const (
 	apiTokenLength = 32 // bytes, results in 64 character hex string
 )
 
-func newInitCmd() *cobra.Command {
+func initCmd() *cobra.Command {
 	var override bool
 	var apiDomain string
 	var acmeEmail string

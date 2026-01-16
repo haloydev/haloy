@@ -21,14 +21,6 @@ const (
 	LabelDomainCanonical = "dev.haloy.domain.%d"
 	// Use fmt.Sprintf(LabelDomainAlias, domainIndex, aliasIndex) to get "dev.haloy.domain.<domainIndex>.alias.<aliasIndex>"
 	LabelDomainAlias = "dev.haloy.domain.%d.alias.%d"
-	// Used to identify the role of the container (e.g., "haproxy", "haloyd", etc.)
-	LabelRole = "dev.haloy.role"
-)
-
-const (
-	HAProxyLabelRole = "haproxy"
-	HaloydLabelRole  = "haloyd"
-	AppLabelRole     = "app"
 )
 
 type ContainerLabels struct {
@@ -38,7 +30,6 @@ type ContainerLabels struct {
 	ACMEEmail       string
 	Port            Port
 	Domains         []Domain
-	Role            string
 }
 
 // Parse from docker labels to ContainerLabels struct.
@@ -47,7 +38,6 @@ func ParseContainerLabels(labels map[string]string) (*ContainerLabels, error) {
 		AppName:      labels[LabelAppName],
 		DeploymentID: labels[LabelDeploymentID],
 		ACMEEmail:    labels[LabelACMEEmail],
-		Role:         labels[LabelRole],
 	}
 
 	if v, ok := labels[LabelPort]; ok {
@@ -126,7 +116,6 @@ func (cl *ContainerLabels) ToLabels() map[string]string {
 		LabelHealthCheckPath: cl.HealthCheckPath,
 		LabelPort:            cl.Port.String(),
 		LabelACMEEmail:       cl.ACMEEmail,
-		LabelRole:            cl.Role,
 	}
 
 	// Iterate through the domains slice.
@@ -168,10 +157,6 @@ func (cl *ContainerLabels) Validate() error {
 
 	if cl.Port == "" {
 		return fmt.Errorf("port is required")
-	}
-
-	if cl.Role != AppLabelRole {
-		return fmt.Errorf("role must be '%s'", AppLabelRole)
 	}
 
 	return nil

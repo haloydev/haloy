@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newUpgradeCmd() *cobra.Command {
+func upgradeCmd() *cobra.Command {
 	var checkOnly bool
 	var force bool
 

@@ -122,8 +122,7 @@ func (s *APIServer) handleTunnel() http.HandlerFunc {
 		}
 		defer clientConn.Close()
 
-		// Send 101 Switching Protocols to signal tunnel is ready
-		// This tells HAProxy to switch to tunnel mode
+		// Send 101 Switching Protocols to signal the connection is upgraded to a raw TCP tunnel
 		_, err = bufrw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: tcp\r\nConnection: Upgrade\r\n\r\n")
 		if err != nil {
 			return

@@ -358,7 +358,7 @@ func listenForDockerEvents(ctx context.Context, cli *client.Client, eventsChan c
 				}
 
 				// We'll only process events for containers that have been marked with haloy app label.
-				isHaloyApp := container.Config.Labels[config.LabelRole] == config.AppLabelRole
+				isHaloyApp := container.Config.Labels[config.LabelAppName] != ""
 				if isHaloyApp {
 					labels, err := config.ParseContainerLabels(container.Config.Labels)
 					if err != nil {

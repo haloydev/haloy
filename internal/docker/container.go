@@ -37,7 +37,6 @@ func RunContainer(ctx context.Context, cli *client.Client, deploymentID, imageRe
 		Port:            targetConfig.Port,
 		HealthCheckPath: targetConfig.HealthCheckPath,
 		Domains:         targetConfig.Domains,
-		Role:            config.AppLabelRole,
 	}
 	labels := cl.ToLabels()
 
@@ -400,9 +399,11 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 //   - An error if something went wrong during the container listing.
 func GetAppContainers(ctx context.Context, cli *client.Client, listAll bool, appName string) ([]container.Summary, error) {
 	filterArgs := filters.NewArgs()
-	filterArgs.Add("label", fmt.Sprintf("%s=%s", config.LabelRole, config.AppLabelRole))
 	if appName != "" {
 		filterArgs.Add("label", fmt.Sprintf("%s=%s", config.LabelAppName, appName))
+	} else {
+		// Filter by presence of LabelAppName to identify Haloy-managed containers
+		filterArgs.Add("label", config.LabelAppName)
 	}
 	containerList, err := cli.ContainerList(ctx, container.ListOptions{
 		Filters: filterArgs,

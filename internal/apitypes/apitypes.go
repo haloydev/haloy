@@ -41,9 +41,8 @@ type ImageUploadResponse struct {
 }
 
 type VersionResponse struct {
-	Version        string   `json:"haloyd"`
-	HAProxyVersion string   `json:"haproxy"`
-	Capabilities   []string `json:"capabilities,omitempty"`
+	Version      string   `json:"haloyd"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 type ExecRequest struct {

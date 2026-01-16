@@ -253,7 +253,7 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Check server version",
-		Long:  "Check the haloyd and HAProxy version running on a specific server",
+		Long:  "Check the haloyd version running on a specific server",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

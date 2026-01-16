@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newConfigCmd() *cobra.Command {
+func configCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage haloyd configuration",
@@ -22,16 +22,16 @@ func newConfigCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		newConfigGetCmd(),
-		newConfigSetCmd(),
-		newConfigReloadCertsCmd(),
+		configGetCmd(),
+		configSetCmd(),
+		configReloadCertsCmd(),
 		newConfigGenerateTokenCmd(),
 	)
 
 	return cmd
 }
 
-func newConfigGetCmd() *cobra.Command {
+func configGetCmd() *cobra.Command {
 	var raw bool
 
 	cmd := &cobra.Command{
@@ -111,7 +111,7 @@ Available keys:
 	return cmd
 }
 
-func newConfigSetCmd() *cobra.Command {
+func configSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a configuration value",
@@ -169,7 +169,7 @@ Note: After changing configuration, restart haloyd for changes to take effect.`,
 	return cmd
 }
 
-func newConfigReloadCertsCmd() *cobra.Command {
+func configReloadCertsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "reload-certs",
 		Short: "Reload TLS certificates",
@@ -201,14 +201,12 @@ the token in your haloy CLI configuration after running this command.`,
 				return fmt.Errorf("failed to get config directory: %w", err)
 			}
 
-			// Generate new token
 			bytes := make([]byte, apiTokenLength)
 			if _, err := rand.Read(bytes); err != nil {
 				return fmt.Errorf("failed to generate token: %w", err)
 			}
 			newToken := hex.EncodeToString(bytes)
 
-			// Update .env file
 			envPath := filepath.Join(configDir, constants.ConfigEnvFileName)
 			env, err := godotenv.Read(envPath)
 			if err != nil {
