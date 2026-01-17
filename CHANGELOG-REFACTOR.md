@@ -23,7 +23,7 @@ A new `internal/proxy/` package provides a lightweight, purpose-built reverse pr
 
 **Key features:**
 - Atomic configuration updates without restarts
-- SNI-based TLS certificate selection
+- SNI-based TLS certificate selection (including alias and one-level wildcard matches)
 - Automatic HTTP to HTTPS redirects with canonical domain normalization
 - ACME challenge passthrough for Let's Encrypt
 - Connection pooling for backend connections
@@ -120,7 +120,7 @@ A new `internal/healthcheck/` package provides a centralized, reusable health ch
 - **Fall/Rise thresholds** - Backends are only marked unhealthy after N consecutive failures (fall), and only marked healthy after N consecutive successes (rise). Prevents flapping.
 - **Concurrent checks** - `CheckAll` runs health checks in parallel with configurable concurrency limit (default: 10)
 - **Configurable via haloyd.yaml** - Enable/disable monitoring, set interval, fall, rise, and timeout values
-- **Proxy integration** - `HealthConfigUpdater` bridges the monitor to the proxy, automatically removing unhealthy backends from routing
+- **Proxy integration** - `HealthConfigUpdater` bridges the monitor to the proxy, keeping routes active while excluding unhealthy backends
 
 **Configuration example:**
 ```yaml
@@ -136,7 +136,7 @@ health_monitor:
 - `internal/docker/container.go` - `HealthCheckContainer` now uses the unified `healthcheck.HTTPChecker` with `CheckWithRetry` instead of inline retry logic
 - `internal/haloyd/deployments.go` - Added `GetHealthCheckTargets()` method implementing the `TargetProvider` interface
 - `internal/haloyd/haloyd.go` - Starts `HealthMonitor` on daemon startup if enabled in config
-- `internal/haloyd/health_updater.go` - New file implementing `ConfigUpdater` to rebuild proxy config with only healthy backends
+- `internal/haloyd/health_updater.go` - New file implementing `ConfigUpdater` to rebuild proxy config with healthy backends while keeping routes
 
 ### 6. Tunnel Command Improvements
 

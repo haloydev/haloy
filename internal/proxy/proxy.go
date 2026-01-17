@@ -338,6 +338,21 @@ func (p *Proxy) findRoute(config *Config, host string) *Route {
 	return nil
 }
 
+// ResolveCanonical resolves an alias domain to its canonical domain.
+func (p *Proxy) ResolveCanonical(domain string) (string, bool) {
+	config := p.config.Load()
+	if config == nil {
+		return "", false
+	}
+
+	host := strings.ToLower(domain)
+	if route := p.findRoute(config, host); route != nil {
+		return route.Canonical, true
+	}
+
+	return "", false
+}
+
 // proxyToBackend proxies the request to a backend server.
 func (p *Proxy) proxyToBackend(w http.ResponseWriter, r *http.Request, backendAddr string, startTime time.Time) {
 	targetURL := &url.URL{

@@ -32,7 +32,7 @@ func NewHealthConfigUpdater(
 }
 
 // OnHealthChange is called when the health state of any target changes.
-// It rebuilds the proxy configuration with only the healthy backends.
+// It rebuilds the proxy configuration, filtering unhealthy backends while keeping routes.
 func (u *HealthConfigUpdater) OnHealthChange(healthyTargets []healthcheck.Target) {
 	// Build a set of healthy container IDs for quick lookup
 	healthyIDs := make(map[string]struct{}, len(healthyTargets))
@@ -66,17 +66,16 @@ func (u *HealthConfigUpdater) OnHealthChange(healthyTargets []healthcheck.Target
 			}
 		}
 
-		// Only include the app if it has at least one healthy instance
-		if len(healthyInstances) > 0 {
-			haloydDeployments[appName] = proxy.HaloydDeployment{
-				AppName:   appName,
-				Domains:   domains,
-				Instances: healthyInstances,
-			}
-		} else {
+		if len(healthyInstances) == 0 {
 			u.logger.Warn("App has no healthy backends",
 				"app", appName,
 				"total_instances", len(d.Instances))
+		}
+
+		haloydDeployments[appName] = proxy.HaloydDeployment{
+			AppName:   appName,
+			Domains:   domains,
+			Instances: healthyInstances,
 		}
 	}
 

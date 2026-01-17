@@ -112,6 +112,7 @@ func Run(debug bool) {
 
 	// Create and start the proxy with the API server handler
 	proxyServer := proxy.New(logger, proxyCertManager, apiServer.Handler())
+	proxyCertManager.SetDomainResolver(proxyServer)
 
 	// Start proxy on HTTP and HTTPS ports
 	if err := proxyServer.Start(":80", ":443"); err != nil {

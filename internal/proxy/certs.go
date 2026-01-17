@@ -10,6 +10,11 @@ import (
 	"sync"
 )
 
+// DomainResolver resolves alias domains to canonical domains.
+type DomainResolver interface {
+	ResolveCanonical(domain string) (string, bool)
+}
+
 // CertManager manages TLS certificates for the proxy.
 // It loads certificates from disk and reloads when explicitly told to via ReloadCertificates().
 type CertManager struct {
@@ -18,6 +23,9 @@ type CertManager struct {
 
 	mu    sync.RWMutex
 	certs map[string]*tls.Certificate // domain -> certificate
+
+	resolverMu sync.RWMutex
+	resolver   DomainResolver
 }
 
 // NewCertManager creates a new certificate manager.
@@ -42,26 +50,89 @@ func (cm *CertManager) Stop() {
 	// Certificate reloading is now handled explicitly via ReloadCertificates().
 }
 
+// SetDomainResolver sets the resolver used for alias lookups.
+func (cm *CertManager) SetDomainResolver(resolver DomainResolver) {
+	cm.resolverMu.Lock()
+	cm.resolver = resolver
+	cm.resolverMu.Unlock()
+}
+
+func (cm *CertManager) resolveCanonical(domain string) (string, bool) {
+	cm.resolverMu.RLock()
+	resolver := cm.resolver
+	cm.resolverMu.RUnlock()
+
+	if resolver == nil {
+		return "", false
+	}
+
+	return resolver.ResolveCanonical(domain)
+}
+
+func (cm *CertManager) getCachedCertificate(domain string) (*tls.Certificate, bool) {
+	cm.mu.RLock()
+	cert, ok := cm.certs[domain]
+	cm.mu.RUnlock()
+	return cert, ok
+}
+
+func (cm *CertManager) loadAndCacheCertificate(domain string) (*tls.Certificate, error) {
+	cert, err := cm.loadCertificate(domain)
+	if err != nil {
+		return nil, err
+	}
+
+	cm.mu.Lock()
+	cm.certs[domain] = cert
+	cm.mu.Unlock()
+
+	return cert, nil
+}
+
+// wildcardDomain returns a one-level wildcard domain for the provided hostname.
+func wildcardDomain(domain string) string {
+	parts := strings.Split(domain, ".")
+	if len(parts) < 3 {
+		return ""
+	}
+	return "*." + strings.Join(parts[1:], ".")
+}
+
 // GetCertificate implements the tls.Config.GetCertificate callback.
 // It returns the certificate for the given SNI hostname.
 func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	serverName := strings.ToLower(hello.ServerName)
+	if serverName == "" {
+		return nil, fmt.Errorf("no server name provided")
+	}
 
-	cm.mu.RLock()
-	cert, ok := cm.certs[serverName]
-	cm.mu.RUnlock()
-
-	if ok {
+	if cert, ok := cm.getCachedCertificate(serverName); ok {
 		return cert, nil
 	}
 
-	// Try to load from disk (for user-supplied certs that may not be in cache)
-	cert, err := cm.loadCertificate(serverName)
-	if err == nil {
-		cm.mu.Lock()
-		cm.certs[serverName] = cert
-		cm.mu.Unlock()
+	if cert, err := cm.loadAndCacheCertificate(serverName); err == nil {
 		return cert, nil
+	}
+
+	if canonical, ok := cm.resolveCanonical(serverName); ok {
+		canonical = strings.ToLower(canonical)
+		if canonical != "" && canonical != serverName {
+			if cert, ok := cm.getCachedCertificate(canonical); ok {
+				return cert, nil
+			}
+			if cert, err := cm.loadAndCacheCertificate(canonical); err == nil {
+				return cert, nil
+			}
+		}
+	}
+
+	if wildcard := wildcardDomain(serverName); wildcard != "" {
+		if cert, ok := cm.getCachedCertificate(wildcard); ok {
+			return cert, nil
+		}
+		if cert, err := cm.loadAndCacheCertificate(wildcard); err == nil {
+			return cert, nil
+		}
 	}
 
 	return nil, fmt.Errorf("no certificate found for %s", serverName)
