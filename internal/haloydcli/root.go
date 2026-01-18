@@ -30,6 +30,7 @@ It manages:
 		configCmd(),
 		upgradeCmd(),
 		versionCmd(),
+		verifyCmd(),
 	)
 
 	return cmd

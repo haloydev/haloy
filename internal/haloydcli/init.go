@@ -24,36 +24,42 @@ func initCmd() *cobra.Command {
 	var override bool
 	var apiDomain string
 	var acmeEmail string
-	var localInstall bool
-	var noSystemd bool
+	var dataDirFlag string
+	var configDirFlag string
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize Haloy data directory and configuration",
-		Long: fmt.Sprintf(`Initialize Haloy by creating the data directory structure and configuration.
-
-Installation modes:
-  Default (system): Uses system directories (/etc/haloy, /var/lib/haloy) when running as root
-  --local-install:  Forces user directories (~/.config/haloy, ~/.local/share/haloy)
+		Long: `Initialize Haloy by creating the data directory structure and configuration.
 
 This command will:
   - Create the data directory (default: /var/lib/haloy)
-  - Create the config directory for haloyd (default: /etc/haloy)
+  - Create the config directory (default: /etc/haloy)
   - Generate an API token for authentication
   - Create the Docker network for containers
-  - Install the systemd service (unless --no-systemd)
 
-The data directory can be customized by setting the %s environment variable.`,
-			constants.EnvVarDataDir),
+Use --data-dir and --config-dir to specify custom directories.
+Environment variables HALOY_DATA_DIR and HALOY_CONFIG_DIR can also be used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			if localInstall {
-				os.Setenv(constants.EnvVarSystemInstall, "false")
+			// Determine directories - flags take priority, then env vars, then defaults
+			dataDir := dataDirFlag
+			if dataDir == "" {
+				var err error
+				dataDir, err = config.DataDir()
+				if err != nil {
+					return fmt.Errorf("failed to determine data directory: %w", err)
+				}
 			}
 
-			if !config.IsSystemMode() {
-				ui.Info("Installing in local mode (user directories)")
+			configDir := configDirFlag
+			if configDir == "" {
+				var err error
+				configDir, err = config.ConfigDir()
+				if err != nil {
+					return fmt.Errorf("failed to determine config directory: %w", err)
+				}
 			}
 
 			var createdDirs []string
@@ -74,16 +80,6 @@ The data directory can be customized by setting the %s environment variable.`,
 			dockerCheck := exec.CommandContext(ctx, "docker", "info")
 			if err := dockerCheck.Run(); err != nil {
 				return fmt.Errorf("Docker daemon is not running. Please start Docker and try again.")
-			}
-
-			dataDir, err := config.DataDir()
-			if err != nil {
-				return fmt.Errorf("failed to determine data directory: %w", err)
-			}
-
-			configDir, err := config.ConfigDir()
-			if err != nil {
-				return fmt.Errorf("failed to determine config directory: %w", err)
 			}
 
 			if err := validateAndPrepareDirectory(configDir, "Config", override); err != nil {
@@ -130,20 +126,8 @@ The data directory can be customized by setting the %s environment variable.`,
 				ui.Info("API domain: %s", apiDomain)
 			}
 
-			// Install systemd service if running as root and not disabled
-			if !noSystemd && config.IsSystemMode() {
-				ui.Info("\nInstalling systemd service...")
-				if err := installSystemdService(dataDir, configDir); err != nil {
-					ui.Warn("Failed to install systemd service: %v", err)
-					ui.Info("You can start haloyd manually with: haloyd serve")
-				} else {
-					ui.Success("Systemd service installed!")
-					ui.Info("Start with: systemctl start haloyd")
-					ui.Info("Enable on boot: systemctl enable haloyd")
-				}
-			}
-
-			ui.Info("\nYou can add this server to the haloy CLI with:")
+			ui.Info("\nAPI Token: %s", apiToken)
+			ui.Info("\nAdd this server to the haloy CLI with:")
 			apiDomainMsg := "<server-url>"
 			if apiDomain != "" {
 				apiDomainMsg = apiDomain
@@ -157,8 +141,8 @@ The data directory can be customized by setting the %s environment variable.`,
 	cmd.Flags().BoolVar(&override, "override", false, "Remove and recreate existing directories")
 	cmd.Flags().StringVar(&apiDomain, "api-domain", "", "Domain for the haloyd API (e.g., api.yourserver.com)")
 	cmd.Flags().StringVar(&acmeEmail, "acme-email", "", "Email address for Let's Encrypt certificate registration")
-	cmd.Flags().BoolVar(&localInstall, "local-install", false, "Install in user directories instead of system directories")
-	cmd.Flags().BoolVar(&noSystemd, "no-systemd", false, "Don't install systemd service")
+	cmd.Flags().StringVar(&dataDirFlag, "data-dir", "", "Data directory path (default: /var/lib/haloy)")
+	cmd.Flags().StringVar(&configDirFlag, "config-dir", "", "Config directory path (default: /etc/haloy)")
 
 	return cmd
 }
@@ -272,36 +256,4 @@ func cleanupDirectories(dirs []string) {
 			ui.Warn("Failed to cleanup %s: %v", dir, err)
 		}
 	}
-}
-
-func installSystemdService(dataDir, configDir string) error {
-	serviceContent := fmt.Sprintf(`[Unit]
-Description=Haloy Daemon
-After=network-online.target docker.service
-Requires=docker.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/haloyd serve
-Restart=always
-RestartSec=5
-Environment=HALOY_DATA_DIR=%s
-Environment=HALOY_CONFIG_DIR=%s
-
-[Install]
-WantedBy=multi-user.target
-`, dataDir, configDir)
-
-	servicePath := "/etc/systemd/system/haloyd.service"
-	if err := os.WriteFile(servicePath, []byte(serviceContent), 0o644); err != nil {
-		return fmt.Errorf("failed to write service file: %w", err)
-	}
-
-	// Reload systemd
-	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
-		return fmt.Errorf("failed to reload systemd: %w", err)
-	}
-
-	return nil
 }

@@ -183,6 +183,125 @@ For existing installations:
    systemctl enable --now haloyd
    ```
 
+### 8. Installation Flow Redesign
+
+A complete redesign of the server installation experience with improved security, multi-init system support, and better UX.
+
+**Architecture change - separation of concerns:**
+
+| Before | After |
+|--------|-------|
+| `install-haloyd.sh` downloads binary | `install-haloyd.sh` does everything: creates user, downloads binary, runs init, installs service, starts daemon |
+| `haloyd init` creates dirs, config, AND installs systemd | `haloyd init` just creates dirs, config files, Docker network |
+
+**Simplified `haloyd init`:**
+- Removed `installSystemdService()` function
+- Removed `--no-systemd` and `--local-install` flags
+- Removed `config.IsSystemMode()` auto-detection logic
+- Added explicit `--data-dir` and `--config-dir` flags for custom paths
+- Defaults to `/var/lib/haloy` and `/etc/haloy`
+
+**Security hardening:**
+- Dedicated `haloy` system user (added to docker group)
+- Systemd sandboxing directives:
+  - `NoNewPrivileges=true`
+  - `PrivateTmp=true`, `ProtectHome=true`, `ProtectSystem=strict`
+  - `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (allows binding ports 80/443)
+  - `AmbientCapabilities=CAP_NET_BIND_SERVICE`
+  - `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`
+  - `RestrictSUIDSGID=true`, `LimitNOFILE=65536`
+
+**Multi-init system support:**
+- Automatic detection of init system (systemd, OpenRC, SysVinit)
+- Service templates for all three init systems embedded in install script
+- OpenRC: `/etc/init.d/haloyd` with `command_user`, `depend()`, `start_pre()`
+- SysVinit: LSB-compliant init script with start/stop/status/restart
+
+**Install script UX improvements (`scripts/install-haloyd.sh`):**
+- Step-based progress indicators `[1/8] Detecting system configuration`
+- Color-coded output (green checkmarks, yellow warnings, red errors)
+- Prerequisite validation (Docker installed, daemon running, disk space)
+- Troubleshooting hints on errors
+- Environment variable options: `VERSION`, `SKIP_START`, `API_DOMAIN`, `ACME_EMAIL`
+
+**Uninstall script improvements (`scripts/uninstall-server.sh`):**
+- Detects what's installed before removing
+- Offers backup before data deletion
+- Interactive confirmation prompts
+- Support for all init systems
+- Optional removal of `haloy` user
+
+**New `haloyd verify` command:**
+- Diagnostic command to verify installation health
+- Checks: config dir, data dir, config files validity, Docker connectivity, Docker network, API health
+
+**Removed code:**
+- `config.IsSystemMode()` function
+- `constants.EnvVarSystemInstall` environment variable
+- `constants.UserDataDir`, `UserConfigDir`, `UserBinDir` paths
+- User-mode installation logic throughout
+
+**Changed files:**
+- `internal/haloydcli/init.go` - Simplified, removed systemd logic
+- `internal/config/paths.go` - Removed IsSystemMode(), simplified to env vars + defaults
+- `internal/constants/constants.go` - Removed user-mode constants
+- `scripts/install-haloyd.sh` - Complete rewrite
+- `scripts/uninstall-server.sh` - Added backup prompts, multi-init support
+- `internal/haloydcli/verify.go` - New file
+- `internal/haloydcli/root.go` - Added verify command
+
+### 9. Removed `haloy server setup` Command
+
+The `haloy server setup` command has been removed to simplify the CLI. Users now install haloyd directly on their server via SSH.
+
+**Old flow:**
+```bash
+haloy server setup myserver.com --api-domain api.myserver.com
+```
+
+**New flow:**
+```bash
+# Step 1: SSH to server and run install script
+ssh root@myserver 'curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh'
+
+# Step 2: Copy the API token from output, then locally:
+haloy server add https://api.myserver.com <token>
+```
+
+**Removed files:**
+- `internal/haloy/server_setup.go` - SSH-based remote server provisioning (~170 lines)
+
+### 10. Removed SSH Upgrade Support
+
+The `--use-ssh` flag on `haloy server upgrade` and the entire `sshrunner` package have been removed.
+
+**Before:**
+```bash
+# SSH-based upgrade (removed)
+haloy server upgrade --use-ssh
+```
+
+**After:**
+```bash
+# API-based upgrade (default, still works)
+haloy server upgrade
+
+# Manual upgrade instructions
+haloy server upgrade --manual
+```
+
+**Rationale:**
+- The API-based upgrade is the preferred method and works reliably
+- The `--manual` flag provides SSH instructions for users who prefer direct access
+- Removes SSH client code from the CLI entirely
+- Simplifies the codebase and reduces dependencies
+
+**Removed files:**
+- `internal/sshrunner/sshrunner.go` - SSH command execution package
+
+**Changed files:**
+- `internal/haloy/server_upgrade.go` - Removed `--use-ssh` flag and `performSSHUpgrade()` function
+
 ## File Statistics
 
 ```
