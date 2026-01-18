@@ -1,13 +1,20 @@
 package proxy
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // DomainResolver resolves alias domains to canonical domains.
@@ -24,6 +31,10 @@ type CertManager struct {
 	mu    sync.RWMutex
 	certs map[string]*tls.Certificate // domain -> certificate
 
+	// defaultCert is a self-signed certificate returned for connections without SNI.
+	// This prevents TLS handshake errors from being logged for scanner/bot traffic.
+	defaultCert *tls.Certificate
+
 	resolverMu sync.RWMutex
 	resolver   DomainResolver
 }
@@ -36,12 +47,56 @@ func NewCertManager(certDir string, logger *slog.Logger) (*CertManager, error) {
 		certs:   make(map[string]*tls.Certificate),
 	}
 
+	// Generate default self-signed certificate for connections without SNI
+	defaultCert, err := generateSelfSignedCert()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate default certificate: %w", err)
+	}
+	cm.defaultCert = defaultCert
+
 	// Initial load of certificates
 	if err := cm.loadAllCertificates(); err != nil {
 		return nil, fmt.Errorf("failed to load certificates: %w", err)
 	}
 
 	return cm, nil
+}
+
+// generateSelfSignedCert creates a self-signed certificate for use when no SNI is provided.
+func generateSelfSignedCert() (*tls.Certificate, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Haloy Default"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return nil, err
+	}
+
+	cert := &tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  priv,
+	}
+
+	return cert, nil
 }
 
 // Stop stops the certificate manager (no-op, retained for interface compatibility).
@@ -103,7 +158,9 @@ func wildcardDomain(domain string) string {
 func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	serverName := strings.ToLower(hello.ServerName)
 	if serverName == "" {
-		return nil, fmt.Errorf("no server name provided")
+		// Return default self-signed cert for connections without SNI (scanners/bots).
+		// The request will be rejected with 404 at the HTTP handler level.
+		return cm.defaultCert, nil
 	}
 
 	if cert, ok := cm.getCachedCertificate(serverName); ok {
