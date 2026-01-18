@@ -26,10 +26,10 @@ func TestFindRoute(t *testing.T) {
 	p := &Proxy{}
 
 	tests := []struct {
-		name        string
-		host        string
-		wantNil     bool
-		wantCanon   string
+		name      string
+		host      string
+		wantNil   bool
+		wantCanon string
 	}{
 		{
 			name:      "find by canonical domain",

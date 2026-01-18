@@ -151,7 +151,7 @@ func checkDataDir() checkResult {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if ok {
 		mode := info.Mode().Perm()
-		if mode != 0700 {
+		if mode != 0o700 {
 			return checkResult{
 				name:    "Data directory",
 				passed:  false,

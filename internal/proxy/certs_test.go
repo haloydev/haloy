@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
 	"log/slog"
 	"math/big"
@@ -14,8 +15,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"encoding/pem"
 )
 
 type staticResolver map[string]string

@@ -591,4 +591,3 @@ func pollForUpgradeCompletion(ctx context.Context, server, token string) (string
 		}
 	}
 }
-
