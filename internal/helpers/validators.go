@@ -26,6 +26,11 @@ func IsValidDomain(domain string) error {
 		return fmt.Errorf("domain cannot start or end with a hyphen")
 	}
 
+	// Allow localhost as a special case for local development
+	if domain == "localhost" {
+		return nil
+	}
+
 	// Split into labels and validate each
 	labels := strings.Split(domain, ".")
 	if len(labels) < 2 {

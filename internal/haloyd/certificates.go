@@ -128,7 +128,7 @@ func (cm *CertificatesClientManager) LoadOrRegisterClient(email string) (*lego.C
 	}
 
 	// Configure HTTP challenge provider using a server that listens on port 8080
-	// HAProxy is configured to forward /.well-known/acme-challenge/* requests to this server
+	// The proxy forwards /.well-known/acme-challenge/* requests to this server
 	err = client.Challenge.SetHTTP01Provider(cm.sharedHTTPProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set HTTP challenge provider: %w", err)
@@ -225,9 +225,12 @@ func (m *CertificatesManager) Stop() {
 }
 
 func (cm *CertificatesManager) RefreshSync(logger *slog.Logger, domains []CertificatesDomain) error {
-	_, err := cm.checkRenewals(logger, domains)
+	renewedDomains, err := cm.checkRenewals(logger, domains)
 	if err != nil {
 		return err
+	}
+	if len(renewedDomains) > 0 && cm.updateSignal != nil {
+		cm.updateSignal <- "certificates_renewed"
 	}
 	return nil
 }
@@ -242,7 +245,7 @@ func (cm *CertificatesManager) Refresh(logger *slog.Logger, domains []Certificat
 			logger.Error("Certificate refresh failed", "error", err)
 			return
 		}
-		// Signal the update channel to update HAProxy if certificates were renewed.
+		// Signal the update channel to reload certificates if any were renewed.
 		if len(renewedDomains) > 0 {
 			if cm.updateSignal != nil {
 				cm.updateSignal <- "certificates_renewed"
@@ -366,6 +369,18 @@ func (cm *CertificatesManager) hasConfigurationChanged(logger *slog.Logger, doma
 	parsedCert, err := parseCertificate(certData)
 	if err != nil {
 		logger.Debug("Cannot parse certificate, treating as changed", "domain", domain.Canonical)
+		return true, nil
+	}
+
+	// Check if staging/production mode changed
+	// Staging certs have "(STAGING)" in the issuer name
+	isStagingCert := strings.Contains(parsedCert.Issuer.String(), "(STAGING)")
+	if isStagingCert != cm.config.TlsStaging {
+		if cm.config.TlsStaging {
+			logger.Debug("Production cert exists but staging mode enabled, needs new staging cert", "domain", domain.Canonical)
+		} else {
+			logger.Debug("Staging cert exists but production mode enabled, needs new production cert", "domain", domain.Canonical)
+		}
 		return true, nil
 	}
 

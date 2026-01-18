@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
-	"github.com/haloydev/haloy/internal/sshrunner"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -37,7 +35,6 @@ func ServerUpgradeCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		manualMode       bool
 		autoApprove      bool
 		skipVersionCheck bool
-		useSSH           bool
 	)
 
 	cmd := &cobra.Command{
@@ -48,8 +45,8 @@ func ServerUpgradeCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 This command will:
   - Verify your haloy CLI is on the latest version
   - Check the current server version(s)
-  - Download and install the latest haloyadm binary
-  - Restart the Haloy services (pulling new container images)
+  - Download and install the latest haloyd binary via the API
+  - Restart the haloyd service
 
 The command can upgrade servers defined in your haloy config file,
 or a specific server using the --server flag.
@@ -57,9 +54,6 @@ or a specific server using the --server flag.
 If your config has a single server (defined at top-level or all targets
 use the same server), no flags are needed. If multiple servers are found,
 use --all or --targets to specify which servers to upgrade.
-
-By default, the upgrade is performed via the haloyd API. Use --use-ssh
-to upgrade via SSH instead (requires root SSH access).
 
 Use --manual to get instructions for upgrading manually via SSH.
 
@@ -75,9 +69,6 @@ Examples:
 
   # Upgrade a specific server directly
   haloy server upgrade --server haloy.myserver.com
-
-  # Upgrade via SSH instead of API
-  haloy server upgrade --use-ssh
 
   # Get manual upgrade instructions
   haloy server upgrade --manual
@@ -103,7 +94,7 @@ Examples:
 
 			// If --server flag is provided, upgrade that single server directly
 			if serverFlag != "" {
-				return upgradeServer(ctx, nil, serverFlag, latestVersion, manualMode, autoApprove, useSSH, "")
+				return upgradeServer(ctx, nil, serverFlag, latestVersion, manualMode, autoApprove, "")
 			}
 
 			// Load raw config (without target filtering)
@@ -170,7 +161,7 @@ Examples:
 					prefix = server
 				}
 				g.Go(func() error {
-					return upgradeServer(ctx, &srvInfo, server, latestVersion, false, true, useSSH, prefix)
+					return upgradeServer(ctx, &srvInfo, server, latestVersion, false, true, prefix)
 				})
 			}
 
@@ -187,10 +178,9 @@ Examples:
 	cmd.Flags().StringVarP(&serverFlag, "server", "s", "", "Server URL (overrides config file)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Upgrade servers for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Upgrade servers for all targets")
-	cmd.Flags().BoolVar(&manualMode, "manual", false, "Print manual upgrade instructions instead of upgrading via SSH")
+	cmd.Flags().BoolVar(&manualMode, "manual", false, "Print manual upgrade instructions instead of upgrading")
 	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&skipVersionCheck, "skip-version-check", false, "Skip CLI version check (not recommended)")
-	cmd.Flags().BoolVar(&useSSH, "use-ssh", false, "Use SSH instead of API for upgrade (requires root SSH access)")
 
 	return cmd
 }
@@ -467,7 +457,7 @@ func extractSSHHost(server string) (string, error) {
 // upgradeServer upgrades a single Haloy server.
 // If srvInfo is provided, it will be used to get the API token.
 // If srvInfo is nil, the token will be retrieved from the client config.
-func upgradeServer(ctx context.Context, srvInfo *serverInfo, server, latestVersion string, manualMode, autoApprove, useSSH bool, prefix string) error {
+func upgradeServer(ctx context.Context, srvInfo *serverInfo, server, latestVersion string, manualMode, autoApprove bool, prefix string) error {
 	pui := &ui.PrefixedUI{Prefix: prefix}
 
 	// Check current server version
@@ -502,10 +492,6 @@ func upgradeServer(ctx context.Context, srvInfo *serverInfo, server, latestVersi
 		}
 	}
 
-	// Perform upgrade via SSH or API
-	if useSSH {
-		return performSSHUpgrade(ctx, server, latestVersion, prefix)
-	}
 	return performAPIUpgrade(ctx, srvInfo.toTargetConfig(), server, latestVersion, prefix)
 }
 
@@ -525,8 +511,8 @@ func performAPIUpgrade(ctx context.Context, targetConfig *config.TargetConfig, s
 		return &PrefixedError{Err: fmt.Errorf("unable to create API client: %w", err), Prefix: prefix}
 	}
 
-	// Phase 1: Update haloyadm binary
-	pui.Info("Phase 1: Updating haloyadm binary...")
+	// Phase 1: Update haloyd binary
+	pui.Info("Phase 1: Updating haloyd binary...")
 	var upgradeResp apitypes.UpgradeResponse
 	if err := api.Post(ctx, "upgrade", nil, &upgradeResp); err != nil {
 		return &PrefixedError{Err: fmt.Errorf("failed to start upgrade: %w", err), Prefix: prefix}
@@ -541,7 +527,7 @@ func performAPIUpgrade(ctx context.Context, targetConfig *config.TargetConfig, s
 		return nil
 	}
 
-	pui.Info("haloyadm updated from %s to %s", upgradeResp.PreviousVersion, upgradeResp.TargetVersion)
+	pui.Info("haloyd updated from %s to %s", upgradeResp.PreviousVersion, upgradeResp.TargetVersion)
 
 	// Phase 2: Restart services
 	pui.Info("Phase 2: Restarting services...")
@@ -554,7 +540,7 @@ func performAPIUpgrade(ctx context.Context, targetConfig *config.TargetConfig, s
 
 	// Phase 3: Poll for completion
 	pui.Info("Waiting for server to come back online...")
-	newVersion, err := pollForUpgradeCompletion(ctx, server, token, latestVersion)
+	newVersion, err := pollForUpgradeCompletion(ctx, server, token)
 	if err != nil {
 		pui.Warn("Could not verify upgrade completion: %v", err)
 		pui.Info("Please check the server status manually")
@@ -572,7 +558,7 @@ func performAPIUpgrade(ctx context.Context, targetConfig *config.TargetConfig, s
 }
 
 // pollForUpgradeCompletion polls the server until it comes back online with the new version
-func pollForUpgradeCompletion(ctx context.Context, server, token, expectedVersion string) (string, error) {
+func pollForUpgradeCompletion(ctx context.Context, server, token string) (string, error) {
 	// Create a context with timeout for polling
 	pollCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -606,46 +592,3 @@ func pollForUpgradeCompletion(ctx context.Context, server, token, expectedVersio
 	}
 }
 
-// performSSHUpgrade upgrades a server using SSH (legacy method)
-func performSSHUpgrade(ctx context.Context, server, latestVersion, prefix string) error {
-	pui := &ui.PrefixedUI{Prefix: prefix}
-
-	// For now, assume root user (consistent with server setup)
-	user := "root"
-
-	// Extract just the hostname for SSH (strip protocol/port)
-	sshHost, err := extractSSHHost(server)
-	if err != nil {
-		return &PrefixedError{Err: fmt.Errorf("invalid server URL: %w", err), Prefix: prefix}
-	}
-
-	sshCfg := sshrunner.Config{
-		User: user,
-		Host: sshHost,
-		Port: 22,
-	}
-
-	pui.Info("Connecting to %s@%s over SSH...", user, sshHost)
-
-	pui.Info("Executing upgrade script on remote server...")
-	if _, err := sshrunner.RunStreaming(ctx, sshCfg, upgradeServerScript, os.Stdout, os.Stderr); err != nil {
-		return &PrefixedError{Err: fmt.Errorf("remote upgrade failed: %w", err), Prefix: prefix}
-	}
-
-	pui.Info("Verifying upgrade...")
-	version, err := getServerVersion(ctx, nil, server, prefix)
-	if err != nil {
-		pui.Warn("Could not verify server version after upgrade: %v", err)
-		pui.Info("Please check the server status manually")
-		return nil
-	}
-
-	if latestVersion != "unknown" && version.Version != latestVersion {
-		pui.Warn("Server version after upgrade: %s (expected %s)", version.Version, latestVersion)
-	} else {
-		pui.Info("Server version after upgrade: %s", version.Version)
-	}
-
-	pui.Success("Server upgrade completed successfully!")
-	return nil
-}

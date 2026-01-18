@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,8 +20,10 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/docker"
+	"github.com/haloydev/haloy/internal/healthcheck"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/logging"
+	"github.com/haloydev/haloy/internal/proxy"
 	"github.com/haloydev/haloy/internal/storage"
 )
 
@@ -57,7 +58,7 @@ func Run(debug bool) {
 		"debug", debug)
 
 	if debug {
-		logger.Info("Debug mode enabled: No changes will be applied to HAProxy. Staging certificates will be used for all domains.")
+		logger.Info("Debug mode enabled: Staging certificates will be used for all domains.")
 	}
 
 	db, err := storage.New()
@@ -101,17 +102,28 @@ func Run(debug bool) {
 	}
 
 	apiServer := api.NewServer(apiToken, logBroker, logLevel)
-	go func() {
-		logger.Info(fmt.Sprintf("Starting API server on :%s...", constants.APIServerPort))
-		if err := apiServer.ListenAndServe(fmt.Sprintf(":%s", constants.APIServerPort)); err != nil && err != http.ErrServerClosed {
-			logging.LogFatal(logger, "API server failed", "error", err)
-		}
-	}()
+
+	// Initialize proxy certificate manager
+	certDir := filepath.Join(dataDir, constants.CertStorageDir)
+	proxyCertManager, err := proxy.NewCertManager(certDir, logger)
+	if err != nil {
+		logging.LogFatal(logger, "Failed to create proxy certificate manager", "error", err)
+	}
+
+	// Create and start the proxy with the API server handler
+	proxyServer := proxy.New(logger, proxyCertManager, apiServer.Handler())
+	proxyCertManager.SetDomainResolver(proxyServer)
+
+	// Start proxy on HTTP and HTTPS ports
+	if err := proxyServer.Start(":80", ":443"); err != nil {
+		logging.LogFatal(logger, "Failed to start proxy", "error", err)
+	}
+	logger.Info("Proxy started", "http", ":80", "https", ":443")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Channel for signaling cert updates needing HAProxy reload
+	// Channel for signaling cert updates needing proxy reload
 	certUpdateSignal := make(chan string, 5)
 
 	deploymentManager := NewDeploymentManager(cli, haloydConfig)
@@ -124,25 +136,26 @@ func Run(debug bool) {
 	if err != nil {
 		logging.LogFatal(logger, "Failed to create certificate manager", "error", err)
 	}
-	haproxyManager := NewHAProxyManager(cli, haloydConfig, filepath.Join(dataDir, constants.HAProxyConfigDir), debug)
+
+	// Get API domain for proxy routing (default to localhost for local development)
+	apiDomain := "localhost"
+	if haloydConfig != nil && haloydConfig.API.Domain != "" {
+		apiDomain = haloydConfig.API.Domain
+	}
+
 	updaterConfig := UpdaterConfig{
 		Cli:               cli,
 		DeploymentManager: deploymentManager,
 		CertManager:       certManager,
-		HAProxyManager:    haproxyManager,
+		Proxy:             proxyServer,
+		APIDomain:         apiDomain,
 	}
 
 	updater := NewUpdater(updaterConfig)
-	if _, err := updater.Update(ctx, logger, TriggerReasonInitial, nil); err != nil {
-		logger.Error("Initial update failed", "error", err)
-	}
 
-	logger.Info("haloyd successfully initialized",
-		logging.AttrHaloydInitComplete, true, // signal that the initialization is complete (haloyadm init), used for logs.
-	)
-
-	// Docker event listener
-	eventsChan := make(chan ContainerEvent)
+	// Start Docker event listener BEFORE initial update so events aren't lost
+	// during long-running health check retries. Buffer allows events to queue.
+	eventsChan := make(chan ContainerEvent, 100)
 	errorsChan := make(chan error)
 	go listenForDockerEvents(ctx, cli, eventsChan, errorsChan, logger)
 
@@ -151,6 +164,36 @@ func Run(debug bool) {
 
 	appDebouncer := newAppDebouncer(eventDebounceDelay, debouncedEventsChan, logger)
 	defer appDebouncer.stop()
+
+	// Run initial update (Docker events will queue in buffered channel)
+	if _, err := updater.Update(ctx, logger, TriggerReasonInitial, nil); err != nil {
+		logger.Error("Initial update failed", "error", err)
+	}
+
+	logger.Info("haloyd successfully initialized",
+		logging.AttrHaloydInitComplete, true, // signal that the initialization is complete (haloyd init), used for logs.
+	)
+
+	// Start health monitor (enabled by default)
+	var healthMonitor *healthcheck.HealthMonitor
+	if haloydConfig == nil || haloydConfig.HealthMonitor.IsEnabled() {
+		var healthConfig healthcheck.Config
+		if haloydConfig != nil {
+			healthConfig = healthcheck.Config{
+				Enabled:  true,
+				Interval: haloydConfig.HealthMonitor.GetInterval(),
+				Fall:     haloydConfig.HealthMonitor.GetFall(),
+				Rise:     haloydConfig.HealthMonitor.GetRise(),
+				Timeout:  haloydConfig.HealthMonitor.GetTimeout(),
+			}
+		} else {
+			healthConfig = healthcheck.DefaultConfig()
+		}
+
+		healthUpdater := NewHealthConfigUpdater(deploymentManager, proxyServer, apiDomain, logger)
+		healthMonitor = healthcheck.NewHealthMonitor(healthConfig, deploymentManager, healthUpdater, logger)
+		healthMonitor.Start()
+	}
 
 	maintenanceTicker := time.NewTicker(maintenanceInterval)
 	defer maintenanceTicker.Stop()
@@ -246,22 +289,12 @@ func Run(debug bool) {
 
 		case domainUpdated := <-certUpdateSignal:
 			logger.Info("Received cert update signal", "domain", domainUpdated)
-
-			go func() {
-				// Use a timeout context for this specific task
-				updateCtx, cancelUpdate := context.WithTimeout(ctx, 60*time.Second)
-				defer cancelUpdate()
-
-				// Update only needs to apply config, not full build/check
-				// We assume the deployment state triggering the cert update is still valid.
-				currentDeployments := updater.deploymentManager.Deployments()
-				if err := updater.haproxyManager.ApplyConfig(updateCtx, logger, currentDeployments); err != nil {
-					logger.Error("Background HAProxy update failed",
-						"reason", "cert update",
-						"domain", domainUpdated,
-						"error", err)
-				}
-			}()
+			if err := proxyCertManager.ReloadCertificates(); err != nil {
+				logger.Error("Failed to reload certificates",
+					"reason", "cert update",
+					"domain", domainUpdated,
+					"error", err)
+			}
 
 		case <-maintenanceTicker.C:
 			logger.Info("Performing periodic maintenance...")
@@ -283,6 +316,9 @@ func Run(debug bool) {
 
 		case <-sigChan:
 			logger.Info("Received shutdown signal, stopping haloyd...")
+			if healthMonitor != nil {
+				healthMonitor.Stop()
+			}
 			if certManager != nil {
 				certManager.Stop()
 			}
@@ -327,7 +363,7 @@ func listenForDockerEvents(ctx context.Context, cli *client.Client, eventsChan c
 				}
 
 				// We'll only process events for containers that have been marked with haloy app label.
-				isHaloyApp := container.Config.Labels[config.LabelRole] == config.AppLabelRole
+				isHaloyApp := container.Config.Labels[config.LabelAppName] != ""
 				if isHaloyApp {
 					labels, err := config.ParseContainerLabels(container.Config.Labels)
 					if err != nil {

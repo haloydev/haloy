@@ -38,3 +38,9 @@ func (s *APIServer) ListenAndServe(addr string) error {
 	}
 	return srv.ListenAndServe()
 }
+
+// Handler returns the HTTP handler for this API server.
+// This is used by the proxy to route API requests internally.
+func (s *APIServer) Handler() http.Handler {
+	return s.router
+}

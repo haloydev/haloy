@@ -4,9 +4,6 @@ import "os"
 
 const (
 	Version                  = "0.1.0-beta.27"
-	HAProxyVersion           = "3.2"
-	HaloydContainerName      = "haloyd"
-	HAProxyContainerName     = "haloy-haproxy"
 	DockerNetwork            = "haloy"
 	DefaultDeploymentsToKeep = 6
 	DefaultHealthCheckPath   = "/"
@@ -17,33 +14,27 @@ const (
 	APIServerPort                = "9999"
 
 	// Environment variables
-	EnvVarAPIToken      = "HALOY_API_TOKEN"
-	EnvVarReplicaID     = "HALOY_REPLICA_ID" // available in all containers.
-	EnvVarDataDir       = "HALOY_DATA_DIR"   // used to override default data directory.
-	EnvVarConfigDir     = "HALOY_CONFIG_DIR" // used to override default config directory for haloy.
-	EnvVarDebug         = "HALOY_DEBUG"
-	EnvVarSystemInstall = "HALOY_SYSTEM_INSTALL" // used to disable system wide install
+	EnvVarAPIToken  = "HALOY_API_TOKEN"
+	EnvVarReplicaID = "HALOY_REPLICA_ID" // available in all containers.
+	EnvVarDataDir   = "HALOY_DATA_DIR"   // used to override default data directory.
+	EnvVarConfigDir = "HALOY_CONFIG_DIR" // used to override default config directory.
+	EnvVarDebug     = "HALOY_DEBUG"
 
-	// Directories
+	// Default directories (system-wide installation)
 	SystemDataDir   = "/var/lib/haloy"
 	SystemConfigDir = "/etc/haloy"
 	SystemBinDir    = "/usr/local/bin"
-	UserDataDir     = "~/.local/share/haloy"
-	UserConfigDir   = "~/.config/haloy"
-	UserBinDir      = "~/.local/bin"
 
 	// Subdirectories
-	DBDir            = "db"
-	HAProxyConfigDir = "haproxy-config"
-	CertStorageDir   = "cert-storage"
-	LayersDir        = "layers"
+	DBDir          = "db"
+	CertStorageDir = "cert-storage"
+	LayersDir      = "layers"
 
 	// File names
 	HaloydConfigFileName   = "haloyd.yaml"
 	ClientConfigFileName   = "client.yaml"
 	ConfigEnvFileName      = ".env"
 	ConfigEnvLocalFileName = ".env.local"
-	HAProxyConfigFileName  = "haproxy.cfg"
 	DBFileName             = "haloy.db"
 )
 

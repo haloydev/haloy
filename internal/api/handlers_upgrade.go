@@ -1,31 +1,27 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/haloydev/haloy/internal/apitypes"
-	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/logging"
-	"github.com/joho/godotenv"
 )
 
 type gitHubRelease struct {
 	TagName string `json:"tag_name"`
 }
 
-// handleUpgrade handles the first phase of upgrade: updating haloyadm binary using self-update
+// handleUpgrade handles the upgrade: downloads and installs the new haloyd binary
 func (s *APIServer) handleUpgrade() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logging.NewLogger(s.logLevel, s.logBroker)
@@ -58,186 +54,170 @@ func (s *APIServer) handleUpgrade() http.HandlerFunc {
 			return
 		}
 
-		logger.Info("Starting upgrade via haloyadm self-update", "from", currentVersion, "to", latestVersion)
+		logger.Info("Starting upgrade", "from", currentVersion, "to", latestVersion)
 
-		// Run haloyadm self-update
-		if err := runHaloyadmSelfUpdate(ctx, logger); err != nil {
-			logger.Error("haloyadm self-update failed", "error", err)
+		// Download and install the new binary
+		if err := downloadAndInstallBinary(ctx, latestVersion, logger); err != nil {
+			logger.Error("Binary upgrade failed", "error", err)
 			encodeJSON(w, http.StatusInternalServerError, apitypes.UpgradeResponse{
 				Status:          "failed",
 				PreviousVersion: currentVersion,
 				TargetVersion:   latestVersion,
-				Message:         fmt.Sprintf("Self-update failed: %v", err),
+				Message:         fmt.Sprintf("Upgrade failed: %v", err),
 			})
 			return
 		}
 
-		logger.Info("Successfully updated haloyadm binary", "version", latestVersion)
+		logger.Info("Successfully updated haloyd binary", "version", latestVersion)
 
 		encodeJSON(w, http.StatusOK, apitypes.UpgradeResponse{
 			Status:          "updating",
 			PreviousVersion: currentVersion,
 			TargetVersion:   latestVersion,
-			Message:         "haloyadm binary updated. Call /v1/upgrade/restart to complete the upgrade.",
+			Message:         "haloyd binary updated. Restart the service to complete: systemctl restart haloyd",
 		})
 	}
 }
 
-// handleUpgradeRestart handles the second phase: restarting services with the new version
+// handleUpgradeRestart handles the restart phase of upgrade
+// Since haloyd runs natively via systemd, restarting requires systemctl
 func (s *APIServer) handleUpgradeRestart() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logging.NewLogger(s.logLevel, s.logBroker)
 
-		logger.Info("Starting service restart for upgrade")
+		logger.Info("Restart requested - attempting systemctl restart")
 
-		// Spawn a separate container to run haloyadm restart.
-		// We can't run it directly in this container because haloyadm restart
-		// will stop this container (haloyd), killing the process before it can
-		// start the new containers. By running in a separate container, the
-		// restart process survives when haloyd is stopped.
+		// Try to restart via systemctl in a goroutine so we can return the response first
 		go func() {
 			// Small delay to ensure the HTTP response is sent
 			time.Sleep(500 * time.Millisecond)
 
-			logger.Info("Spawning restart helper container")
-
-			if err := spawnRestartHelper(); err != nil {
-				logger.Error("Failed to spawn restart helper", "error", err)
+			cmd := exec.Command("systemctl", "restart", "haloyd")
+			if err := cmd.Run(); err != nil {
+				logger.Error("Failed to restart haloyd via systemctl", "error", err)
 				return
 			}
-
-			logger.Info("Restart helper container spawned, services will be restarted")
+			logger.Info("systemctl restart haloyd initiated")
 		}()
 
 		encodeJSON(w, http.StatusAccepted, apitypes.UpgradeResponse{
 			Status:  "restarting",
-			Message: "Services are restarting. Poll /v1/version to check when upgrade is complete.",
+			Message: "Service restart initiated. Poll /v1/version to check when upgrade is complete.",
 		})
 	}
 }
 
-// spawnRestartHelper spawns a separate Docker container that runs haloyadm restart.
-// This is necessary because running haloyadm restart inside haloyd would kill itself
-// before it can start the new containers.
-func spawnRestartHelper() error {
-	dataDir, err := config.DataDir()
+// downloadAndInstallBinary downloads and installs the new haloyd binary
+func downloadAndInstallBinary(ctx context.Context, version string, logger interface {
+	Info(msg string, args ...any)
+	Error(msg string, args ...any)
+},
+) error {
+	platform := runtime.GOOS
+	arch := runtime.GOARCH
+
+	binaryName := fmt.Sprintf("haloyd-%s-%s", platform, arch)
+	downloadURL := fmt.Sprintf("https://github.com/haloydev/haloy/releases/download/%s/%s", version, binaryName)
+
+	logger.Info("Downloading new binary", "url", downloadURL)
+
+	// Create temp file for download
+	tmpFile, err := os.CreateTemp("", "haloyd-upgrade-*")
 	if err != nil {
-		return fmt.Errorf("failed to get data dir: %w", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
 
-	configDir, err := config.ConfigDir()
+	// Download binary
+	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get config dir: %w", err)
+		tmpFile.Close()
+		return fmt.Errorf("failed to create download request: %w", err)
 	}
 
-	binDir, err := config.BinDir()
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to get bin dir: %w", err)
+		tmpFile.Close()
+		return fmt.Errorf("failed to download: %w", err)
 	}
-	haloyadmPath := filepath.Join(binDir, "haloyadm")
+	defer resp.Body.Close()
 
-	// Get docker group ID for socket access
-	dockerGID := getDockerGroupID()
-
-	// Build environment variables to pass to the restart helper
-	envArgs := []string{
-		"--env", fmt.Sprintf("%s=%s", constants.EnvVarDataDir, dataDir),
-		"--env", fmt.Sprintf("%s=%s", constants.EnvVarConfigDir, configDir),
-		"--env", fmt.Sprintf("%s=%t", constants.EnvVarSystemInstall, config.IsSystemMode()),
+	if resp.StatusCode != http.StatusOK {
+		tmpFile.Close()
+		return fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
 
-	// Read .env file and pass those vars too (needed for API token, etc.)
-	envFile := filepath.Join(configDir, constants.ConfigEnvFileName)
-	if env, err := godotenv.Read(envFile); err == nil {
-		for k, v := range env {
-			envArgs = append(envArgs, "--env", fmt.Sprintf("%s=%s", k, v))
+	_, err = io.Copy(tmpFile, resp.Body)
+	if err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write downloaded file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Make executable
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		return fmt.Errorf("failed to make binary executable: %w", err)
+	}
+
+	// Verify the binary works
+	logger.Info("Verifying downloaded binary")
+	verifyCmd := exec.CommandContext(ctx, tmpPath, "version")
+	if _, err := verifyCmd.Output(); err != nil {
+		return fmt.Errorf("downloaded binary verification failed: %w", err)
+	}
+
+	// Get current executable path
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to determine executable path: %w", err)
+	}
+
+	// Create backup
+	backupPath := execPath + ".backup"
+	logger.Info("Backing up current binary", "path", backupPath)
+	if err := copyFile(execPath, backupPath); err != nil {
+		return fmt.Errorf("failed to backup current binary: %w", err)
+	}
+
+	// Install new binary
+	logger.Info("Installing new binary")
+	if err := copyFile(tmpPath, execPath); err != nil {
+		// Try to restore backup on failure
+		if restoreErr := copyFile(backupPath, execPath); restoreErr != nil {
+			return fmt.Errorf("installation failed and could not restore backup: %w (restore error: %v)", err, restoreErr)
 		}
+		return fmt.Errorf("installation failed (backup restored): %w", err)
 	}
 
-	// Use the same haloyd image for the restart helper to ensure compatibility
-	image := fmt.Sprintf("ghcr.io/haloydev/haloy-haloyd:%s", constants.Version)
-
-	uid := os.Getuid()
-	gid := os.Getgid()
-
-	args := []string{
-		"run", "--rm", "-d",
-		"--name", "haloy-restart-helper",
-		"--user", fmt.Sprintf("%d:%d", uid, gid),
-		"--group-add", dockerGID,
-		"-v", "/var/run/docker.sock:/var/run/docker.sock:rw",
-		"-v", fmt.Sprintf("%s:/usr/local/bin/haloyadm:ro", haloyadmPath),
-		"-v", fmt.Sprintf("%s:%s:rw", dataDir, dataDir),
-		"-v", fmt.Sprintf("%s:%s:ro", configDir, configDir),
-		"--network", constants.DockerNetwork,
-	}
-
-	args = append(args, envArgs...)
-	args = append(args, image, "/usr/local/bin/haloyadm", "restart", "--no-logs")
-
-	cmd := exec.Command("docker", args...)
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
-			return fmt.Errorf("docker run failed: %s", stderr.String())
-		}
-		return fmt.Errorf("docker run failed: %w", err)
-	}
+	// Remove backup on success
+	os.Remove(backupPath)
 
 	return nil
 }
 
-// getDockerGroupID returns the docker group ID for socket access
-func getDockerGroupID() string {
-	// First try environment variable
-	if gid := os.Getenv("DOCKER_GID"); gid != "" {
-		return gid
-	}
-
-	// Try to get it from getent command
-	cmd := exec.Command("getent", "group", "docker")
-	output, err := cmd.Output()
-	if err == nil {
-		// Parse output like "docker:x:999:user1,user2"
-		parts := bytes.Split(bytes.TrimSpace(output), []byte(":"))
-		if len(parts) >= 3 {
-			return string(parts[2]) // The GID
-		}
-	}
-
-	// Fall back to common default
-	return "999"
-}
-
-// runHaloyadmSelfUpdate executes the haloyadm self-update command
-func runHaloyadmSelfUpdate(ctx context.Context, logger *slog.Logger) error {
-	cmd := exec.CommandContext(ctx, "haloyadm", "self-update")
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
 	if err != nil {
-		// Log the output for debugging
-		if stdout.Len() > 0 {
-			logger.Info("haloyadm self-update stdout", "output", stdout.String())
-		}
-		if stderr.Len() > 0 {
-			logger.Error("haloyadm self-update stderr", "output", stderr.String())
-		}
-		return fmt.Errorf("haloyadm self-update failed: %w", err)
+		return err
+	}
+	defer sourceFile.Close()
+
+	sourceInfo, err := sourceFile.Stat()
+	if err != nil {
+		return err
 	}
 
-	// Log success output
-	if stdout.Len() > 0 {
-		logger.Info("haloyadm self-update completed", "output", stdout.String())
+	destFile, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, sourceInfo.Mode())
+	if err != nil {
+		return err
 	}
+	defer destFile.Close()
 
-	return nil
+	_, err = io.Copy(destFile, sourceFile)
+	return err
 }
 
 // fetchLatestVersion fetches the latest release version from GitHub.

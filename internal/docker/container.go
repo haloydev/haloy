@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -15,6 +14,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/healthcheck"
 	"github.com/haloydev/haloy/internal/helpers"
 )
 
@@ -37,7 +37,6 @@ func RunContainer(ctx context.Context, cli *client.Client, deploymentID, imageRe
 		Port:            targetConfig.Port,
 		HealthCheckPath: targetConfig.HealthCheckPath,
 		Domains:         targetConfig.Domains,
-		Role:            config.AppLabelRole,
 	}
 	labels := cl.ToLabels()
 
@@ -360,42 +359,30 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 		return HealthCheckResult{Err: fmt.Errorf("container has no health check path set")}
 	}
 
-	healthCheckURL := fmt.Sprintf("http://%s:%s%s", targetIP, labels.Port, labels.HealthCheckPath)
-	maxRetries := 5
-	backoff := 500 * time.Millisecond
-
-	httpClient := &http.Client{
-		Timeout: 5 * time.Second,
+	// Use the unified healthcheck package for HTTP health checks
+	target := healthcheck.Target{
+		ID:              containerID,
+		AppName:         labels.AppName,
+		IP:              targetIP,
+		Port:            labels.Port.String(),
+		HealthCheckPath: labels.HealthCheckPath,
 	}
 
-	for retry := 0; retry < maxRetries; retry++ {
-		if retry > 0 {
-			logger.Info("Retrying health check...", "backoff", backoff, "attempt", retry+1, "max_retries", maxRetries)
-			time.Sleep(backoff)
-			backoff *= 2
-		}
+	checker := healthcheck.NewHTTPChecker(5 * time.Second)
+	retryConfig := healthcheck.DefaultRetryConfig()
 
-		req, err := http.NewRequestWithContext(ctx, "GET", healthCheckURL, nil)
-		if err != nil {
-			return HealthCheckResult{Err: fmt.Errorf("failed to create health check request: %w", err)}
-		}
+	result := checker.CheckWithRetry(ctx, target, retryConfig, func(attempt int, backoff time.Duration) {
+		logger.Info("Retrying health check...",
+			"backoff", backoff,
+			"attempt", attempt+1,
+			"max_retries", retryConfig.MaxRetries+1)
+	})
 
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			logger.Warn("Health check attempt failed", "error", err)
-			continue
-		}
-		resp.Body.Close()
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return HealthCheckResult{IP: targetIP}
-		}
-
-		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		logger.Warn("Health check returned error status", "status_code", resp.StatusCode, "response", string(bodyBytes))
+	if result.Healthy {
+		return HealthCheckResult{IP: targetIP}
 	}
 
-	return HealthCheckResult{Err: fmt.Errorf("container failed health check after %d attempts", maxRetries)}
+	return HealthCheckResult{Err: result.Err}
 }
 
 // GetAppContainers returns a slice of container summaries filtered by labels.
@@ -412,9 +399,11 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 //   - An error if something went wrong during the container listing.
 func GetAppContainers(ctx context.Context, cli *client.Client, listAll bool, appName string) ([]container.Summary, error) {
 	filterArgs := filters.NewArgs()
-	filterArgs.Add("label", fmt.Sprintf("%s=%s", config.LabelRole, config.AppLabelRole))
 	if appName != "" {
 		filterArgs.Add("label", fmt.Sprintf("%s=%s", config.LabelAppName, appName))
+	} else {
+		// Filter by presence of LabelAppName to identify Haloy-managed containers
+		filterArgs.Add("label", config.LabelAppName)
 	}
 	containerList, err := cli.ContainerList(ctx, container.ListOptions{
 		Filters: filterArgs,

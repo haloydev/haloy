@@ -45,13 +45,20 @@ bun add -g haloy
 
 ### 2. Server Setup
 
-Use the `server setup` command to provision your server automatically. This command will SSH into your server as `root` (default), install Docker if needed, install `haloyadm`, and configure the remote `haloyd` service.
+SSH into your server and run the install script:
 
 ```bash
-haloy server setup <server-ip> --api-domain haloy.yourserver.com --acme-email you@email.com
+ssh root@yourserver.com
+curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sh
 ```
 
-**Note:** This command requires SSH access to the `root` user on the server. If you don't have this or if you prefer to install manually, check the [Server Installation](https://haloy.dev/docs/server-installation#manual-installation) guide.
+The script will install Docker (if needed), set up haloyd, and display an API token. Copy the token and register the server locally:
+
+```bash
+haloy server add https://haloy.yourserver.com <token>
+```
+
+For detailed options, see the [Server Installation](https://haloy.dev/docs/server-installation) guide.
 
 ### 3. Create haloy.yaml
 Create a `haloy.yaml` file:
