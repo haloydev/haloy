@@ -69,12 +69,21 @@ func TestCertManagerWildcardMatch(t *testing.T) {
 		t.Fatalf("NewCertManager() error = %v", err)
 	}
 
-	if _, err := cm.GetCertificate(&tls.ClientHelloInfo{ServerName: "app.example.com"}); err != nil {
+	// Single-level subdomain should match wildcard cert
+	wildcardCert, err := cm.GetCertificate(&tls.ClientHelloInfo{ServerName: "app.example.com"})
+	if err != nil {
 		t.Fatalf("GetCertificate() error = %v", err)
 	}
 
-	if _, err := cm.GetCertificate(&tls.ClientHelloInfo{ServerName: "app.dev.example.com"}); err == nil {
-		t.Fatal("GetCertificate() expected error for multi-level wildcard match")
+	// Multi-level subdomain should NOT match wildcard cert (returns default cert instead)
+	multiLevelCert, err := cm.GetCertificate(&tls.ClientHelloInfo{ServerName: "app.dev.example.com"})
+	if err != nil {
+		t.Fatalf("GetCertificate() error = %v", err)
+	}
+
+	// Verify they're different certs (multi-level gets default, not wildcard)
+	if wildcardCert == multiLevelCert {
+		t.Fatal("GetCertificate() multi-level subdomain should not match wildcard cert")
 	}
 }
 

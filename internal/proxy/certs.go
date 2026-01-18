@@ -192,7 +192,8 @@ func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 		}
 	}
 
-	return nil, fmt.Errorf("no certificate found for %s", serverName)
+	// Return default cert for unknown domains - request will be rejected at HTTP layer
+	return cm.defaultCert, nil
 }
 
 // ReloadCertificates reloads all certificates from disk.
