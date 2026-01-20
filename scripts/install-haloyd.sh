@@ -72,6 +72,11 @@ error_exit() {
     exit 1
 }
 
+# --- Public IP detection ---
+detect_public_ip() {
+    curl -sS --max-time 5 https://api.ipify.org 2>/dev/null || echo ""
+}
+
 # --- Init system detection ---
 detect_init_system() {
     if [ -d /run/systemd/system ]; then
@@ -446,12 +451,22 @@ print_success() {
         API_TOKEN=$(grep "HALOY_API_TOKEN" /etc/haloy/.env 2>/dev/null | cut -d'=' -f2)
     fi
 
+    # Detect public IP
+    PUBLIC_IP=$(detect_public_ip)
+
     echo ""
     echo "=============================================="
     echo "  ${GREEN}✓${RESET} ${BOLD}Haloy installed successfully!${RESET}"
     echo "=============================================="
     echo ""
     echo "  Version:  $VERSION"
+    if [ -n "$PUBLIC_IP" ]; then
+        echo "  Server IP: $PUBLIC_IP"
+    fi
+    if [ -n "$API_DOMAIN" ]; then
+        echo "  API:      https://$API_DOMAIN"
+    fi
+    echo ""
     echo "  User:     haloy"
     echo "  Data:     /var/lib/haloy"
     echo "  Config:   /etc/haloy"
@@ -463,31 +478,60 @@ print_success() {
         echo ""
     fi
 
-    echo "  ${BOLD}Useful Commands:${RESET}"
-    case "$INIT_SYSTEM" in
-        systemd)
-            echo "    Check status:   systemctl status haloyd"
-            echo "    View logs:      journalctl -u haloyd -f"
-            echo "    Restart:        systemctl restart haloyd"
-            ;;
-        openrc)
-            echo "    Check status:   rc-service haloyd status"
-            echo "    View logs:      tail -f /var/log/haloyd.log"
-            echo "    Restart:        rc-service haloyd restart"
-            ;;
-        *)
-            echo "    Check status:   /etc/init.d/haloyd status"
-            echo "    View logs:      tail -f /var/log/haloyd.log"
-            echo "    Restart:        /etc/init.d/haloyd restart"
-            ;;
-    esac
-    echo ""
-    echo "  ${BOLD}Next Step:${RESET}"
-    echo "    On your local machine, add this server:"
-    if [ -n "$API_DOMAIN" ]; then
-        echo "    haloy server add $API_DOMAIN $API_TOKEN"
+    # Show different output based on whether domain is configured
+    if [ -z "$API_DOMAIN" ]; then
+        # Unconfigured: show warning and setup instructions
+        echo "  ${YELLOW}⚠${RESET} ${BOLD}Configuration Required${RESET}"
+        echo ""
+        echo "  Your server needs a domain configured for remote access."
+        if [ -n "$PUBLIC_IP" ]; then
+            echo "  First, point your domain's DNS A record to: ${BOLD}$PUBLIC_IP${RESET}"
+            echo ""
+        fi
+        echo "  Then configure haloy:"
+        echo "    ${BOLD}sudo haloyd config set api-domain YOUR_DOMAIN${RESET}"
+        echo "    ${BOLD}sudo haloyd config set acme-email YOUR_EMAIL${RESET}"
+        case "$INIT_SYSTEM" in
+            systemd)
+                echo "    ${BOLD}sudo systemctl restart haloyd${RESET}"
+                ;;
+            openrc)
+                echo "    ${BOLD}sudo rc-service haloyd restart${RESET}"
+                ;;
+            *)
+                echo "    ${BOLD}sudo /etc/init.d/haloyd restart${RESET}"
+                ;;
+        esac
+        echo ""
+        echo "  Or reinstall with configuration:"
+        echo "    API_DOMAIN=... ACME_EMAIL=... curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh"
+        echo ""
+        echo "  Once configured, add this server on your local machine:"
+        echo "    haloy server add YOUR_DOMAIN \"$API_TOKEN\""
     else
-        echo "    haloy server add <your-server-url> $API_TOKEN"
+        # Configured: show useful commands and next step
+        echo "  ${BOLD}Useful Commands:${RESET}"
+        case "$INIT_SYSTEM" in
+            systemd)
+                echo "    Check status:   systemctl status haloyd"
+                echo "    View logs:      journalctl -u haloyd -f"
+                echo "    Restart:        systemctl restart haloyd"
+                ;;
+            openrc)
+                echo "    Check status:   rc-service haloyd status"
+                echo "    View logs:      tail -f /var/log/haloyd.log"
+                echo "    Restart:        rc-service haloyd restart"
+                ;;
+            *)
+                echo "    Check status:   /etc/init.d/haloyd status"
+                echo "    View logs:      tail -f /var/log/haloyd.log"
+                echo "    Restart:        /etc/init.d/haloyd restart"
+                ;;
+        esac
+        echo ""
+        echo "  ${BOLD}Next Step:${RESET}"
+        echo "    On your local machine, add this server:"
+        echo "    haloy server add $API_DOMAIN \"$API_TOKEN\""
     fi
     echo ""
     echo "  Documentation: https://haloy.dev/docs"
