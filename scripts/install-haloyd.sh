@@ -11,6 +11,7 @@
 # OPTIONS (via environment variables):
 #   VERSION=v0.1.0      - Install specific version (default: latest)
 #   SKIP_START=true     - Don't start the service after installation
+#   INSTALL_DOCKER=true - Automatically install Docker if not present
 #   API_DOMAIN=...      - Set API domain during init
 #   ACME_EMAIL=...      - Set ACME email during init
 #
@@ -90,6 +91,11 @@ detect_init_system() {
     fi
 }
 
+# --- Docker installation ---
+install_docker() {
+    curl -fsSL https://sh.haloy.dev/install-docker.sh | sh || return 1
+}
+
 # --- Main installation ---
 main() {
     setup_colors
@@ -145,9 +151,15 @@ main() {
 
     # Check Docker
     if ! command -v docker >/dev/null 2>&1; then
-        error_exit "Docker is not installed" \
-            "Install Docker first: https://docs.docker.com/engine/install/" \
-            "Or run: curl -fsSL https://get.docker.com | sh"
+        if [ "$INSTALL_DOCKER" = "true" ]; then
+            warn "Docker is not installed - installing automatically"
+            install_docker || error_exit "Failed to install Docker"
+            success "Docker installed"
+        else
+            error_exit "Docker is not installed" \
+                "Auto-install: INSTALL_DOCKER=true curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sh" \
+                "Or run: curl -fsSL https://sh.haloy.dev/install-docker.sh | sh"
+        fi
     fi
     DOCKER_VERSION=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')
     success "Docker: $DOCKER_VERSION"
