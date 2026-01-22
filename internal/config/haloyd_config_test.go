@@ -22,23 +22,11 @@ func TestHaloydConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid config with domain and email",
+			name: "valid config with domain",
 			config: HaloydConfig{
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: "api.example.com"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid config with only email",
-			config: HaloydConfig{
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
 			},
 			wantErr: false,
 		},
@@ -48,35 +36,9 @@ func TestHaloydConfig_Validate(t *testing.T) {
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: "invalid domain"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
 			},
 			wantErr: true,
 			errMsg:  "invalid domain format",
-		},
-		{
-			name: "invalid email format",
-			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "not-an-email"},
-			},
-			wantErr: true,
-			errMsg:  "invalid acme-email format",
-		},
-		{
-			name: "domain without email",
-			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
-			},
-			wantErr: true,
-			errMsg:  "acmeEmail is required when domain is specified",
 		},
 	}
 
@@ -113,9 +75,6 @@ func TestHaloydConfig_Normalize(t *testing.T) {
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: "api.example.com"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
 			},
 		},
 	}
@@ -146,17 +105,12 @@ func TestLoadHaloydConfig(t *testing.T) {
 			name: "load valid yaml config",
 			content: `api:
   domain: api.example.com
-certificates:
-  acme_email: admin@example.com
 `,
 			extension: ".yaml",
 			expected: &HaloydConfig{
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: "api.example.com"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
 			},
 		},
 		{
@@ -164,9 +118,6 @@ certificates:
 			content: `{
   "api": {
     "domain": "api.example.com"
-  },
-  "certificates": {
-    "acmeEmail": "admin@example.com"
   }
 }`,
 			extension: ".json",
@@ -174,9 +125,6 @@ certificates:
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: "api.example.com"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
 			},
 		},
 		{
@@ -190,17 +138,12 @@ certificates:
 			name: "load minimal config",
 			content: `api:
   domain: ""
-certificates:
-  acme_email: ""
 `,
 			extension: ".yaml",
 			expected: &HaloydConfig{
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: ""},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: ""},
 			},
 		},
 		{
@@ -208,8 +151,6 @@ certificates:
 			content: `api:
   domain: api.example.com
     invalid_indent: value
-certificates:
-  acme_email: admin@example.com
 `,
 			extension:   ".yaml",
 			expectError: true,
@@ -251,10 +192,6 @@ certificates:
 							t.Errorf("LoadHaloydConfig() API.Domain = %s, expected %s",
 								result.API.Domain, tt.expected.API.Domain)
 						}
-						if result.Certificates.AcmeEmail != tt.expected.Certificates.AcmeEmail {
-							t.Errorf("LoadHaloydConfig() Certificates.AcmeEmail = %s, expected %s",
-								result.Certificates.AcmeEmail, tt.expected.Certificates.AcmeEmail)
-						}
 					}
 				}
 			}
@@ -278,9 +215,6 @@ func TestSaveHaloydConfig(t *testing.T) {
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: "api.example.com"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
 			},
 			extension: ".yaml",
 		},
@@ -290,24 +224,12 @@ func TestSaveHaloydConfig(t *testing.T) {
 				API: struct {
 					Domain string `json:"domain" yaml:"domain" toml:"domain"`
 				}{Domain: "api.example.com"},
-				Certificates: struct {
-					AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-				}{AcmeEmail: "admin@example.com"},
 			},
 			extension: ".json",
 		},
 		{
 			name:      "save empty config",
 			config:    HaloydConfig{},
-			extension: ".yaml",
-		},
-		{
-			name: "save config with only domain",
-			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
-			},
 			extension: ".yaml",
 		},
 	}
@@ -334,10 +256,6 @@ func TestSaveHaloydConfig(t *testing.T) {
 				if loaded.API.Domain != tt.config.API.Domain {
 					t.Errorf("SaveHaloydConfig() loaded API.Domain = %s, expected %s",
 						loaded.API.Domain, tt.config.API.Domain)
-				}
-				if loaded.Certificates.AcmeEmail != tt.config.Certificates.AcmeEmail {
-					t.Errorf("SaveHaloydConfig() loaded Certificates.AcmeEmail = %s, expected %s",
-						loaded.Certificates.AcmeEmail, tt.config.Certificates.AcmeEmail)
 				}
 			}
 		})
@@ -456,8 +374,6 @@ func TestLoadHaloydConfig_HealthMonitor(t *testing.T) {
 	t.Run("health_monitor not specified defaults to enabled", func(t *testing.T) {
 		content := `api:
   domain: api.example.com
-certificates:
-  acme_email: admin@example.com
 `
 		path := filepath.Join(tempDir, "no_health_monitor.yaml")
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

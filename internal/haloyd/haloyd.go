@@ -78,7 +78,7 @@ func Run(debug bool) {
 		logger.Error("Failed to get data directory", "error", err)
 		return
 	}
-	configDir, err := config.ConfigDir()
+	configDir, err := config.HaloydConfigDir()
 	if err != nil {
 		logger.Error("Failed to get haloyd config directory", "error", err)
 		return

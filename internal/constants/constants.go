@@ -21,9 +21,12 @@ const (
 	EnvVarDebug     = "HALOY_DEBUG"
 
 	// Default directories (system-wide installation)
-	SystemDataDir   = "/var/lib/haloy"
-	SystemConfigDir = "/etc/haloy"
-	SystemBinDir    = "/usr/local/bin"
+	SystemDataDir          = "/var/lib/haloy"
+	DefaultHaloydConfigDir = "/etc/haloy"
+	SystemBinDir           = "/usr/local/bin"
+
+	// Default config directory for haloy CLI
+	DefaultHaloyConfigDir = ".config/haloy"
 
 	// Subdirectories
 	DBDir          = "db"

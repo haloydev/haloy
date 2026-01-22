@@ -8,12 +8,17 @@
 # USAGE:
 #   curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh
 #
-# OPTIONS (via environment variables):
+# OPTIONS:
+#   --version=VERSION   - Install specific version (default: latest)
+#   --skip-start        - Don't start the service after installation
+#   --install-docker    - Automatically install Docker if not present
+#   --api-domain=DOMAIN - Set API domain during init
+#
+# Environment variables (alternative):
 #   VERSION=v0.1.0      - Install specific version (default: latest)
 #   SKIP_START=true     - Don't start the service after installation
 #   INSTALL_DOCKER=true - Automatically install Docker if not present
 #   API_DOMAIN=...      - Set API domain during init
-#   ACME_EMAIL=...      - Set ACME email during init
 #
 # PREREQUISITES:
 #   - Linux (Ubuntu, Debian, CentOS, RHEL, Fedora, Alpine)
@@ -23,6 +28,24 @@
 # MORE INFO: https://haloy.dev/docs/server-installation
 
 set -e
+
+# --- Parse arguments ---
+for arg in "$@"; do
+    case "$arg" in
+        --version=*)
+            VERSION="${arg#--version=}"
+            ;;
+        --skip-start)
+            SKIP_START=true
+            ;;
+        --install-docker)
+            INSTALL_DOCKER=true
+            ;;
+        --api-domain=*)
+            API_DOMAIN="${arg#--api-domain=}"
+            ;;
+    esac
+done
 
 # --- Colors and output helpers ---
 setup_colors() {
@@ -242,9 +265,6 @@ main() {
     INIT_ARGS=""
     if [ -n "$API_DOMAIN" ]; then
         INIT_ARGS="$INIT_ARGS --api-domain=$API_DOMAIN"
-    fi
-    if [ -n "$ACME_EMAIL" ]; then
-        INIT_ARGS="$INIT_ARGS --acme-email=$ACME_EMAIL"
     fi
 
     # Run init (may fail if already initialized, that's OK)
@@ -502,7 +522,6 @@ print_success() {
         fi
         echo "  Then configure haloy:"
         echo "    ${BOLD}sudo haloyd config set api-domain YOUR_DOMAIN${RESET}"
-        echo "    ${BOLD}sudo haloyd config set acme-email YOUR_EMAIL${RESET}"
         case "$INIT_SYSTEM" in
             systemd)
                 echo "    ${BOLD}sudo systemctl restart haloyd${RESET}"
@@ -516,7 +535,7 @@ print_success() {
         esac
         echo ""
         echo "  Or reinstall with configuration:"
-        echo "    API_DOMAIN=... ACME_EMAIL=... curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh"
+        echo "    API_DOMAIN=... curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh"
         echo ""
         echo "  Once configured, add this server on your local machine:"
         echo "    haloy server add YOUR_DOMAIN \"$API_TOKEN\""

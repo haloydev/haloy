@@ -80,7 +80,7 @@ func addServerURL(url, token string, force bool) error {
 		return fmt.Errorf("invalid domain: %w", err)
 	}
 
-	configDir, err := config.ConfigDir()
+	configDir, err := config.HaloyConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get config dir: %w", err)
 	}
@@ -151,7 +151,7 @@ func ServerDeleteCmd() *cobra.Command {
 				return fmt.Errorf("invalid URL: %w", err)
 			}
 
-			configDir, err := config.ConfigDir()
+			configDir, err := config.HaloyConfigDir()
 			if err != nil {
 				return fmt.Errorf("failed to get config dir: %w", err)
 			}
@@ -206,7 +206,7 @@ func ServerListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all Haloy servers",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configDir, err := config.ConfigDir()
+			configDir, err := config.HaloyConfigDir()
 			if err != nil {
 				return fmt.Errorf("failed to get config dir: %w", err)
 			}

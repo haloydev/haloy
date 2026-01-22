@@ -29,13 +29,26 @@ func DataDir() (string, error) {
 	return constants.SystemDataDir, nil
 }
 
-// ConfigDir returns the configuration directory for haloy/haloyd.
+// HaloydConfigDir returns the configuration directory for haloyd (daemon).
 // Uses HALOY_CONFIG_DIR env var if set, otherwise defaults to /etc/haloy.
-func ConfigDir() (string, error) {
+func HaloydConfigDir() (string, error) {
 	if envPath, ok := os.LookupEnv(constants.EnvVarConfigDir); ok && envPath != "" {
 		return expandPath(envPath)
 	}
-	return constants.SystemConfigDir, nil
+	return constants.DefaultHaloydConfigDir, nil
+}
+
+// HaloyConfigDir returns the configuration directory for haloy (client CLI).
+// Uses HALOY_CONFIG_DIR env var if set, otherwise defaults to ~/.config/haloy.
+func HaloyConfigDir() (string, error) {
+	if envPath, ok := os.LookupEnv(constants.EnvVarConfigDir); ok && envPath != "" {
+		return expandPath(envPath)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, constants.DefaultHaloyConfigDir), nil
 }
 
 // BinDir returns the directory where haloy binaries are installed.

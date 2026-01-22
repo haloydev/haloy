@@ -8,10 +8,13 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,13 +23,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-acme/lego/v4/certificate"
-	"github.com/go-acme/lego/v4/challenge/http01"
-	"github.com/go-acme/lego/v4/lego"
-	"github.com/go-acme/lego/v4/registration"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/logging"
+	"golang.org/x/crypto/acme"
 )
 
 const (
@@ -34,115 +34,321 @@ const (
 	refreshDebounceDelay = 5 * time.Second
 	accountsDirName      = "accounts"
 	combinedCertExt      = ".pem"
-	keyCertExt           = ".key"
+	accountFileName      = "account.json"
+
+	// ACME directory URLs
+	letsEncryptProduction = "https://acme-v02.api.letsencrypt.org/directory"
+	letsEncryptStaging    = "https://acme-staging-v02.api.letsencrypt.org/directory"
 )
 
-type CertificatesUser struct {
-	Email        string
-	Registration *registration.Resource
-	privateKey   crypto.PrivateKey
+// ChallengeServer handles HTTP-01 ACME challenges
+type ChallengeServer struct {
+	mu         sync.RWMutex
+	challenges map[string]string // token -> keyAuth
+	server     *http.Server
+	port       string
 }
 
-func (u *CertificatesUser) GetEmail() string {
-	return u.Email
-}
-
-func (u *CertificatesUser) GetRegistration() *registration.Resource {
-	return u.Registration
-}
-
-func (u *CertificatesUser) GetPrivateKey() crypto.PrivateKey {
-	return u.privateKey
-}
-
-type CertificatesClientManager struct {
-	tlsStaging         bool
-	keyManager         *CertificatesKeyManager
-	clients            map[string]*lego.Client
-	clientsMutex       sync.RWMutex
-	sharedHTTPProvider *http01.ProviderServer
-}
-
-func NewCertificatesClientManager(
-	certDir string,
-	tlsStaging bool,
-	httpProviderPort string,
-) (*CertificatesClientManager, error) {
-	keyDir := filepath.Join(certDir, accountsDirName)
-
-	if err := os.MkdirAll(keyDir, constants.ModeDirPrivate); err != nil {
-		return nil, fmt.Errorf("failed to create key directory '%s': %w", keyDir, err)
+// NewChallengeServer creates a new HTTP-01 challenge server
+func NewChallengeServer(port string) *ChallengeServer {
+	cs := &ChallengeServer{
+		challenges: make(map[string]string),
+		port:       port,
 	}
-	keyManager, err := NewCertificatesKeyManager(keyDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create key manager: %w", err)
+	cs.server = &http.Server{
+		Addr:    "127.0.0.1:" + port,
+		Handler: cs,
+	}
+	return cs
+}
+
+// Start begins listening for ACME challenges
+func (cs *ChallengeServer) Start() error {
+	go func() {
+		if err := cs.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			// Log error but don't crash - challenges will fail if server isn't running
+		}
+	}()
+	return nil
+}
+
+// Stop shuts down the challenge server
+func (cs *ChallengeServer) Stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return cs.server.Shutdown(ctx)
+}
+
+// SetChallenge registers a challenge token and its key authorization
+func (cs *ChallengeServer) SetChallenge(token, keyAuth string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.challenges[token] = keyAuth
+}
+
+// ClearChallenge removes a challenge token
+func (cs *ChallengeServer) ClearChallenge(token string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	delete(cs.challenges, token)
+}
+
+// ServeHTTP handles HTTP-01 challenge requests
+func (cs *ChallengeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Expected path: /.well-known/acme-challenge/{token}
+	prefix := "/.well-known/acme-challenge/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		http.NotFound(w, r)
+		return
 	}
 
-	httpProvider := http01.NewProviderServer("", httpProviderPort)
+	token := strings.TrimPrefix(r.URL.Path, prefix)
+	if token == "" {
+		http.NotFound(w, r)
+		return
+	}
 
-	return &CertificatesClientManager{
-		tlsStaging:         tlsStaging,
-		clients:            make(map[string]*lego.Client),
-		keyManager:         keyManager,
-		sharedHTTPProvider: httpProvider,
+	cs.mu.RLock()
+	keyAuth, ok := cs.challenges[token]
+	cs.mu.RUnlock()
+
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(keyAuth))
+}
+
+// ACMEAccount represents a stored ACME account
+type ACMEAccount struct {
+	URL        string `json:"url"`
+	PrivateKey []byte `json:"private_key"` // PEM encoded
+}
+
+// ACMEClientManager manages ACME client and account
+type ACMEClientManager struct {
+	client      *acme.Client
+	account     *acme.Account
+	accountPath string
+	certDir     string
+	staging     bool
+	mu          sync.Mutex
+	privateKey  crypto.PrivateKey
+	initialized bool
+}
+
+// NewACMEClientManager creates a new ACME client manager
+func NewACMEClientManager(certDir string, staging bool) (*ACMEClientManager, error) {
+	accountDir := filepath.Join(certDir, accountsDirName)
+	if err := os.MkdirAll(accountDir, constants.ModeDirPrivate); err != nil {
+		return nil, fmt.Errorf("failed to create account directory: %w", err)
+	}
+
+	return &ACMEClientManager{
+		certDir:     certDir,
+		accountPath: filepath.Join(accountDir, accountFileName),
+		staging:     staging,
 	}, nil
 }
 
-func (cm *CertificatesClientManager) LoadOrRegisterClient(email string) (*lego.Client, error) {
-	cm.clientsMutex.RLock()
-	client, ok := cm.clients[email]
-	cm.clientsMutex.RUnlock()
+// GetClient returns the ACME client, initializing it if necessary
+func (m *ACMEClientManager) GetClient(ctx context.Context) (*acme.Client, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if ok {
-		return client, nil
+	if m.initialized {
+		return m.client, nil
 	}
 
-	cm.clientsMutex.Lock()
-	defer cm.clientsMutex.Unlock()
-
-	// Check again in case another goroutine created it while we were waiting. Just to be safe.
-	if client, ok := cm.clients[email]; ok {
-		return client, nil
+	if err := m.loadOrCreateAccount(ctx); err != nil {
+		return nil, err
 	}
 
-	privateKey, err := cm.keyManager.LoadOrCreateKey(email)
+	m.initialized = true
+	return m.client, nil
+}
+
+func (m *ACMEClientManager) loadOrCreateAccount(ctx context.Context) error {
+	directoryURL := letsEncryptProduction
+	if m.staging {
+		directoryURL = letsEncryptStaging
+	}
+
+	// Try to load existing account
+	data, err := os.ReadFile(m.accountPath)
+	if err == nil {
+		var stored ACMEAccount
+		if err := json.Unmarshal(data, &stored); err == nil && stored.URL != "" {
+			// Parse the stored private key
+			block, _ := pem.Decode(stored.PrivateKey)
+			if block != nil {
+				privateKey, err := x509.ParseECPrivateKey(block.Bytes)
+				if err == nil {
+					m.privateKey = privateKey
+					m.client = &acme.Client{
+						Key:          privateKey,
+						DirectoryURL: directoryURL,
+					}
+					m.account = &acme.Account{URI: stored.URL}
+					return nil
+				}
+			}
+		}
+	}
+
+	// Create new account
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load/create user key: %w", err)
+		return fmt.Errorf("failed to generate account key: %w", err)
+	}
+	m.privateKey = privateKey
+
+	m.client = &acme.Client{
+		Key:          privateKey,
+		DirectoryURL: directoryURL,
 	}
 
-	user := &CertificatesUser{
-		Email:      email,
-		privateKey: privateKey,
-	}
-
-	legoConfig := lego.NewConfig(user)
-	if cm.tlsStaging {
-		legoConfig.CADirURL = lego.LEDirectoryStaging
-	} else {
-		legoConfig.CADirURL = lego.LEDirectoryProduction
-	}
-
-	client, err = lego.NewClient(legoConfig)
+	// Register with ACME server (no email required)
+	account, err := m.client.Register(ctx, &acme.Account{}, acme.AcceptTOS)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create lego client: %w", err)
+		return fmt.Errorf("failed to register ACME account: %w", err)
 	}
+	m.account = account
 
-	// Configure HTTP challenge provider using a server that listens on port 8080
-	// The proxy forwards /.well-known/acme-challenge/* requests to this server
-	err = client.Challenge.SetHTTP01Provider(cm.sharedHTTPProvider)
+	// Save account for future use
+	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set HTTP challenge provider: %w", err)
+		return fmt.Errorf("failed to marshal private key: %w", err)
 	}
 
-	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+	pemBlock := pem.EncodeToMemory(&pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: keyBytes,
+	})
+
+	stored := ACMEAccount{
+		URL:        account.URI,
+		PrivateKey: pemBlock,
+	}
+
+	data, err = json.MarshalIndent(stored, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("failed to register user: %w", err)
+		return fmt.Errorf("failed to marshal account: %w", err)
 	}
-	user.Registration = reg
 
-	cm.clients[email] = client
+	if err := os.WriteFile(m.accountPath, data, constants.ModeFileSecret); err != nil {
+		return fmt.Errorf("failed to save account: %w", err)
+	}
 
-	return client, nil
+	return nil
+}
+
+// ObtainCertificate obtains a certificate for the given domains using HTTP-01 challenge
+func (m *ACMEClientManager) ObtainCertificate(ctx context.Context, domains []string, challengeServer *ChallengeServer) (certPEM, keyPEM []byte, err error) {
+	client, err := m.GetClient(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get ACME client: %w", err)
+	}
+
+	// Create order for the domains
+	order, err := client.AuthorizeOrder(ctx, acme.DomainIDs(domains...))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create order: %w", err)
+	}
+
+	// Complete authorizations
+	for _, authURL := range order.AuthzURLs {
+		auth, err := client.GetAuthorization(ctx, authURL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get authorization: %w", err)
+		}
+
+		if auth.Status == acme.StatusValid {
+			continue // Already authorized
+		}
+
+		// Find HTTP-01 challenge
+		var challenge *acme.Challenge
+		for _, c := range auth.Challenges {
+			if c.Type == "http-01" {
+				challenge = c
+				break
+			}
+		}
+		if challenge == nil {
+			return nil, nil, fmt.Errorf("no HTTP-01 challenge found for %s", auth.Identifier.Value)
+		}
+
+		// Get key authorization
+		keyAuth, err := client.HTTP01ChallengeResponse(challenge.Token)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get challenge response: %w", err)
+		}
+
+		// Set up challenge response
+		challengeServer.SetChallenge(challenge.Token, keyAuth)
+		defer challengeServer.ClearChallenge(challenge.Token)
+
+		// Accept the challenge
+		if _, err := client.Accept(ctx, challenge); err != nil {
+			return nil, nil, fmt.Errorf("failed to accept challenge: %w", err)
+		}
+
+		// Wait for authorization to be valid
+		if _, err := client.WaitAuthorization(ctx, authURL); err != nil {
+			return nil, nil, fmt.Errorf("authorization failed for %s: %w", auth.Identifier.Value, err)
+		}
+	}
+
+	// Generate certificate private key
+	certKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate certificate key: %w", err)
+	}
+
+	// Create CSR
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject:  pkix.Name{CommonName: domains[0]},
+		DNSNames: domains,
+	}, certKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create CSR: %w", err)
+	}
+
+	// Wait for order to be ready
+	order, err = client.WaitOrder(ctx, order.URI)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed waiting for order: %w", err)
+	}
+
+	// Finalize the order
+	derCerts, _, err := client.CreateOrderCert(ctx, order.FinalizeURL, csr, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to finalize order: %w", err)
+	}
+
+	// Encode certificate chain
+	var certBuf bytes.Buffer
+	for _, derCert := range derCerts {
+		pem.Encode(&certBuf, &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: derCert,
+		})
+	}
+
+	// Encode private key
+	keyBytes, err := x509.MarshalECPrivateKey(certKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal certificate key: %w", err)
+	}
+	keyPEM = pem.EncodeToMemory(&pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: keyBytes,
+	})
+
+	return certBuf.Bytes(), keyPEM, nil
 }
 
 type CertificatesManagerConfig struct {
@@ -154,7 +360,6 @@ type CertificatesManagerConfig struct {
 type CertificatesDomain struct {
 	Canonical string
 	Aliases   []string
-	Email     string
 }
 
 func (cm *CertificatesDomain) Validate() error {
@@ -164,13 +369,6 @@ func (cm *CertificatesDomain) Validate() error {
 
 	if err := helpers.IsValidDomain(cm.Canonical); err != nil {
 		return fmt.Errorf("invalid canonical domain '%s': %w", cm.Canonical, err)
-	}
-
-	if cm.Email == "" {
-		return fmt.Errorf("email cannot be empty")
-	}
-	if !helpers.IsValidEmail(cm.Email) {
-		return fmt.Errorf("invalid email format: %s", cm.Email)
 	}
 
 	for _, alias := range cm.Aliases {
@@ -185,13 +383,14 @@ func (cm *CertificatesDomain) Validate() error {
 }
 
 type CertificatesManager struct {
-	config        CertificatesManagerConfig
-	checkMutex    sync.Mutex
-	ctx           context.Context
-	cancel        context.CancelFunc
-	clientManager *CertificatesClientManager
-	updateSignal  chan<- string // signal successful updates
-	debouncer     *helpers.Debouncer
+	config          CertificatesManagerConfig
+	checkMutex      sync.Mutex
+	ctx             context.Context
+	cancel          context.CancelFunc
+	clientManager   *ACMEClientManager
+	challengeServer *ChallengeServer
+	updateSignal    chan<- string // signal successful updates
+	debouncer       *helpers.Debouncer
 }
 
 func NewCertificatesManager(config CertificatesManagerConfig, updateSignal chan<- string) (*CertificatesManager, error) {
@@ -201,19 +400,26 @@ func NewCertificatesManager(config CertificatesManagerConfig, updateSignal chan<
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	clientManager, err := NewCertificatesClientManager(config.CertDir, config.TlsStaging, config.HTTPProviderPort)
+	clientManager, err := NewACMEClientManager(config.CertDir, config.TlsStaging)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to create client manager: %w", err)
+		return nil, fmt.Errorf("failed to create ACME client manager: %w", err)
+	}
+
+	challengeServer := NewChallengeServer(config.HTTPProviderPort)
+	if err := challengeServer.Start(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to start challenge server: %w", err)
 	}
 
 	m := &CertificatesManager{
-		config:        config,
-		ctx:           ctx,
-		cancel:        cancel,
-		clientManager: clientManager,
-		updateSignal:  updateSignal,
-		debouncer:     helpers.NewDebouncer(refreshDebounceDelay),
+		config:          config,
+		ctx:             ctx,
+		cancel:          cancel,
+		clientManager:   clientManager,
+		challengeServer: challengeServer,
+		updateSignal:    updateSignal,
+		debouncer:       helpers.NewDebouncer(refreshDebounceDelay),
 	}
 
 	return m, nil
@@ -221,7 +427,8 @@ func NewCertificatesManager(config CertificatesManagerConfig, updateSignal chan<
 
 func (m *CertificatesManager) Stop() {
 	m.cancel()
-	m.debouncer.Stop() // Stop the debouncer to clean up any pending timers
+	m.debouncer.Stop()
+	m.challengeServer.Stop()
 }
 
 func (cm *CertificatesManager) RefreshSync(logger *slog.Logger, domains []CertificatesDomain) error {
@@ -468,7 +675,6 @@ func (cm *CertificatesManager) buildDomainErrorMessage(domain string, originalEr
 
 func (m *CertificatesManager) obtainCertificate(managedDomain CertificatesDomain) (obtainedDomain CertificatesDomain, err error) {
 	canonicalDomain := managedDomain.Canonical
-	email := managedDomain.Email
 	aliases := managedDomain.Aliases
 	allDomains := append([]string{canonicalDomain}, aliases...)
 
@@ -476,46 +682,35 @@ func (m *CertificatesManager) obtainCertificate(managedDomain CertificatesDomain
 		return obtainedDomain, fmt.Errorf("domain validation failed for %s: %w", canonicalDomain, err)
 	}
 
-	client, err := m.clientManager.LoadOrRegisterClient(email)
-	if err != nil {
-		return obtainedDomain, fmt.Errorf("failed to load or register ACME client for %s: %w", email, err)
-	}
-
-	request := certificate.ObtainRequest{
-		Domains: allDomains, // Request cert for canonical + aliases
-		Bundle:  true,       // Bundle intermediate certs
-	}
-
-	certificates, err := client.Certificate.Obtain(request)
+	certPEM, keyPEM, err := m.clientManager.ObtainCertificate(m.ctx, allDomains, m.challengeServer)
 	if err != nil {
 		return obtainedDomain, fmt.Errorf("failed to obtain certificate for %s: %w", canonicalDomain, err)
 	}
-	err = m.saveCertificate(canonicalDomain, certificates)
-	if err != nil {
+
+	if err := m.saveCertificate(canonicalDomain, keyPEM, certPEM); err != nil {
 		return obtainedDomain, fmt.Errorf("failed to save certificate for %s: %w", canonicalDomain, err)
-	} else {
-		obtainedDomain = CertificatesDomain{
-			Canonical: canonicalDomain,
-			Aliases:   aliases,
-			Email:     email,
-		}
+	}
+
+	obtainedDomain = CertificatesDomain{
+		Canonical: canonicalDomain,
+		Aliases:   aliases,
 	}
 
 	return obtainedDomain, nil
 }
 
-func (m *CertificatesManager) saveCertificate(domain string, cert *certificate.Resource) error {
+func (m *CertificatesManager) saveCertificate(domain string, keyPEM, certPEM []byte) error {
 	combinedPath := filepath.Join(m.config.CertDir, domain+combinedCertExt)
 	tmpPath := combinedPath + ".tmp"
 
 	pemContent := bytes.Buffer{}
 
-	pemContent.Write(cert.PrivateKey)
-	if len(cert.PrivateKey) > 0 && cert.PrivateKey[len(cert.PrivateKey)-1] != '\n' {
+	pemContent.Write(keyPEM)
+	if len(keyPEM) > 0 && keyPEM[len(keyPEM)-1] != '\n' {
 		pemContent.WriteByte('\n')
 	}
 
-	pemContent.Write(cert.Certificate)
+	pemContent.Write(certPEM)
 	if err := os.WriteFile(tmpPath, pemContent.Bytes(), constants.ModeFileSecret); err != nil {
 		return fmt.Errorf("failed to save temporary combined certificate/key: %w", err)
 	}
@@ -598,89 +793,6 @@ func parseCertificate(certData []byte) (*x509.Certificate, error) {
 		}
 	}
 	return nil, fmt.Errorf("no CERTIFICATE PEM block found")
-}
-
-// CertificatesKeyManager handles private key operations for the ACME client
-type CertificatesKeyManager struct {
-	keyDir string
-}
-
-func NewCertificatesKeyManager(keyDir string) (*CertificatesKeyManager, error) {
-	stat, err := os.Stat(keyDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("key directory '%s' does not exist; ensure init process has created it", keyDir)
-		}
-		return nil, fmt.Errorf("failed to stat key directory '%s': %w", keyDir, err)
-	}
-	if !stat.IsDir() {
-		return nil, fmt.Errorf("key directory path '%s' is not a directory", keyDir)
-	}
-
-	return &CertificatesKeyManager{
-		keyDir: keyDir,
-	}, nil
-}
-
-func (km *CertificatesKeyManager) LoadOrCreateKey(email string) (crypto.PrivateKey, error) {
-	// Sanitize email for filename
-	filename := helpers.SanitizeString(email) + keyCertExt
-	keyPath := filepath.Join(km.keyDir, filename)
-
-	if _, err := os.Stat(keyPath); err == nil {
-		return km.loadKey(keyPath)
-	}
-
-	return km.createKey(keyPath)
-}
-
-func (km *CertificatesKeyManager) loadKey(path string) (crypto.PrivateKey, error) {
-	keyBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read key file: %w", err)
-	}
-
-	keyBlock, _ := pem.Decode(keyBytes)
-	if keyBlock == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
-	}
-
-	switch keyBlock.Type {
-	case "EC PRIVATE KEY":
-		return x509.ParseECPrivateKey(keyBlock.Bytes)
-	default:
-		return nil, fmt.Errorf("unsupported key type: %s", keyBlock.Type)
-	}
-}
-
-func (km *CertificatesKeyManager) createKey(path string) (crypto.PrivateKey, error) {
-	// Generate new ECDSA key (P-256 for good balance of security and performance)
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate private key: %w", err)
-	}
-
-	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal private key: %w", err)
-	}
-
-	pemBlock := &pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: keyBytes,
-	}
-
-	keyFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, constants.ModeFileSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create key file: %w", err)
-	}
-	defer keyFile.Close()
-
-	if err := pem.Encode(keyFile, pemBlock); err != nil {
-		return nil, fmt.Errorf("failed to write key file: %w", err)
-	}
-
-	return privateKey, nil
 }
 
 func deduplicateDomains(domains []CertificatesDomain) []CertificatesDomain {

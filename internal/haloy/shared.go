@@ -25,7 +25,7 @@ func getToken(targetConfig *config.TargetConfig, url string) (string, error) {
 		return targetConfig.APIToken.Value, nil
 	}
 
-	configDir, err := config.ConfigDir()
+	configDir, err := config.HaloyConfigDir()
 	if err != nil {
 		return "", err
 	}

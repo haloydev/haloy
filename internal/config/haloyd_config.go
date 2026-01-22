@@ -18,9 +18,6 @@ type HaloydConfig struct {
 	API struct {
 		Domain string `json:"domain" yaml:"domain" toml:"domain"`
 	} `json:"api" yaml:"api" toml:"api"`
-	Certificates struct {
-		AcmeEmail string `json:"acmeEmail" yaml:"acme_email" toml:"acme_email"`
-	} `json:"certificates" yaml:"certificates" toml:"certificates"`
 	HealthMonitor HealthMonitorConfig `json:"health_monitor" yaml:"health_monitor" toml:"health_monitor"`
 }
 
@@ -95,14 +92,6 @@ func (mc *HaloydConfig) Validate() error {
 		if err := helpers.IsValidDomain(mc.API.Domain); err != nil {
 			return fmt.Errorf("invalid domain format: %w", err)
 		}
-	}
-
-	if mc.Certificates.AcmeEmail != "" && !helpers.IsValidEmail(mc.Certificates.AcmeEmail) {
-		return fmt.Errorf("invalid acme-email format: %s", mc.Certificates.AcmeEmail)
-	}
-
-	if mc.API.Domain != "" && mc.Certificates.AcmeEmail == "" {
-		return fmt.Errorf("acmeEmail is required when domain is specified")
 	}
 
 	return nil

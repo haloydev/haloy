@@ -7,11 +7,27 @@
 # USAGE:
 #   sudo sh uninstall-server.sh
 #
-# OPTIONS (via environment variables):
+# OPTIONS:
+#   --force, -f         - Skip confirmation prompts
+#   --no-backup         - Skip backup prompt
+#
+# Environment variables (alternative):
 #   FORCE=true          - Skip confirmation prompts
 #   NO_BACKUP=true      - Skip backup prompt
 
 set -e
+
+# --- Parse arguments ---
+for arg in "$@"; do
+    case "$arg" in
+        --force|-f)
+            FORCE=true
+            ;;
+        --no-backup)
+            NO_BACKUP=true
+            ;;
+    esac
+done
 
 # --- Colors and output helpers ---
 setup_colors() {
