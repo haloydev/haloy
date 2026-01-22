@@ -17,6 +17,11 @@ import (
 	"github.com/haloydev/haloy/internal/logging"
 )
 
+// restartCommand returns the appropriate command to restart haloyd based on the init system
+func restartCommand() string {
+	return helpers.RestartCommand()
+}
+
 type gitHubRelease struct {
 	TagName string `json:"tag_name"`
 }
@@ -74,30 +79,28 @@ func (s *APIServer) handleUpgrade() http.HandlerFunc {
 			Status:          "updating",
 			PreviousVersion: currentVersion,
 			TargetVersion:   latestVersion,
-			Message:         "haloyd binary updated. Restart the service to complete: systemctl restart haloyd",
+			Message:         fmt.Sprintf("haloyd binary updated. Restart the service to complete: %s", restartCommand()),
 		})
 	}
 }
 
 // handleUpgradeRestart handles the restart phase of upgrade
-// Since haloyd runs natively via systemd, restarting requires systemctl
 func (s *APIServer) handleUpgradeRestart() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logging.NewLogger(s.logLevel, s.logBroker)
 
-		logger.Info("Restart requested - attempting systemctl restart")
+		logger.Info("Restart requested", "command", restartCommand())
 
-		// Try to restart via systemctl in a goroutine so we can return the response first
+		// Try to restart in a goroutine so we can return the response first
 		go func() {
 			// Small delay to ensure the HTTP response is sent
 			time.Sleep(500 * time.Millisecond)
 
-			cmd := exec.Command("systemctl", "restart", "haloyd")
-			if err := cmd.Run(); err != nil {
-				logger.Error("Failed to restart haloyd via systemctl", "error", err)
+			if err := helpers.RestartService(); err != nil {
+				logger.Error("Failed to restart haloyd", "error", err, "command", restartCommand())
 				return
 			}
-			logger.Info("systemctl restart haloyd initiated")
+			logger.Info("Service restart initiated", "command", restartCommand())
 		}()
 
 		encodeJSON(w, http.StatusAccepted, apitypes.UpgradeResponse{

@@ -259,6 +259,17 @@ main() {
     chmod +x "$INSTALL_PATH"
     success "Installed to $INSTALL_PATH"
 
+    # Set capabilities for non-systemd systems (allows binding to ports 80/443 as non-root)
+    if [ "$INIT_SYSTEM" != "systemd" ]; then
+        if command -v setcap >/dev/null 2>&1; then
+            setcap cap_net_bind_service=+ep "$INSTALL_PATH" 2>/dev/null || \
+                warn "Failed to set capabilities - service may need to run as root"
+            success "Set CAP_NET_BIND_SERVICE capability"
+        else
+            warn "setcap not found - install libcap and run: setcap cap_net_bind_service=+ep $INSTALL_PATH"
+        fi
+    fi
+
     # --- Step 5: Initialize Haloy ---
     step "Initializing Haloy"
 
@@ -394,6 +405,8 @@ command_args="serve"
 command_background="yes"
 command_user="haloy:haloy"
 pidfile="/run/haloyd/haloyd.pid"
+output_log="/var/log/haloyd.log"
+error_log="/var/log/haloyd.log"
 
 export HALOY_DATA_DIR="/var/lib/haloy"
 export HALOY_CONFIG_DIR="/etc/haloy"
@@ -405,6 +418,7 @@ depend() {
 
 start_pre() {
     checkpath --directory --owner haloy:haloy --mode 0755 /run/haloyd
+    checkpath --file --owner haloy:haloy --mode 0644 /var/log/haloyd.log
 }
 EOF
     chmod +x /etc/init.d/haloyd

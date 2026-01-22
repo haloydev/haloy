@@ -33,7 +33,7 @@ This command will:
   - Backup the existing binary
   - Install the new version
 
-After upgrading, restart haloyd with: systemctl restart haloyd
+After upgrading, restart haloyd to apply the changes.
 
 Examples:
   # Upgrade to latest version
@@ -102,7 +102,7 @@ func runUpgrade(ctx context.Context, checkOnly, force bool) error {
 	}
 
 	ui.Success("Successfully upgraded haloyd to %s!", latestVersion)
-	ui.Info("Restart haloyd with: systemctl restart haloyd")
+	ui.Info("Restart haloyd with: %s", restartCommand())
 
 	return nil
 }

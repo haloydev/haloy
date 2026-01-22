@@ -9,10 +9,16 @@ import (
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
+
+// restartCommand returns the appropriate command to restart haloyd based on the init system
+func restartCommand() string {
+	return helpers.RestartCommand()
+}
 
 func configCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -138,7 +144,7 @@ Note: After changing configuration, restart haloyd for changes to take effect.`,
 				return fmt.Errorf("failed to save config: %w", err)
 			}
 
-			ui.Info("Restart haloyd for changes to take effect")
+			ui.Info("Restart haloyd for changes to take effect: %s", restartCommand())
 
 			return nil
 		},
@@ -158,7 +164,7 @@ Certificate reloads happen only when explicitly triggered.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// This command would need to communicate with the running haloyd
 			// For now, we'll just print a message suggesting a restart
-			ui.Info("To reload certificates, restart haloyd: systemctl restart haloyd")
+			ui.Info("To reload certificates, restart haloyd: %s", restartCommand())
 			ui.Info("Certificate reloads occur only when explicitly triggered.")
 			return nil
 		},
@@ -201,7 +207,7 @@ the token in your haloy CLI configuration after running this command.`,
 			}
 
 			ui.Success("New API token generated: %s", newToken)
-			ui.Info("Restart haloyd for the new token to take effect: systemctl restart haloyd")
+			ui.Info("Restart haloyd for the new token to take effect: %s", restartCommand())
 			ui.Info("Update your haloy CLI with: haloy server add <server-name> %s --force", newToken)
 
 			return nil
