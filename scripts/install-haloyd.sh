@@ -8,7 +8,13 @@
 # USAGE:
 #   curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh
 #
-# OPTIONS (via environment variables):
+# OPTIONS:
+#   --version=VERSION   - Install specific version (default: latest)
+#   --skip-start        - Don't start the service after installation
+#   --install-docker    - Automatically install Docker if not present
+#   --api-domain=DOMAIN - Set API domain during init
+#
+# Environment variables (alternative):
 #   VERSION=v0.1.0      - Install specific version (default: latest)
 #   SKIP_START=true     - Don't start the service after installation
 #   INSTALL_DOCKER=true - Automatically install Docker if not present
@@ -22,6 +28,24 @@
 # MORE INFO: https://haloy.dev/docs/server-installation
 
 set -e
+
+# --- Parse arguments ---
+for arg in "$@"; do
+    case "$arg" in
+        --version=*)
+            VERSION="${arg#--version=}"
+            ;;
+        --skip-start)
+            SKIP_START=true
+            ;;
+        --install-docker)
+            INSTALL_DOCKER=true
+            ;;
+        --api-domain=*)
+            API_DOMAIN="${arg#--api-domain=}"
+            ;;
+    esac
+done
 
 # --- Colors and output helpers ---
 setup_colors() {
