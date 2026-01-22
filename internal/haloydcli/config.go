@@ -41,8 +41,7 @@ func configGetCmd() *cobra.Command {
 
 Available keys:
   api-token   - The API authentication token
-  api-url     - The configured API domain
-  acme-email  - The ACME email for Let's Encrypt`,
+  api-domain  - The configured API domain`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
@@ -82,22 +81,6 @@ Available keys:
 					}
 				}
 
-			case "acme-email":
-				haloydConfig, err := loadHaloydConfig(configDir)
-				if err != nil {
-					return err
-				}
-				email := haloydConfig.Certificates.AcmeEmail
-				if raw {
-					fmt.Print(email)
-				} else {
-					if email == "" {
-						ui.Info("ACME email is not configured")
-					} else {
-						ui.Info("ACME email: %s", email)
-					}
-				}
-
 			default:
 				return fmt.Errorf("unknown config key: %s", key)
 			}
@@ -119,7 +102,6 @@ func configSetCmd() *cobra.Command {
 
 Available keys:
   api-domain  - The domain for the haloyd API
-  acme-email  - The ACME email for Let's Encrypt
 
 Note: After changing configuration, restart haloyd for changes to take effect.`,
 		Args: cobra.ExactArgs(2),
@@ -143,10 +125,6 @@ Note: After changing configuration, restart haloyd for changes to take effect.`,
 			case "api-domain":
 				haloydConfig.API.Domain = value
 				ui.Info("API domain set to: %s", value)
-
-			case "acme-email":
-				haloydConfig.Certificates.AcmeEmail = value
-				ui.Info("ACME email set to: %s", value)
 
 			default:
 				return fmt.Errorf("unknown config key: %s", key)

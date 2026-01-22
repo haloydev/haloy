@@ -6,15 +6,13 @@ import (
 	"strings"
 
 	"github.com/haloydev/haloy/internal/constants"
-	"github.com/haloydev/haloy/internal/helpers"
 )
 
 const (
 	LabelAppName         = "dev.haloy.appName"
 	LabelDeploymentID    = "dev.haloy.deployment-id"
 	LabelHealthCheckPath = "dev.haloy.health-check-path" // optional default to "/"
-	LabelACMEEmail       = "dev.haloy.acme.email"
-	LabelPort            = "dev.haloy.port" // optional
+	LabelPort            = "dev.haloy.port"              // optional
 
 	// Format strings for indexed canonical domains and aliases.
 	// Use fmt.Sprintf(LabelDomainCanonical, index) to get "dev.haloy.domain.<index>"
@@ -27,7 +25,6 @@ type ContainerLabels struct {
 	AppName         string
 	DeploymentID    string
 	HealthCheckPath string
-	ACMEEmail       string
 	Port            Port
 	Domains         []Domain
 }
@@ -37,7 +34,6 @@ func ParseContainerLabels(labels map[string]string) (*ContainerLabels, error) {
 	cl := &ContainerLabels{
 		AppName:      labels[LabelAppName],
 		DeploymentID: labels[LabelDeploymentID],
-		ACMEEmail:    labels[LabelACMEEmail],
 	}
 
 	if v, ok := labels[LabelPort]; ok {
@@ -115,7 +111,6 @@ func (cl *ContainerLabels) ToLabels() map[string]string {
 		LabelDeploymentID:    cl.DeploymentID,
 		LabelHealthCheckPath: cl.HealthCheckPath,
 		LabelPort:            cl.Port.String(),
-		LabelACMEEmail:       cl.ACMEEmail,
 	}
 
 	// Iterate through the domains slice.
@@ -149,10 +144,6 @@ func (cl *ContainerLabels) Validate() error {
 				return fmt.Errorf("domain validation failed: %w", err)
 			}
 		}
-	}
-
-	if cl.ACMEEmail != "" && !helpers.IsValidEmail(cl.ACMEEmail) {
-		return fmt.Errorf("ACME email is not valid")
 	}
 
 	if cl.Port == "" {

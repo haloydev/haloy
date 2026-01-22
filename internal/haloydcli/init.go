@@ -23,7 +23,6 @@ const (
 func initCmd() *cobra.Command {
 	var override bool
 	var apiDomain string
-	var acmeEmail string
 	var dataDirFlag string
 	var configDirFlag string
 
@@ -97,7 +96,7 @@ Environment variables HALOY_DATA_DIR and HALOY_CONFIG_DIR can also be used.`,
 				return fmt.Errorf("failed to generate API token: %w", err)
 			}
 
-			if err := createConfigFiles(apiToken, apiDomain, acmeEmail, configDir); err != nil {
+			if err := createConfigFiles(apiToken, apiDomain, configDir); err != nil {
 				return fmt.Errorf("failed to create config files: %w", err)
 			}
 
@@ -140,7 +139,6 @@ Environment variables HALOY_DATA_DIR and HALOY_CONFIG_DIR can also be used.`,
 
 	cmd.Flags().BoolVar(&override, "override", false, "Remove and recreate existing directories")
 	cmd.Flags().StringVar(&apiDomain, "api-domain", "", "Domain for the haloyd API (e.g., api.yourserver.com)")
-	cmd.Flags().StringVar(&acmeEmail, "acme-email", "", "Email address for Let's Encrypt certificate registration")
 	cmd.Flags().StringVar(&dataDirFlag, "data-dir", "", "Data directory path (default: /var/lib/haloy)")
 	cmd.Flags().StringVar(&configDirFlag, "config-dir", "", "Config directory path (default: /etc/haloy)")
 
@@ -155,7 +153,7 @@ func generateAPIToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func createConfigFiles(apiToken, domain, acmeEmail, configDir string) error {
+func createConfigFiles(apiToken, domain, configDir string) error {
 	if apiToken == "" {
 		return fmt.Errorf("apiToken cannot be empty")
 	}
@@ -174,8 +172,7 @@ func createConfigFiles(apiToken, domain, acmeEmail, configDir string) error {
 
 	// Always write haloyd.yaml with defaults
 	haloydConfig := &config.HaloydConfig{}
-	haloydConfig.API.Domain = domain                // may be empty
-	haloydConfig.Certificates.AcmeEmail = acmeEmail // may be empty
+	haloydConfig.API.Domain = domain // may be empty
 	haloydConfig.HealthMonitor = config.HealthMonitorConfig{
 		// Enabled is nil by default, which means enabled (see IsEnabled())
 		Interval: "15s",

@@ -199,10 +199,6 @@ func MergeToTarget(deployConfig config.DeployConfig, targetConfig config.TargetC
 		tc.Domains = deployConfig.Domains
 	}
 
-	if tc.ACMEEmail == "" {
-		tc.ACMEEmail = deployConfig.ACMEEmail
-	}
-
 	// Merge Env arrays if the target has an explicit Env block, otherwise inherit (which is handled by copier)
 	// Only merge if both base and target have elements. If target.Env is nil (copied from targetConfig, which is nil),
 	// it will inherit the base config value. If target.Env is non-nil (meaning it was set explicitly in the target block,

@@ -281,19 +281,9 @@ func (dm *DeploymentManager) GetCertificateDomains() ([]CertificatesDomain, erro
 		}
 		for _, domain := range deployment.Labels.Domains {
 			if domain.Canonical != "" {
-				email := deployment.Labels.ACMEEmail
-				if dm.haloydConfig != nil && email == "" {
-					email = dm.haloydConfig.Certificates.AcmeEmail // Use default email if not set
-				}
-
-				if email == "" {
-					return nil, fmt.Errorf("ACME email for domain %s not found in haloyd config or labels", domain.Canonical)
-				}
-
 				newDomain := CertificatesDomain{
 					Canonical: domain.Canonical,
 					Aliases:   domain.Aliases,
-					Email:     email,
 				}
 
 				if err := newDomain.Validate(); err != nil {
@@ -306,11 +296,10 @@ func (dm *DeploymentManager) GetCertificateDomains() ([]CertificatesDomain, erro
 	}
 
 	// We'll add the domain set in the haloyd config file if it exists.
-	if dm.haloydConfig != nil && dm.haloydConfig.API.Domain != "" && dm.haloydConfig.Certificates.AcmeEmail != "" {
+	if dm.haloydConfig != nil && dm.haloydConfig.API.Domain != "" {
 		apiDomain := CertificatesDomain{
 			Canonical: dm.haloydConfig.API.Domain,
 			Aliases:   []string{},
-			Email:     dm.haloydConfig.Certificates.AcmeEmail,
 		}
 		certDomains = append(certDomains, apiDomain)
 	}

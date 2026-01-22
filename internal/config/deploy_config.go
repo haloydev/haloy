@@ -37,7 +37,6 @@ type TargetConfig struct {
 	NamingStrategy     NamingStrategy     `json:"namingStrategy,omitempty" yaml:"naming_strategy,omitempty" toml:"naming_strategy,omitempty"`
 	Protected          *bool              `json:"protected,omitempty" yaml:"protected,omitempty" toml:"protected,omitempty"`
 	Domains            []Domain           `json:"domains,omitempty" yaml:"domains,omitempty" toml:"domains,omitempty"`
-	ACMEEmail          string             `json:"acmeEmail,omitempty" yaml:"acme_email,omitempty" toml:"acme_email,omitempty"`
 	Env                []EnvVar           `json:"env,omitempty" yaml:"env,omitempty" toml:"env,omitempty"`
 	HealthCheckPath    string             `json:"healthCheckPath,omitempty" yaml:"health_check_path,omitempty" toml:"health_check_path,omitempty"`
 	Port               Port               `json:"port,omitempty" yaml:"port,omitempty" toml:"port,omitempty"`

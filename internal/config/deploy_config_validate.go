@@ -95,10 +95,6 @@ func (tc *TargetConfig) Validate(format string) error {
 		}
 	}
 
-	if tc.ACMEEmail != "" && !helpers.IsValidEmail(tc.ACMEEmail) {
-		return fmt.Errorf("%s is invalid '%s'; must be a valid email address", GetFieldNameForFormat(TargetConfig{}, "ACMEEmail", format), tc.ACMEEmail)
-	}
-
 	for j, envVar := range tc.Env {
 		if err := envVar.Validate(format); err != nil {
 			return fmt.Errorf("env[%d]: %w", j, err)

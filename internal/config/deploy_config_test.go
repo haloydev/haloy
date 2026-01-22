@@ -90,7 +90,6 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 					Tag:        "1.21",
 				},
 				Server:          "haloy.dev",
-				ACMEEmail:       "admin@example.com",
 				HealthCheckPath: "/health",
 				Port:            "8080",
 				Replicas:        helpers.Ptr(2),
@@ -136,21 +135,6 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 			format:      "yaml",
 			expectError: true,
 			errMsg:      "image.repository is required",
-		},
-		{
-			name: "invalid ACME email",
-			target: TargetConfig{
-				Name:   "haloy-test-app",
-				Server: "haloy.dev",
-				Image: &Image{
-					Repository: "nginx",
-					Tag:        "latest",
-				},
-				ACMEEmail: "not-an-email",
-			},
-			format:      "yaml",
-			expectError: true,
-			errMsg:      "must be a valid email address",
 		},
 		{
 			name: "invalid domain",

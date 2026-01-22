@@ -33,7 +33,6 @@ func RunContainer(ctx context.Context, cli *client.Client, deploymentID, imageRe
 	cl := config.ContainerLabels{
 		AppName:         targetConfig.Name,
 		DeploymentID:    deploymentID,
-		ACMEEmail:       targetConfig.ACMEEmail,
 		Port:            targetConfig.Port,
 		HealthCheckPath: targetConfig.HealthCheckPath,
 		Domains:         targetConfig.Domains,

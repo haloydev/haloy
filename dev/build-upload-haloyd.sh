@@ -99,5 +99,5 @@ echo "Successfully deployed haloyd to ${HOSTNAME}:${INSTALL_DIR}"
 if [ "$USER_INSTALL" = false ]; then
     echo ""
     echo "If this is a first-time install, run:"
-    echo "  sudo haloyd init --api-domain <domain> --acme-email <email>"
+    echo "  sudo haloyd init --api-domain <domain>"
 fi
