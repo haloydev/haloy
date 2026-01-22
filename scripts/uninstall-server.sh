@@ -177,10 +177,10 @@ main() {
     echo ""
     echo "  Application containers are still running."
     echo "  To view them:"
-    echo "    docker ps -a --filter label=dev.haloy.role=app"
+    echo "    docker ps -a --filter label=dev.haloy.appName"
     echo ""
     echo "  To remove them:"
-    echo "    docker rm -f \$(docker ps -aq --filter label=dev.haloy.role=app)"
+    echo "    docker rm -f \$(docker ps -aq --filter label=dev.haloy.appName)"
     echo ""
 }
 
