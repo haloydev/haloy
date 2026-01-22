@@ -2,32 +2,13 @@
 # Haloy Server Uninstallation Script
 #
 # Removes haloyd daemon and all associated files.
-# Optionally creates a backup before removal.
 #
 # USAGE:
+#   curl -sL https://sh.haloy.dev/uninstall-server.sh | sh
+#   # or
 #   sudo sh uninstall-server.sh
-#
-# OPTIONS:
-#   --force, -f         - Skip confirmation prompts
-#   --no-backup         - Skip backup prompt
-#
-# Environment variables (alternative):
-#   FORCE=true          - Skip confirmation prompts
-#   NO_BACKUP=true      - Skip backup prompt
 
 set -e
-
-# --- Parse arguments ---
-for arg in "$@"; do
-    case "$arg" in
-        --force|-f)
-            FORCE=true
-            ;;
-        --no-backup)
-            NO_BACKUP=true
-            ;;
-    esac
-done
 
 # --- Colors and output helpers ---
 setup_colors() {
@@ -53,31 +34,6 @@ warn() {
 
 error() {
     printf "  ${RED}✗${RESET} %s\n" "$1" >&2
-}
-
-# Check if running interactively
-is_interactive() {
-    [ -t 0 ] && [ -t 1 ]
-}
-
-confirm() {
-    local prompt="$1"
-
-    if [ "$FORCE" = "true" ]; then
-        return 0
-    fi
-
-    if ! is_interactive; then
-        echo "Non-interactive mode: use FORCE=true to skip prompts"
-        return 1
-    fi
-
-    printf "%s [y/N] " "$prompt"
-    read -r response
-    case "$response" in
-        [yY][eE][sS]|[yY]) return 0 ;;
-        *) return 1 ;;
-    esac
 }
 
 # --- Init system detection ---
@@ -151,38 +107,8 @@ main() {
     [ -n "$DATA_DIR" ] && echo "    - Data: $DATA_DIR"
     echo ""
 
-    # --- Backup prompt ---
-    if [ -n "$DATA_DIR" ] && [ "$NO_BACKUP" != "true" ]; then
-        warn "Data directory contains:"
-        echo "      - SSL certificates"
-        echo "      - Deployment database"
-        echo "      - Application configurations"
-        echo ""
-
-        if confirm "Create a backup before uninstalling?"; then
-            BACKUP_FILE="/tmp/haloy-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
-            echo ""
-            echo "  Creating backup..."
-            tar -czf "$BACKUP_FILE" -C /var/lib haloy -C /etc haloy 2>/dev/null || true
-            success "Backup created: $BACKUP_FILE"
-            echo ""
-            echo "  To restore later:"
-            echo "    tar -xzf $BACKUP_FILE -C /"
-            echo ""
-        fi
-    fi
-
-    # --- Confirmation ---
-    warn "This will permanently remove Haloy server components."
+    warn "Removing Haloy server components..."
     warn "Deployed containers will NOT be removed."
-    echo ""
-
-    if ! confirm "Are you sure you want to uninstall Haloy?"; then
-        echo ""
-        echo "Uninstall cancelled."
-        exit 0
-    fi
-
     echo ""
 
     # --- Stop and remove service ---
@@ -236,12 +162,11 @@ main() {
         success "Data removed"
     fi
 
-    # --- Remove user (optional) ---
+    # --- Remove user ---
     if id "haloy" >/dev/null 2>&1; then
-        if confirm "Remove 'haloy' system user?"; then
-            userdel haloy 2>/dev/null || deluser haloy 2>/dev/null || true
-            success "User 'haloy' removed"
-        fi
+        echo "Removing user..."
+        userdel haloy 2>/dev/null || deluser haloy 2>/dev/null || true
+        success "User 'haloy' removed"
     fi
 
     # --- Done ---
