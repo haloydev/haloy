@@ -138,7 +138,7 @@ Note: After changing configuration, restart haloyd for changes to take effect.`,
 				return fmt.Errorf("failed to save config: %w", err)
 			}
 
-			ui.Info("Restart haloyd for changes to take effect: systemctl restart haloyd")
+			ui.Info("Restart haloyd for changes to take effect")
 
 			return nil
 		},

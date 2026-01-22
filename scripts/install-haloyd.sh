@@ -480,7 +480,7 @@ print_success() {
     # Get API token
     API_TOKEN=""
     if [ -f /etc/haloy/.env ]; then
-        API_TOKEN=$(grep "HALOY_API_TOKEN" /etc/haloy/.env 2>/dev/null | cut -d'=' -f2)
+        API_TOKEN=$(grep "HALOY_API_TOKEN" /etc/haloy/.env 2>/dev/null | cut -d'=' -f2 | tr -d '"')
     fi
 
     # Detect public IP
@@ -520,25 +520,25 @@ print_success() {
             echo "  First, point your domain's DNS A record to: ${BOLD}$PUBLIC_IP${RESET}"
             echo ""
         fi
-        echo "  Then configure haloy:"
-        echo "    ${BOLD}sudo haloyd config set api-domain YOUR_DOMAIN${RESET}"
+        echo "  Then configure haloy (run as root):"
+        echo "    ${BOLD}haloyd config set api-domain YOUR_DOMAIN${RESET}"
         case "$INIT_SYSTEM" in
             systemd)
-                echo "    ${BOLD}sudo systemctl restart haloyd${RESET}"
+                echo "    ${BOLD}systemctl restart haloyd${RESET}"
                 ;;
             openrc)
-                echo "    ${BOLD}sudo rc-service haloyd restart${RESET}"
+                echo "    ${BOLD}rc-service haloyd restart${RESET}"
                 ;;
             *)
-                echo "    ${BOLD}sudo /etc/init.d/haloyd restart${RESET}"
+                echo "    ${BOLD}/etc/init.d/haloyd restart${RESET}"
                 ;;
         esac
         echo ""
         echo "  Or reinstall with configuration:"
-        echo "    API_DOMAIN=... curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh"
+        echo "    API_DOMAIN=... curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sh"
         echo ""
         echo "  Once configured, add this server on your local machine:"
-        echo "    haloy server add YOUR_DOMAIN \"$API_TOKEN\""
+        echo "    haloy server add YOUR_DOMAIN $API_TOKEN"
     else
         # Configured: show useful commands and next step
         echo "  ${BOLD}Useful Commands:${RESET}"
@@ -562,7 +562,7 @@ print_success() {
         echo ""
         echo "  ${BOLD}Next Step:${RESET}"
         echo "    On your local machine, add this server:"
-        echo "    haloy server add $API_DOMAIN \"$API_TOKEN\""
+        echo "    haloy server add $API_DOMAIN $API_TOKEN"
     fi
     echo ""
     echo "  Documentation: https://haloy.dev/docs"
