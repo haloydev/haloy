@@ -46,7 +46,7 @@ Available keys:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 
-			configDir, err := config.ConfigDir()
+			configDir, err := config.HaloydConfigDir()
 			if err != nil {
 				return fmt.Errorf("failed to get config directory: %w", err)
 			}
@@ -109,7 +109,7 @@ Note: After changing configuration, restart haloyd for changes to take effect.`,
 			key := args[0]
 			value := args[1]
 
-			configDir, err := config.ConfigDir()
+			configDir, err := config.HaloydConfigDir()
 			if err != nil {
 				return fmt.Errorf("failed to get config directory: %w", err)
 			}
@@ -174,7 +174,7 @@ func newConfigGenerateTokenCmd() *cobra.Command {
 Warning: This will invalidate the existing token. You will need to update
 the token in your haloy CLI configuration after running this command.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configDir, err := config.ConfigDir()
+			configDir, err := config.HaloydConfigDir()
 			if err != nil {
 				return fmt.Errorf("failed to get config directory: %w", err)
 			}

@@ -55,7 +55,7 @@ Environment variables HALOY_DATA_DIR and HALOY_CONFIG_DIR can also be used.`,
 			configDir := configDirFlag
 			if configDir == "" {
 				var err error
-				configDir, err = config.ConfigDir()
+				configDir, err = config.HaloydConfigDir()
 				if err != nil {
 					return fmt.Errorf("failed to determine config directory: %w", err)
 				}

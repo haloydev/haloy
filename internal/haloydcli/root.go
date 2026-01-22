@@ -18,7 +18,7 @@ It manages:
   - Reverse proxy routing to containers
   - API for the haloy CLI`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			config.LoadEnvFiles()
+			config.LoadHaloydEnvFiles()
 		},
 		SilenceErrors: true,
 		SilenceUsage:  true,

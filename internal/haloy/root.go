@@ -42,7 +42,7 @@ func NewRootCmd() *cobra.Command {
 			}
 
 			// Load environment files from default locations
-			config.LoadEnvFiles()
+			config.LoadHaloyEnvFiles()
 
 			// Skip server subcommands that don't use deploy config (add, delete, list)
 			if cmd.Parent() != nil && cmd.Parent().Name() == "server" && cmd.Name() != "version" {

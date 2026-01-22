@@ -75,7 +75,7 @@ func runVerify() error {
 }
 
 func checkConfigDir() checkResult {
-	configDir, err := config.ConfigDir()
+	configDir, err := config.HaloydConfigDir()
 	if err != nil {
 		return checkResult{
 			name:    "Config directory",
@@ -176,7 +176,7 @@ func checkDataDir() checkResult {
 }
 
 func checkConfigFiles() checkResult {
-	configDir, err := config.ConfigDir()
+	configDir, err := config.HaloydConfigDir()
 	if err != nil {
 		return checkResult{
 			name:    "Config files",
