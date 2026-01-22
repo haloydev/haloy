@@ -10,20 +10,22 @@ import (
 )
 
 type APIServer struct {
-	router      *http.ServeMux
-	logBroker   logging.StreamPublisher
-	logLevel    slog.Level
-	apiToken    string
-	rateLimiter *RateLimiter
+	router           *http.ServeMux
+	logBroker        logging.StreamPublisher
+	logLevel         slog.Level
+	apiToken         string
+	rateLimiter      *RateLimiter
+	layerRateLimiter *RateLimiter
 }
 
 func NewServer(apiToken string, logBroker logging.StreamPublisher, logLevel slog.Level) *APIServer {
 	s := &APIServer{
-		router:      http.NewServeMux(),
-		logBroker:   logBroker,
-		logLevel:    logLevel,
-		apiToken:    apiToken,
-		rateLimiter: NewRateLimiter(rate.Limit(5), 10), // 5 req/sec, burst of 10
+		router:           http.NewServeMux(),
+		logBroker:        logBroker,
+		logLevel:         logLevel,
+		apiToken:         apiToken,
+		rateLimiter:      NewRateLimiter(rate.Limit(5), 10),   // 5 req/sec, burst of 10
+		layerRateLimiter: NewRateLimiter(rate.Limit(50), 100), // 50 req/sec, burst of 100 for layer uploads
 	}
 	s.setupRoutes()
 	return s
