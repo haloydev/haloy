@@ -17,12 +17,17 @@ const (
 
 // DetectInitSystem returns the init system used on the current machine
 func DetectInitSystem() InitSystem {
+	// Check for systemd: directory must exist AND systemctl must be available
 	if _, err := os.Stat("/run/systemd/system"); err == nil {
-		return InitSystemd
+		if _, err := exec.LookPath("systemctl"); err == nil {
+			return InitSystemd
+		}
 	}
+	// Check for OpenRC
 	if _, err := os.Stat("/sbin/openrc-run"); err == nil {
 		return InitOpenRC
 	}
+	// Fallback to sysvinit if init.d exists
 	if _, err := os.Stat("/etc/init.d"); err == nil {
 		return InitSysVInit
 	}
