@@ -45,17 +45,18 @@ bun add -g haloy
 
 ### 2. Server Setup
 
-SSH into your server and run the install script:
+SSH into your server and run the install script with your API domain:
 
 ```bash
-ssh root@yourserver.com
-curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sh
+curl -fsSL https://sh.haloy.dev/install-haloyd.sh | API_DOMAIN=haloy.yourserver.com sh
 ```
 
-The script will install Docker (if needed), set up haloyd, and display an API token. Copy the token and register the server locally:
+**Note:** If you're not logged in as root, use `| sudo sh` instead of `| sh`.
+
+After installation completes, copy the API token from the output and add the server to your local machine:
 
 ```bash
-haloy server add https://haloy.yourserver.com <token>
+haloy server add haloy.yourserver.com <token>
 ```
 
 For detailed options, see the [Server Installation](https://haloy.dev/docs/server-installation) guide.
