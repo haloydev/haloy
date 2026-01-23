@@ -2,6 +2,8 @@ package haloy
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/ui"
@@ -56,6 +58,13 @@ func NewRootCmd() *cobra.Command {
 			if appFlags.configPath != "" {
 				resolvedConfigPath = appFlags.configPath
 			}
+
+			// Load .env files from the config directory (if different from current dir)
+			configDir := resolvedConfigPath
+			if stat, err := os.Stat(resolvedConfigPath); err == nil && !stat.IsDir() {
+				configDir = filepath.Dir(resolvedConfigPath)
+			}
+			config.LoadEnvFilesFromDir(configDir)
 
 			config.LoadEnvFilesForTargets(appFlags.targets)
 

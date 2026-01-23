@@ -45,3 +45,17 @@ func LoadEnvFilesForTargets(targets []string) {
 		_ = godotenv.Load(fmt.Sprintf(".env.%s", target))
 	}
 }
+
+// LoadEnvFilesFromDir loads .env and .env.local files from the specified directory.
+// This is used to load env files from the config file's directory.
+func LoadEnvFilesFromDir(dir string) {
+	if dir == "" || dir == "." {
+		return // Already loaded from current directory in LoadHaloyEnvFiles
+	}
+
+	// Load base .env file
+	_ = godotenv.Load(filepath.Join(dir, constants.ConfigEnvFileName))
+
+	// Load .env.local file (overrides base values)
+	_ = godotenv.Overload(filepath.Join(dir, constants.ConfigEnvLocalFileName))
+}
