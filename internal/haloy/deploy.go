@@ -321,9 +321,12 @@ func pushImageToRegistry(ctx context.Context, imageRef string, image *config.Ima
 
 	server := image.GetRegistryServer()
 
-	// Use --password-stdin to avoid exposing password in process list
-	loginCmd := exec.CommandContext(ctx, "docker", "login", "-u", image.RegistryAuth.Username.Value, "--password-stdin", server)
-	loginCmd.Stdin = strings.NewReader(image.RegistryAuth.Password.Value)
+	// Check for empty credentials before attempting login
+	if image.RegistryAuth.Password.Value == "" {
+		return fmt.Errorf("registry password is empty for image %s - check that the environment variable is set and the .env file is being loaded", imageRef)
+	}
+
+	loginCmd := exec.CommandContext(ctx, "docker", "login", server, "-u", image.RegistryAuth.Username.Value, "-p", image.RegistryAuth.Password.Value)
 	if output, err := loginCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("docker login to %s failed: %w\n%s", server, err, string(output))
 	}
