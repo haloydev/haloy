@@ -11,19 +11,19 @@
 # OPTIONS:
 #   --version=VERSION   - Install specific version (default: latest)
 #   --skip-start        - Don't start the service after installation
-#   --install-docker    - Automatically install Docker if not present
+#   --skip-docker-install - Skip automatic Docker installation
 #   --api-domain=DOMAIN - Set API domain during init
 #
 # Environment variables (alternative):
-#   VERSION=v0.1.0      - Install specific version (default: latest)
-#   SKIP_START=true     - Don't start the service after installation
-#   INSTALL_DOCKER=true - Automatically install Docker if not present
-#   API_DOMAIN=...      - Set API domain during init
+#   VERSION=v0.1.0          - Install specific version (default: latest)
+#   SKIP_START=true         - Don't start the service after installation
+#   SKIP_DOCKER_INSTALL=true - Skip automatic Docker installation
+#   API_DOMAIN=...          - Set API domain during init
 #
 # PREREQUISITES:
 #   - Linux (Ubuntu, Debian, CentOS, RHEL, Fedora, Alpine)
-#   - Docker installed and running
 #   - Root privileges (sudo)
+#   - Docker (will be installed automatically if not present)
 #
 # MORE INFO: https://haloy.dev/docs/server-installation
 
@@ -38,8 +38,8 @@ for arg in "$@"; do
         --skip-start)
             SKIP_START=true
             ;;
-        --install-docker)
-            INSTALL_DOCKER=true
+        --skip-docker-install)
+            SKIP_DOCKER_INSTALL=true
             ;;
         --api-domain=*)
             API_DOMAIN="${arg#--api-domain=}"
@@ -174,14 +174,14 @@ main() {
 
     # Check Docker
     if ! command -v docker >/dev/null 2>&1; then
-        if [ "$INSTALL_DOCKER" = "true" ]; then
+        if [ "$SKIP_DOCKER_INSTALL" = "true" ]; then
+            error_exit "Docker is not installed" \
+                "Install Docker manually: curl -fsSL https://sh.haloy.dev/install-docker.sh | sh" \
+                "Or remove SKIP_DOCKER_INSTALL to install automatically"
+        else
             warn "Docker is not installed - installing automatically"
             install_docker || error_exit "Failed to install Docker"
             success "Docker installed"
-        else
-            error_exit "Docker is not installed" \
-                "Auto-install: INSTALL_DOCKER=true curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sh" \
-                "Or run: curl -fsSL https://sh.haloy.dev/install-docker.sh | sh"
         fi
     fi
     DOCKER_VERSION=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')
