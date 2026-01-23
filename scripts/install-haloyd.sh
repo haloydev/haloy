@@ -261,6 +261,19 @@ main() {
 
     # Set capabilities for non-systemd systems (allows binding to ports 80/443 as non-root)
     if [ "$INIT_SYSTEM" != "systemd" ]; then
+        # Install libcap if setcap is not available
+        if ! command -v setcap >/dev/null 2>&1; then
+            if command -v apk >/dev/null 2>&1; then
+                apk add --no-cache libcap >/dev/null 2>&1 || true
+            elif command -v apt-get >/dev/null 2>&1; then
+                apt-get install -y libcap2-bin >/dev/null 2>&1 || true
+            elif command -v yum >/dev/null 2>&1; then
+                yum install -y libcap >/dev/null 2>&1 || true
+            elif command -v dnf >/dev/null 2>&1; then
+                dnf install -y libcap >/dev/null 2>&1 || true
+            fi
+        fi
+
         if command -v setcap >/dev/null 2>&1; then
             setcap cap_net_bind_service=+ep "$INSTALL_PATH" 2>/dev/null || \
                 warn "Failed to set capabilities - service may need to run as root"
