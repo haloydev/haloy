@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -327,10 +328,27 @@ func pushImageToRegistry(ctx context.Context, imageRef string, image *config.Ima
 		return fmt.Errorf("docker login to %s failed: %w\n%s", server, err, string(output))
 	}
 
-	// Push the image
-	pushCmd := fmt.Sprintf("docker push %s", imageRef)
-	if err := cmdexec.RunCommand(ctx, pushCmd, "."); err != nil {
-		return fmt.Errorf("failed to push image %s: %w", imageRef, err)
+	// Push the image - capture stderr for error messages while showing stdout progress
+	pushCmd := exec.CommandContext(ctx, "docker", "push", imageRef)
+	var stderrBuf strings.Builder
+	pushCmd.Stdout = os.Stdout
+	pushCmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+	if err := pushCmd.Run(); err != nil {
+		stderrStr := strings.TrimSpace(stderrBuf.String())
+		errMsg := fmt.Sprintf("failed to push image %s", imageRef)
+		if stderrStr != "" {
+			errMsg = fmt.Sprintf("failed to push image %s: %s", imageRef, stderrStr)
+		}
+
+		// Add helpful hints for common errors
+		stderrLower := strings.ToLower(stderrStr)
+		if strings.Contains(stderrLower, "denied") || strings.Contains(stderrLower, "unauthorized") {
+			errMsg += "\n\nHint: This usually means your registry credentials are incorrect or expired.\nCheck your registryAuth username and password configuration."
+		} else if strings.Contains(stderrLower, "not found") {
+			errMsg += "\n\nHint: The repository may not exist. Ensure the image name is correct and the repository exists on the registry."
+		}
+
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	return nil
