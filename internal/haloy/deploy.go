@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -331,19 +330,32 @@ func pushImageToRegistry(ctx context.Context, imageRef string, image *config.Ima
 		return fmt.Errorf("docker login to %s failed: %w\n%s", server, err, string(output))
 	}
 
-	// Push the image - capture stderr for error messages while showing stdout progress
 	pushCmd := exec.CommandContext(ctx, "docker", "push", imageRef)
-	var stderrBuf strings.Builder
-	pushCmd.Stdout = os.Stdout
-	pushCmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
-	if err := pushCmd.Run(); err != nil {
+	var stdoutBuf, stderrBuf strings.Builder
+	pushCmd.Stdout = &stdoutBuf
+	pushCmd.Stderr = &stderrBuf
+
+	err := pushCmd.Run()
+
+	var cached, pushed, mounted int
+	for _, line := range strings.Split(stdoutBuf.String(), "\n") {
+		switch {
+		case strings.Contains(line, "Layer already exists"):
+			cached++
+		case strings.Contains(line, ": Pushed"):
+			pushed++
+		case strings.Contains(line, "Mounted from"):
+			mounted++
+		}
+	}
+
+	if err != nil {
 		stderrStr := strings.TrimSpace(stderrBuf.String())
 		errMsg := fmt.Sprintf("failed to push image %s", imageRef)
 		if stderrStr != "" {
 			errMsg = fmt.Sprintf("failed to push image %s: %s", imageRef, stderrStr)
 		}
 
-		// Add helpful hints for common errors
 		stderrLower := strings.ToLower(stderrStr)
 		if strings.Contains(stderrLower, "denied") || strings.Contains(stderrLower, "unauthorized") {
 			errMsg += "\n\nHint: This usually means your registry credentials are incorrect or expired.\nCheck your registryAuth username and password configuration."
@@ -352,6 +364,23 @@ func pushImageToRegistry(ctx context.Context, imageRef string, image *config.Ima
 		}
 
 		return fmt.Errorf("%s", errMsg)
+	}
+
+	total := cached + pushed + mounted
+	if total > 0 {
+		parts := []string{}
+		if cached > 0 {
+			parts = append(parts, fmt.Sprintf("%d cached", cached))
+		}
+		if pushed > 0 {
+			parts = append(parts, fmt.Sprintf("%d pushed", pushed))
+		}
+		if mounted > 0 {
+			parts = append(parts, fmt.Sprintf("%d mounted", mounted))
+		}
+		ui.Success("Pushed image (%s)", strings.Join(parts, ", "))
+	} else {
+		ui.Success("Pushed image")
 	}
 
 	return nil
