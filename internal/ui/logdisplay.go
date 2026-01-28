@@ -12,6 +12,19 @@ func DisplayLogEntry(logEntry logging.LogEntry, prefix string) {
 	isSuccess := logEntry.IsDeploymentSuccess
 	domains := logEntry.Domains
 
+	// Handle HTTP request logs specially
+	if logEntry.Message == "request" {
+		method, _ := logEntry.Fields["method"].(string)
+		host, _ := logEntry.Fields["host"].(string)
+		path, _ := logEntry.Fields["path"].(string)
+		status, _ := logEntry.Fields["status"].(string)
+		durationMs, _ := logEntry.Fields["duration_ms"].(string)
+
+		if method != "" && host != "" {
+			message = fmt.Sprintf("%s %s%s → %s (%sms)", method, host, path, status, durationMs)
+		}
+	}
+
 	// Include error details from Fields if available
 	if errorMsg, exists := logEntry.Fields["error"]; exists {
 		if errorStr, ok := errorMsg.(string); ok && errorStr != "" {
