@@ -298,7 +298,7 @@ func (m *ACMEClientManager) ObtainCertificate(ctx context.Context, domains []str
 
 		// Wait for authorization to be valid
 		if _, err := client.WaitAuthorization(ctx, authURL); err != nil {
-			return nil, nil, fmt.Errorf("authorization failed for %s: %w", auth.Identifier.Value, err)
+			return nil, nil, wrapAuthorizationError(auth.Identifier.Value, err)
 		}
 	}
 
@@ -656,6 +656,26 @@ Please add DNS records:
 - Test with: dig A %s`, domain, domain, domain)
 	}
 
+	// Check if domain points to this server's IP
+	domainIP, err := helpers.GetARecord(domain)
+	if err != nil {
+		return fmt.Errorf("domain %s has no A record (IPv4): %w", domain, err)
+	}
+
+	serverIP, err := helpers.GetExternalIP()
+	if err != nil {
+		// Can't determine server IP, skip this check
+		return nil
+	}
+
+	if !domainIP.Equal(serverIP) {
+		return fmt.Errorf(`domain %s points to %s but this server's IP is %s
+
+Please update your DNS:
+- A record: %s → %s
+- Test with: dig A %s`, domain, domainIP, serverIP, domain, serverIP, domain)
+	}
+
 	return nil
 }
 
@@ -673,13 +693,40 @@ func (cm *CertificatesManager) buildDomainErrorMessage(domain string, originalEr
 	return fmt.Sprintf("DNS resolution failed for %s. Verify domain exists and has proper DNS records.", domain)
 }
 
+func wrapAuthorizationError(domain string, err error) error {
+	errStr := err.Error()
+
+	if strings.Contains(errStr, "521") {
+		return fmt.Errorf(`authorization failed for %s: origin server unreachable (521)
+
+This error means Let's Encrypt could not reach your server.
+If using Cloudflare proxy (orange cloud), the origin IP may be incorrect.
+Otherwise, ensure your DNS A record points to this server's IP.
+
+Original error: %w`, domain, err)
+	}
+
+	if strings.Contains(errStr, "403") || strings.Contains(errStr, "unauthorized") {
+		return fmt.Errorf(`authorization failed for %s: domain verification failed
+
+Let's Encrypt could not verify domain ownership.
+Ensure the domain's A record points to this server's IP address.
+
+Original error: %w`, domain, err)
+	}
+
+	return fmt.Errorf("authorization failed for %s: %w", domain, err)
+}
+
 func (m *CertificatesManager) obtainCertificate(managedDomain CertificatesDomain) (obtainedDomain CertificatesDomain, err error) {
 	canonicalDomain := managedDomain.Canonical
 	aliases := managedDomain.Aliases
 	allDomains := append([]string{canonicalDomain}, aliases...)
 
-	if err := m.validateDomain(canonicalDomain); err != nil {
-		return obtainedDomain, fmt.Errorf("domain validation failed for %s: %w", canonicalDomain, err)
+	for _, domain := range allDomains {
+		if err := m.validateDomain(domain); err != nil {
+			return obtainedDomain, fmt.Errorf("domain validation failed for %s: %w", domain, err)
+		}
 	}
 
 	certPEM, keyPEM, err := m.clientManager.ObtainCertificate(m.ctx, allDomains, m.challengeServer)
