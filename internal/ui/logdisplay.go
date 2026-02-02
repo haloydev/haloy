@@ -33,7 +33,7 @@ func DisplayLogEntry(logEntry logging.LogEntry, prefix string) {
 	}
 
 	if prefix != "" {
-		message = fmt.Sprintf("%s%s", prefix, message)
+		message = fmt.Sprintf("%s %s", stylePrefix(prefix), message)
 	}
 
 	switch strings.ToUpper(logEntry.Level) {
