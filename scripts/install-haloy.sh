@@ -1,6 +1,41 @@
 #!/bin/sh
 set -e
 
+# --- Detect download tool ---
+if command -v curl >/dev/null 2>&1; then
+    FETCH="curl"
+elif command -v wget >/dev/null 2>&1; then
+    FETCH="wget"
+else
+    echo "Error: either 'curl' or 'wget' is required but neither is installed." >&2
+    echo "Install one with your package manager, e.g.: apt install -y curl" >&2
+    exit 1
+fi
+
+for cmd in sed grep uname chmod mkdir; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Error: '$cmd' is required but not installed." >&2
+        echo "Install it with your package manager, e.g.: apt install -y $cmd" >&2
+        exit 1
+    fi
+done
+
+fetch() {
+    if [ "$FETCH" = "curl" ]; then
+        curl -fsSL "$1"
+    else
+        wget -qO- "$1"
+    fi
+}
+
+fetch_to_file() {
+    if [ "$FETCH" = "curl" ]; then
+        curl -fSL -o "$2" "$1"
+    else
+        wget -q -O "$2" "$1"
+    fi
+}
+
 # The directory to install the binary to. Can be overridden by setting the DIR environment variable.
 DIR="${DIR:-"$HOME/.local/bin"}"
 
@@ -22,7 +57,7 @@ esac
 # --- Fetch the latest version from GitHub ---
 echo "Finding the latest version of Haloy..."
 GITHUB_API_URL="https://api.github.com/repos/haloydev/haloy/releases"
-GITHUB_RESPONSE=$(curl -sL -H 'Accept: application/json' "$GITHUB_API_URL")
+GITHUB_RESPONSE=$(fetch "$GITHUB_API_URL" 2>/dev/null || true)
 
 # Check if the response indicates no releases
 if echo "$GITHUB_RESPONSE" | grep -q '"message": "Not Found"'; then
@@ -46,7 +81,7 @@ INSTALL_PATH="$DIR/haloy"
 mkdir -p "$DIR"
 
 echo "Downloading Haloy ${GITHUB_LATEST_VERSION} for ${PLATFORM}/${ARCH}..."
-curl -L -o "$INSTALL_PATH" "$DOWNLOAD_URL"
+fetch_to_file "$DOWNLOAD_URL" "$INSTALL_PATH"
 chmod +x "$INSTALL_PATH"
 
 echo ""

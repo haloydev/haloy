@@ -96,9 +96,40 @@ error_exit() {
     exit 1
 }
 
+# --- Detect download tool ---
+if command -v curl >/dev/null 2>&1; then
+    FETCH="curl"
+elif command -v wget >/dev/null 2>&1; then
+    FETCH="wget"
+else
+    echo "Error: either 'curl' or 'wget' is required but neither is installed." >&2
+    echo "Install one with your package manager, e.g.: apt install -y curl" >&2
+    exit 1
+fi
+
+fetch() {
+    if [ "$FETCH" = "curl" ]; then
+        curl -fsSL "$1"
+    else
+        wget -qO- "$1"
+    fi
+}
+
+fetch_to_file() {
+    if [ "$FETCH" = "curl" ]; then
+        curl -fSL -o "$2" "$1"
+    else
+        wget -q -O "$2" "$1"
+    fi
+}
+
 # --- Public IP detection ---
 detect_public_ip() {
-    curl -sS --max-time 5 https://api.ipify.org 2>/dev/null || echo ""
+    if [ "$FETCH" = "curl" ]; then
+        curl -sS --max-time 5 https://api.ipify.org 2>/dev/null || echo ""
+    else
+        wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null || echo ""
+    fi
 }
 
 # --- Init system detection ---
@@ -116,7 +147,7 @@ detect_init_system() {
 
 # --- Docker installation ---
 install_docker() {
-    curl -fsSL https://sh.haloy.dev/install-docker.sh | sh || return 1
+    fetch https://sh.haloy.dev/install-docker.sh | sh || return 1
 }
 
 # --- Main installation ---
@@ -134,6 +165,13 @@ main() {
             "Run with: sudo sh install-haloyd.sh" \
             "Or: curl -fsSL https://sh.haloy.dev/install-haloyd.sh | sudo sh"
     fi
+
+    for cmd in sed awk uname; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            error_exit "'$cmd' is required but not installed" \
+                "Install it with your package manager, e.g.: apt install -y $cmd"
+        fi
+    done
 
     # --- Step 1: Detect system ---
     step "Detecting system configuration"
@@ -229,13 +267,12 @@ main() {
     # Determine version
     if [ -z "$VERSION" ]; then
         # Get latest release
-        VERSION=$(curl -sL -H 'Accept: application/json' "https://api.github.com/repos/haloydev/haloy/releases/latest" 2>/dev/null | \
+        VERSION=$(fetch "https://api.github.com/repos/haloydev/haloy/releases/latest" 2>/dev/null | \
             sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' || echo "")
 
         if [ -z "$VERSION" ]; then
-            # Try getting most recent release (including prereleases)
-            VERSION=$(curl -sL -H 'Accept: application/json' "https://api.github.com/repos/haloydev/haloy/releases" | \
-                sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -1)
+            VERSION=$(fetch "https://api.github.com/repos/haloydev/haloy/releases" 2>/dev/null | \
+                sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -1 || echo "")
         fi
     fi
 
@@ -251,7 +288,7 @@ main() {
     DOWNLOAD_URL="https://github.com/haloydev/haloy/releases/download/${VERSION}/${BINARY_NAME}"
     INSTALL_PATH="/usr/local/bin/haloyd"
 
-    curl -fSL -o "$INSTALL_PATH" "$DOWNLOAD_URL" || \
+    fetch_to_file "$DOWNLOAD_URL" "$INSTALL_PATH" || \
         error_exit "Failed to download haloyd" \
             "Check if version $VERSION exists" \
             "URL: $DOWNLOAD_URL"

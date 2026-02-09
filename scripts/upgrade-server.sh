@@ -14,6 +14,11 @@ if ! command -v haloyd >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v systemctl >/dev/null 2>&1; then
+    echo "Error: systemctl is required but not found. This script only supports systemd." >&2
+    exit 1
+fi
+
 # --- Show current version ---
 CURRENT_VERSION=$(haloyd version 2>/dev/null | head -1 || echo "unknown")
 echo "Current version: $CURRENT_VERSION"
