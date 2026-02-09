@@ -32,6 +32,13 @@ func DisplayLogEntry(logEntry logging.LogEntry, prefix string) {
 		}
 	}
 
+	// Include container logs from Fields if available (e.g. from failed deployments)
+	if logs, exists := logEntry.Fields["logs"]; exists {
+		if logsStr, ok := logs.(string); ok && logsStr != "" {
+			message = fmt.Sprintf("%s%s", message, logsStr)
+		}
+	}
+
 	if prefix != "" {
 		message = fmt.Sprintf("%s %s", stylePrefix(prefix), message)
 	}
