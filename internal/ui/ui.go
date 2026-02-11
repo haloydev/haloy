@@ -100,7 +100,7 @@ func stylePrefix(prefix string) string {
 		return ""
 	}
 
-	return lipgloss.NewStyle().Bold(true).Foreground(White).Render(fmt.Sprintf("%s ", prefix))
+	return lipgloss.NewStyle().Bold(true).Foreground(White).Render(prefix)
 }
 
 type PrefixedUI struct {
