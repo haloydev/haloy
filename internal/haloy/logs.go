@@ -4,30 +4,56 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/configloader"
-	"github.com/haloydev/haloy/internal/logging"
+	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
 
 func LogsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
-	var serverFlag string
+	var (
+		allContainers bool
+		containerID   string
+		tail          int
+	)
 
 	cmd := &cobra.Command{
 		Use:   "logs",
-		Short: "Stream logs from haloy server",
-		Long: `Stream all logs from haloy server in real-time.
+		Short: "Stream application container logs",
+		Long: `Stream stdout/stderr logs from application containers in real-time.
 
-The logs are streamed in real-time and will continue until interrupted (Ctrl+C).`,
+By default, streams logs from the first container. Use flags to target
+specific containers or all containers.
+
+The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
+
+Examples:
+  # Stream logs from the default container
+  haloy logs
+
+  # Stream last 50 lines, then follow
+  haloy logs --tail 50
+
+  # Stream from all containers
+  haloy logs --all-containers
+
+  # Stream from a specific container
+  haloy logs --container abc123
+
+  # Stream from specific targets (multi-target config)
+  haloy logs --targets prod`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			if serverFlag != "" {
-				return streamLogs(ctx, nil, serverFlag)
+
+			if allContainers && containerID != "" {
+				return fmt.Errorf("cannot specify both --all-containers and --container")
 			}
 
 			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
@@ -45,16 +71,14 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 				return err
 			}
 
-			servers := configloader.TargetsByServer(targets)
-
 			g, ctx := errgroup.WithContext(ctx)
-			for server, targetNames := range servers {
-				targetConfig, exists := targets[targetNames[0]]
-				if !exists {
-					return fmt.Errorf("failed to find target config for server")
-				}
+			for _, target := range targets {
 				g.Go(func() error {
-					return streamLogs(ctx, &targetConfig, server)
+					prefix := ""
+					if len(targets) > 1 {
+						prefix = target.TargetName
+					}
+					return streamAppLogs(ctx, &target, target.Server, target.Name, tail, containerID, allContainers, prefix)
 				})
 			}
 
@@ -63,41 +87,74 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 	}
 
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
-	cmd.Flags().StringVarP(&serverFlag, "server", "s", "", "Haloy server URL")
-	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Show logs for specific targets (comma-separated)")
-	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Show all target logs")
+	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Stream logs for specific targets (comma-separated)")
+	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Stream logs for all targets")
+	cmd.Flags().IntVar(&tail, "tail", 100, "Number of historical log lines to show")
+	cmd.Flags().StringVar(&containerID, "container", "", "Stream logs from a specific container ID")
+	cmd.Flags().BoolVar(&allContainers, "all-containers", false, "Stream logs from all containers")
 
 	return cmd
 }
 
-func streamLogs(ctx context.Context, targetConfig *config.TargetConfig, targetServer string) error {
+func streamAppLogs(ctx context.Context, targetConfig *config.TargetConfig, targetServer, appName string, tail int, containerID string, allContainers bool, prefix string) error {
+	pui := &ui.PrefixedUI{Prefix: prefix}
+
 	token, err := getToken(targetConfig, targetServer)
 	if err != nil {
-		return fmt.Errorf("unable to get token: %w", err)
+		return &PrefixedError{Err: fmt.Errorf("unable to get token: %w", err), Prefix: prefix}
 	}
-
-	ui.Info("Connecting to haloy server at %s", targetServer)
-	ui.Info("Streaming all logs... (Press Ctrl+C to stop)")
 
 	api, err := apiclient.New(targetServer, token)
 	if err != nil {
-		return fmt.Errorf("failed to create API client: %w", err)
+		return &PrefixedError{Err: fmt.Errorf("failed to create API client: %w", err), Prefix: prefix}
 	}
+
+	pui.Info("Streaming container logs... (Press Ctrl+C to stop)")
+
+	params := url.Values{}
+	params.Set("tail", strconv.Itoa(tail))
+	if containerID != "" {
+		params.Set("containerId", containerID)
+	}
+	if allContainers {
+		params.Set("allContainers", "true")
+	}
+
+	path := fmt.Sprintf("logs/%s?%s", appName, params.Encode())
+
+	showContainerID := allContainers
+
 	streamHandler := func(data string) bool {
-		var logEntry logging.LogEntry
-		if err := json.Unmarshal([]byte(data), &logEntry); err != nil {
-			ui.Error("failed to parse log entry: %v", err)
+		var logLine docker.LogLine
+		if err := json.Unmarshal([]byte(data), &logLine); err != nil {
+			pui.Error("failed to parse log line: %v", err)
+			return false
 		}
 
-		prefix := ""
-		if logEntry.DeploymentID != "" {
-			prefix = fmt.Sprintf("[id: %s] -> ", logEntry.DeploymentID[:8])
+		line := logLine.Line
+		if showContainerID && logLine.ContainerID != "" {
+			shortID := logLine.ContainerID
+			if len(shortID) > 12 {
+				shortID = shortID[:12]
+			}
+			line = fmt.Sprintf("[%s] %s", shortID, logLine.Line)
 		}
 
-		ui.DisplayLogEntry(logEntry, prefix)
+		if prefix != "" {
+			pui.Info("%s", line)
+		} else {
+			fmt.Println(line)
+		}
 
-		// Never stop streaming for general logs
 		return false
 	}
-	return api.Stream(ctx, "logs", streamHandler)
+
+	err = api.Stream(ctx, path, streamHandler)
+	if err != nil && ctx.Err() != nil {
+		return nil
+	}
+	if err != nil {
+		return &PrefixedError{Err: fmt.Errorf("log stream error: %w", err), Prefix: prefix}
+	}
+	return nil
 }

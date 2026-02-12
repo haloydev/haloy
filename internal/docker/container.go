@@ -519,6 +519,69 @@ func ExecInContainer(ctx context.Context, cli *client.Client, containerID string
 	return stdoutBuf.String(), stderrBuf.String(), inspectResp.ExitCode, nil
 }
 
+type LogLine struct {
+	ContainerID string `json:"containerId"`
+	Line        string `json:"line"`
+}
+
+func StreamContainerLogs(ctx context.Context, cli *client.Client, containerID string, tail int) (<-chan LogLine, error) {
+	if tail <= 0 {
+		tail = 100
+	}
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+		Tail:       fmt.Sprintf("%d", tail),
+		Timestamps: false,
+	}
+
+	reader, err := cli.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stream container logs: %w", err)
+	}
+
+	ch := make(chan LogLine, 100)
+
+	go func() {
+		defer close(ch)
+		defer reader.Close()
+
+		hdr := make([]byte, 8)
+		for {
+			_, err := io.ReadFull(reader, hdr)
+			if err != nil {
+				return
+			}
+
+			size := int(hdr[4])<<24 | int(hdr[5])<<16 | int(hdr[6])<<8 | int(hdr[7])
+			if size == 0 {
+				continue
+			}
+
+			payload := make([]byte, size)
+			_, err = io.ReadFull(reader, payload)
+			if err != nil {
+				return
+			}
+
+			line := string(bytes.TrimRight(payload, "\n"))
+			if line == "" {
+				continue
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case ch <- LogLine{ContainerID: containerID, Line: line}:
+			}
+		}
+	}()
+
+	return ch, nil
+}
+
 // GetContainerLogs retrieves the last N lines of logs from a container.
 // This works even for stopped containers, making it useful for debugging failed deployments.
 func GetContainerLogs(ctx context.Context, cli *client.Client, containerID string, tailLines int) (string, error) {
