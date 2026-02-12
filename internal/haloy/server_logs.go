@@ -16,18 +16,21 @@ import (
 
 func ServerLogsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	var serverFlag string
+	var accessLogs bool
 
 	cmd := &cobra.Command{
 		Use:   "logs",
 		Short: "Stream platform logs from haloy server",
-		Long: `Stream all platform logs from haloy server in real-time.
+		Long: `Stream platform logs from haloy server in real-time.
+
+By default, proxy access logs are filtered out. Use --access-logs to include them.
 
 The logs are streamed in real-time and will continue until interrupted (Ctrl+C).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if serverFlag != "" {
-				return streamServerLogs(ctx, nil, serverFlag)
+				return streamServerLogs(ctx, nil, serverFlag, accessLogs)
 			}
 
 			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
@@ -54,7 +57,7 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 					return fmt.Errorf("failed to find target config for server")
 				}
 				g.Go(func() error {
-					return streamServerLogs(ctx, &targetConfig, server)
+					return streamServerLogs(ctx, &targetConfig, server, accessLogs)
 				})
 			}
 
@@ -66,18 +69,23 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 	cmd.Flags().StringVarP(&serverFlag, "server", "s", "", "Haloy server URL")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Show logs for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Show all target logs")
+	cmd.Flags().BoolVar(&accessLogs, "access-logs", false, "Include proxy access logs in output")
 
 	return cmd
 }
 
-func streamServerLogs(ctx context.Context, targetConfig *config.TargetConfig, targetServer string) error {
+func streamServerLogs(ctx context.Context, targetConfig *config.TargetConfig, targetServer string, accessLogs bool) error {
 	token, err := getToken(targetConfig, targetServer)
 	if err != nil {
 		return fmt.Errorf("unable to get token: %w", err)
 	}
 
 	ui.Info("Connecting to haloy server at %s", targetServer)
-	ui.Info("Streaming all logs... (Press Ctrl+C to stop)")
+	if accessLogs {
+		ui.Info("Streaming all logs including access logs... (Press Ctrl+C to stop)")
+	} else {
+		ui.Info("Streaming platform logs... (Press Ctrl+C to stop)")
+	}
 
 	api, err := apiclient.New(targetServer, token)
 	if err != nil {
@@ -98,5 +106,9 @@ func streamServerLogs(ctx context.Context, targetConfig *config.TargetConfig, ta
 
 		return false
 	}
-	return api.Stream(ctx, "server-logs", streamHandler)
+	path := "server-logs"
+	if accessLogs {
+		path += "?access-logs=true"
+	}
+	return api.Stream(ctx, path, streamHandler)
 }

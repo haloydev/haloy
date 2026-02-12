@@ -13,6 +13,7 @@ type sseStreamConfig struct {
 	logChan         <-chan logging.LogEntry
 	cleanup         func()
 	shouldTerminate func(logging.LogEntry) bool
+	shouldSkip      func(logging.LogEntry) bool
 }
 
 // streamSSELogs handles the common SSE streaming logic
@@ -49,6 +50,10 @@ func streamSSELogs(w http.ResponseWriter, r *http.Request, config sseStreamConfi
 		case logEntry, ok := <-config.logChan:
 			if !ok {
 				return
+			}
+
+			if config.shouldSkip != nil && config.shouldSkip(logEntry) {
+				continue
 			}
 
 			if err := writeSSEMessage(w, logEntry); err != nil {
