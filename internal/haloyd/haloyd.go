@@ -258,10 +258,6 @@ func Run(debug bool) {
 						if _, err := docker.StopContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
 							deploymentLogger.Warn("Failed to stop containers during cleanup", "error", err)
 						}
-						if _, err := docker.RemoveContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
-							deploymentLogger.Warn("Failed to remove containers during cleanup", "error", err)
-						}
-
 						var failureReasons []string
 						for _, f := range appFailures {
 							failureReasons = append(failureReasons, fmt.Sprintf("%s: %v", f.Reason, f.Err))
