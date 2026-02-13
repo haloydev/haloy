@@ -14,6 +14,7 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
+	"github.com/haloydev/haloy/internal/ui"
 	"github.com/jinzhu/copier"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -302,6 +303,12 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 			Repository: tc.Name,
 			Build:      helpers.Ptr(true),
 		}
+	}
+
+	if tc.Image != nil && tc.Image.Repository == tc.Name &&
+		!tc.Image.ShouldBuild() && tc.Image.RegistryAuth == nil {
+		ui.Warn("image '%s' matches the app name but will be pulled from a registry, not built locally.\n"+
+			"  If you intended to build locally, remove the 'image' field or set 'build: true'.", tc.Name)
 	}
 
 	if tc.Image.History == nil {

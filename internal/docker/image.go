@@ -81,6 +81,9 @@ func EnsureImageUpToDate(ctx context.Context, cli *client.Client, logger *slog.L
 		RegistryAuth: registryAuth,
 	})
 	if err != nil {
+		if !strings.ContainsAny(imageRef, "/.") {
+			return fmt.Errorf("failed to pull %s: %w\nHint: if you intended to build this image locally, remove the 'image' field from your config or set 'build: true'.", imageRef, err)
+		}
 		return fmt.Errorf("failed to pull %s: %w", imageRef, err)
 	}
 	defer r.Close()

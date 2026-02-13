@@ -908,6 +908,47 @@ func TestMergeToTargetWithBuildArgExpansion(t *testing.T) {
 	}
 }
 
+func TestImageShorthandShouldNotBuild(t *testing.T) {
+	deployConfig := config.DeployConfig{
+		TargetConfig: config.TargetConfig{
+			Name:   "myapp",
+			Image:  &config.Image{Repository: "myapp"},
+			Server: "test.haloy.dev",
+		},
+	}
+
+	result, err := MergeToTarget(deployConfig, config.TargetConfig{}, "myapp", "yaml")
+	if err != nil {
+		t.Fatalf("MergeToTarget() unexpected error = %v", err)
+	}
+
+	if result.Image.ShouldBuild() {
+		t.Error("image shorthand 'image: myapp' should not build (ShouldBuild() should be false)")
+	}
+}
+
+func TestOmittedImageFieldShouldBuild(t *testing.T) {
+	deployConfig := config.DeployConfig{
+		TargetConfig: config.TargetConfig{
+			Name:   "myapp",
+			Server: "test.haloy.dev",
+		},
+	}
+
+	result, err := MergeToTarget(deployConfig, config.TargetConfig{}, "myapp", "yaml")
+	if err != nil {
+		t.Fatalf("MergeToTarget() unexpected error = %v", err)
+	}
+
+	if !result.Image.ShouldBuild() {
+		t.Error("omitted image field should produce ShouldBuild() == true")
+	}
+
+	if result.Image.Repository != "myapp" {
+		t.Errorf("omitted image field should set Repository to app name, got '%s'", result.Image.Repository)
+	}
+}
+
 func TestLoadRawDeployConfig_ImageShorthand(t *testing.T) {
 	tests := []struct {
 		name           string
