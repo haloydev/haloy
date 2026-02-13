@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/haloydev/haloy/internal/helpers"
@@ -542,5 +543,68 @@ func TestImage_Validate_WithBuildConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestImageDecodeHook(t *testing.T) {
+	decodeHook := ImageDecodeHook()
+	imageType := reflect.TypeOf(Image{})
+
+	tests := []struct {
+		name     string
+		data     any
+		expected any
+	}{
+		{
+			name:     "string image ref",
+			data:     "nginx:alpine",
+			expected: map[string]interface{}{"repository": "nginx:alpine"},
+		},
+		{
+			name:     "string with registry",
+			data:     "ghcr.io/user/repo:v1",
+			expected: map[string]interface{}{"repository": "ghcr.io/user/repo:v1"},
+		},
+		{
+			name:     "empty string",
+			data:     "",
+			expected: map[string]interface{}{"repository": ""},
+		},
+		{
+			name:     "map passes through",
+			data:     map[string]interface{}{"repository": "nginx", "tag": "latest"},
+			expected: map[string]interface{}{"repository": "nginx", "tag": "latest"},
+		},
+		{
+			name:     "int passes through",
+			data:     42,
+			expected: 42,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := decodeHook(reflect.TypeOf(tt.data), imageType, tt.data)
+			if err != nil {
+				t.Errorf("unexpected error = %v", err)
+			}
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("result = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestImageDecodeHook_NonImageType(t *testing.T) {
+	decodeHook := ImageDecodeHook()
+	stringType := reflect.TypeOf("")
+
+	data := "nginx:alpine"
+	result, err := decodeHook(reflect.TypeOf(data), stringType, data)
+	if err != nil {
+		t.Errorf("expected no error for non-Image target type, got %v", err)
+	}
+	if result != data {
+		t.Errorf("expected data to be returned unchanged for non-Image target type, got %v", result)
 	}
 }

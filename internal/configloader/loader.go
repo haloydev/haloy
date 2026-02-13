@@ -447,8 +447,11 @@ func LoadRawDeployConfig(configPath string) (config.DeployConfig, string, error)
 		TagName: format,
 		Result:  &deployConfig,
 		// This ensures that embedded structs with inline tags work properly
-		Squash:     true,
-		DecodeHook: config.PortDecodeHook(),
+		Squash: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			config.PortDecodeHook(),
+			config.ImageDecodeHook(),
+		),
 	}
 
 	unmarshalConf := koanf.UnmarshalConf{

@@ -1,6 +1,8 @@
 package configloader
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/haloydev/haloy/internal/config"
@@ -903,5 +905,102 @@ func TestMergeToTargetWithBuildArgExpansion(t *testing.T) {
 	// Verify env vars are still present
 	if len(result.Env) != 2 {
 		t.Errorf("MergeToTarget() expected 2 env vars, got %d", len(result.Env))
+	}
+}
+
+func TestLoadRawDeployConfig_ImageShorthand(t *testing.T) {
+	tests := []struct {
+		name           string
+		yaml           string
+		expectedRepo   string
+		expectedImages map[string]string
+	}{
+		{
+			name: "string shorthand on target image",
+			yaml: `
+name: myapp
+server: test.haloy.dev
+image: "nginx:alpine"
+`,
+			expectedRepo: "nginx:alpine",
+		},
+		{
+			name: "string shorthand in images map",
+			yaml: `
+name: myapp
+server: test.haloy.dev
+image: "nginx:alpine"
+images:
+  db: "postgres:18"
+  cache: "redis:7"
+`,
+			expectedRepo: "nginx:alpine",
+			expectedImages: map[string]string{
+				"db":    "postgres:18",
+				"cache": "redis:7",
+			},
+		},
+		{
+			name: "mixed shorthand and object forms",
+			yaml: `
+name: myapp
+server: test.haloy.dev
+image: "nginx:alpine"
+images:
+  db: "postgres:18"
+  api:
+    repository: "node"
+    tag: "20"
+`,
+			expectedRepo: "nginx:alpine",
+			expectedImages: map[string]string{
+				"db":  "postgres:18",
+				"api": "node",
+			},
+		},
+		{
+			name: "object form still works",
+			yaml: `
+name: myapp
+server: test.haloy.dev
+image:
+  repository: "nginx"
+  tag: "1.21"
+`,
+			expectedRepo: "nginx",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "haloy.yaml")
+			if err := os.WriteFile(configPath, []byte(tt.yaml), 0o644); err != nil {
+				t.Fatalf("failed to write config file: %v", err)
+			}
+
+			dc, _, err := LoadRawDeployConfig(configPath)
+			if err != nil {
+				t.Fatalf("LoadRawDeployConfig() unexpected error = %v", err)
+			}
+
+			if dc.Image == nil {
+				t.Fatal("LoadRawDeployConfig() Image should not be nil")
+			}
+			if dc.Image.Repository != tt.expectedRepo {
+				t.Errorf("Image.Repository = %s, expected %s", dc.Image.Repository, tt.expectedRepo)
+			}
+
+			for key, expectedRepo := range tt.expectedImages {
+				img, ok := dc.Images[key]
+				if !ok {
+					t.Errorf("Images[%s] not found", key)
+					continue
+				}
+				if img.Repository != expectedRepo {
+					t.Errorf("Images[%s].Repository = %s, expected %s", key, img.Repository, expectedRepo)
+				}
+			}
+		})
 	}
 }

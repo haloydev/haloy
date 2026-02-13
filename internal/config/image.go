@@ -3,8 +3,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/go-viper/mapstructure/v2"
 )
 
 type Image struct {
@@ -14,6 +17,18 @@ type Image struct {
 	RegistryAuth *RegistryAuth `json:"registry,omitempty" yaml:"registry,omitempty" toml:"registry,omitempty"`
 	Build        *bool         `json:"build,omitempty" yaml:"build,omitempty" toml:"build,omitempty"`
 	BuildConfig  *BuildConfig  `json:"buildConfig,omitempty" yaml:"build_config,omitempty" toml:"build_config,omitempty"`
+}
+
+func ImageDecodeHook() mapstructure.DecodeHookFuncType {
+	return func(f reflect.Type, t reflect.Type, data any) (any, error) {
+		if t != reflect.TypeOf(Image{}) {
+			return data, nil
+		}
+		if v, ok := data.(string); ok {
+			return map[string]interface{}{"repository": v}, nil
+		}
+		return data, nil
+	}
 }
 
 type RegistryAuth struct {

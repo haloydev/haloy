@@ -110,6 +110,15 @@ func isValidConfigKey(key string, knownFields []string) bool {
 		return slices.Contains(knownFields, targetFieldKey)
 	}
 
+	// Handle images.{dynamic_key} or images.{dynamic_key}.{field}
+	if len(parts) >= 2 && parts[0] == "images" {
+		if len(parts) == 2 {
+			return true
+		}
+		imageFieldKey := "images." + strings.Join(parts[2:], ".")
+		return slices.Contains(knownFields, imageFieldKey)
+	}
+
 	// Handle secret_providers.{provider}.{source_name}.{field}
 	if len(parts) >= 4 && parts[0] == "secret_providers" {
 		// For secret_providers.{provider}.{source_name}.{field}
