@@ -6,6 +6,5 @@ type RollbackTarget struct {
 	DeploymentID    string
 	ImageID         string
 	ImageRef        string
-	IsRunning       bool // The image is live
 	RawDeployConfig *config.DeployConfig
 }

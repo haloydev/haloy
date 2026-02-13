@@ -101,10 +101,13 @@ func GetRollbackTargets(ctx context.Context, cli *client.Client, appName string)
 		// Replace the image in the config with the deployed image
 		rawDeployConfig.Image = &deployedImage
 
+		if deployment.ID == runningDeploymentID {
+			continue
+		}
+
 		target := deploytypes.RollbackTarget{
 			DeploymentID:    deployment.ID,
 			ImageRef:        imageRef,
-			IsRunning:       deployment.ID == runningDeploymentID,
 			RawDeployConfig: &rawDeployConfig,
 		}
 

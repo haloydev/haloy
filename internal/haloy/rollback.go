@@ -241,7 +241,7 @@ func displayRollbackTargets(appName string, rollbackTargets []deploytypes.Rollba
 	}
 	ui.Info("%s", header)
 
-	headers := []string{"DEPLOYMENT ID", "IMAGE REFERENCE", "DATE", "STATUS"}
+	headers := []string{"DEPLOYMENT ID", "IMAGE REFERENCE", "DATE"}
 	rows := make([][]string, 0, len(rollbackTargets))
 
 	for _, rollbackTarget := range rollbackTargets {
@@ -251,16 +251,10 @@ func displayRollbackTargets(appName string, rollbackTargets []deploytypes.Rollba
 			date = helpers.FormatTime(deploymentTime)
 		}
 
-		status := ""
-		if rollbackTarget.IsRunning {
-			status = "🟢 CURRENT"
-		}
-
 		rows = append(rows, []string{
 			rollbackTarget.DeploymentID,
 			rollbackTarget.ImageRef,
 			date,
-			status,
 		})
 	}
 
