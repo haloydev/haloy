@@ -47,12 +47,12 @@ echo "Current version: $CURRENT_VERSION"
 echo "Checking for updates..."
 
 LATEST_VERSION=$(curl -sS "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-    -H "Accept: application/json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+    -H "Accept: application/json" 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4)
 
 if [ -z "$LATEST_VERSION" ]; then
     echo "No stable release found, checking for prereleases..."
     LATEST_VERSION=$(curl -sS "https://api.github.com/repos/${GITHUB_REPO}/releases" \
-        -H "Accept: application/json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+        -H "Accept: application/json" 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4)
 fi
 
 if [ -z "$LATEST_VERSION" ]; then
