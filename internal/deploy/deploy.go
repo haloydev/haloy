@@ -61,9 +61,9 @@ func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, tar
 	if len(runResult) == 0 {
 		return fmt.Errorf("no containers started, check logs for details")
 	} else if len(runResult) == 1 {
-		logger.Info("Container started successfully", "containerID", runResult[0].ID, "deploymentID", deploymentID)
+		logger.Info(fmt.Sprintf("Container started for %s", targetConfig.Name), "containerID", runResult[0].ID, "deploymentID", deploymentID)
 	} else {
-		logger.Info(fmt.Sprintf("Containers started successfully (%d replicas)", len(runResult)), "count", len(runResult), "deploymentID", deploymentID)
+		logger.Info(fmt.Sprintf("Containers started for %s (%d replicas)", targetConfig.Name, len(runResult)), "count", len(runResult), "deploymentID", deploymentID)
 	}
 	// We'll make sure to save the raw deploy config (without resolved secrets to history)
 	handleImageHistory(ctx, cli, rawDeployConfig, deploymentID, newImageRef, logger)

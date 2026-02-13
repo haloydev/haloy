@@ -110,7 +110,7 @@ func BuildImage(ctx context.Context, imageRef string, image *config.Image, confi
 		return fmt.Errorf("failed to build image %s: %w", imageRef, err)
 	}
 
-	ui.Success("Successfully built image %s", imageRef)
+	ui.Success("Built image %s", imageRef)
 	return nil
 }
 
@@ -154,17 +154,15 @@ func UploadImage(ctx context.Context, imageRef string, resolvedTargetConfigs []*
 
 		// Check if server supports layer-based upload
 		if supportsLayerUpload(ctx, api) {
-			ui.Info("Pushing image %s to %s (layered)", imageRef, resolvedDeployConfig.Server)
+			ui.Info("Pushing image %s to %s", imageRef, resolvedDeployConfig.Server)
 			if err := uploadImageLayered(ctx, api, imageRef, tempFile.Name()); err != nil {
-				// Log the error but fall back to full upload
 				ui.Warn("Layer-based push failed, falling back to full push: %v", err)
-				ui.Info("Pushing image %s to %s (full)", imageRef, resolvedDeployConfig.Server)
 				if err := api.PostFile(ctx, "images/upload", "image", tempFile.Name()); err != nil {
 					return fmt.Errorf("failed to upload image: %w", err)
 				}
 			}
 		} else {
-			ui.Info("Pushing image %s to %s (full)", imageRef, resolvedDeployConfig.Server)
+			ui.Info("Pushing image %s to %s", imageRef, resolvedDeployConfig.Server)
 			if err := api.PostFile(ctx, "images/upload", "image", tempFile.Name()); err != nil {
 				return fmt.Errorf("failed to upload image: %w", err)
 			}

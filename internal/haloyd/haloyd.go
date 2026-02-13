@@ -279,7 +279,7 @@ func Run(debug bool) {
 						}
 					}
 					logging.LogDeploymentComplete(deploymentLogger, canonicalDomains, de.DeploymentID, de.AppName,
-						fmt.Sprintf("Successfully deployed %s", de.AppName))
+						fmt.Sprintf("Deployed %s", de.AppName))
 				}
 			}()
 

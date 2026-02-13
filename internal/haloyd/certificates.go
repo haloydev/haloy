@@ -547,8 +547,7 @@ func (cm *CertificatesManager) checkRenewals(logger *slog.Logger, domains []Cert
 				"domain", canonical,
 				"aliases", domain.Aliases)
 		} else {
-			logger.Info("Certificate is valid",
-				logging.AttrDomains, allDomains,
+			logger.Info(fmt.Sprintf("Certificate valid for %s", strings.Join(allDomains, ", ")),
 				"domain", canonical,
 				"aliases", domain.Aliases)
 		}

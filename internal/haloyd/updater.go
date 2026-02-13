@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/events"
@@ -134,11 +133,9 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		for _, c := range healthy {
 			apps[c.Labels.AppName] = struct{}{}
 		}
-		appNames := make([]string, 0, len(apps))
 		for appName := range apps {
-			appNames = append(appNames, appName)
+			logger.Info(fmt.Sprintf("Health check passed for %s", appName))
 		}
-		logger.Info("Health check completed", "apps", strings.Join(appNames, ", "))
 	}
 
 	deployments := u.deploymentManager.Deployments()
@@ -194,7 +191,6 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		return result, fmt.Errorf("failed to build proxy config: %w", err)
 	}
 	u.proxy.UpdateConfig(proxyConfig)
-	logger.Info("Proxy configuration applied successfully")
 
 	// If an app is provided:
 	// - stop old containers, remove and log the result.
