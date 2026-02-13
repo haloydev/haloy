@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -124,13 +125,21 @@ func downloadAndInstallBinary(ctx context.Context, version string, logger interf
 
 	logger.Info("Downloading new binary", "url", downloadURL)
 
-	// Create temp file for download
-	tmpFile, err := os.CreateTemp("", "haloyd-upgrade-*")
+	// Get current executable path (needed early to create temp file in same dir)
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to determine executable path: %w", err)
+	}
+
+	// Create temp file in the same directory as the target binary for atomic rename
+	tmpFile, err := os.CreateTemp(filepath.Dir(execPath), "haloyd-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() {
+		os.Remove(tmpPath)
+	}()
 
 	// Download binary
 	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
@@ -171,12 +180,6 @@ func downloadAndInstallBinary(ctx context.Context, version string, logger interf
 		return fmt.Errorf("downloaded binary verification failed: %w", err)
 	}
 
-	// Get current executable path
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to determine executable path: %w", err)
-	}
-
 	// Create backup
 	backupPath := execPath + ".backup"
 	logger.Info("Backing up current binary", "path", backupPath)
@@ -184,10 +187,9 @@ func downloadAndInstallBinary(ctx context.Context, version string, logger interf
 		return fmt.Errorf("failed to backup current binary: %w", err)
 	}
 
-	// Install new binary
+	// Install new binary via atomic rename
 	logger.Info("Installing new binary")
-	if err := copyFile(tmpPath, execPath); err != nil {
-		// Try to restore backup on failure
+	if err := os.Rename(tmpPath, execPath); err != nil {
 		if restoreErr := copyFile(backupPath, execPath); restoreErr != nil {
 			return fmt.Errorf("installation failed and could not restore backup: %w (restore error: %v)", err, restoreErr)
 		}

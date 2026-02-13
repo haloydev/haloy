@@ -116,12 +116,15 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 
 	ui.Info("Downloading %s...", binaryName)
 
-	tmpFile, err := os.CreateTemp("", "haloyd-upgrade-*")
+	tmpFile, err := os.CreateTemp(filepath.Dir(currentPath), "haloyd-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() {
+		// Clean up temp file only if it still exists (rename didn't happen)
+		os.Remove(tmpPath)
+	}()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
@@ -168,7 +171,7 @@ func downloadAndInstall(ctx context.Context, currentPath, version string) error 
 	}
 
 	ui.Info("Installing new binary...")
-	if err := copyFile(tmpPath, currentPath); err != nil {
+	if err := os.Rename(tmpPath, currentPath); err != nil {
 		ui.Warn("Installation failed, restoring backup...")
 		if restoreErr := copyFile(backupPath, currentPath); restoreErr != nil {
 			return fmt.Errorf("installation failed and could not restore backup: %w (restore error: %v)", err, restoreErr)
