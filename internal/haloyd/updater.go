@@ -131,6 +131,9 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	if len(healthy) > 0 {
 		apps := make(map[string]struct{})
 		for _, c := range healthy {
+			if app != nil && c.Labels.AppName != app.appName {
+				continue
+			}
 			apps[c.Labels.AppName] = struct{}{}
 		}
 		for appName := range apps {
