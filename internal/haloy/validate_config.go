@@ -69,8 +69,16 @@ func ValidateDeployConfigCmd(configPath *string) *cobra.Command {
 					resolvedTargets, err = configloader.ExtractTargets(resolvedDeployConfig, format)
 					if err != nil {
 						collectedErrors = append(collectedErrors, err)
+					} else {
+						for targetName := range resolvedTargets {
+							target := resolvedTargets[targetName]
+							if err := configloader.InterpolateEnvVars(target.Env); err != nil {
+								collectedErrors = append(collectedErrors, fmt.Errorf("target '%s': %w", targetName, err))
+							} else {
+								resolvedTargets[targetName] = target
+							}
+						}
 					}
-
 				}
 			}
 

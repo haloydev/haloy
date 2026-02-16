@@ -51,6 +51,14 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return err
 			}
 
+			for targetName := range resolvedTargets {
+				target := resolvedTargets[targetName]
+				if err := configloader.InterpolateEnvVars(target.Env); err != nil {
+					return fmt.Errorf("target '%s': %w", targetName, err)
+				}
+				resolvedTargets[targetName] = target
+			}
+
 			if len(rawTargets) != len(resolvedTargets) {
 				return fmt.Errorf("mismatch between raw targets (%d) and resolved targets (%d). This indicates a configuration processing error.", len(rawTargets), len(resolvedTargets))
 			}
