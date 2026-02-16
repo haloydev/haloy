@@ -129,7 +129,8 @@ func getBuilderWorkDir(configPath string) string {
 // UploadImage uploads a Docker image to the specified server
 // It tries layer-based upload first (efficient), falls back to full tar upload
 func UploadImage(ctx context.Context, imageRef string, resolvedTargetConfigs []*config.TargetConfig) error {
-	tempFile, err := os.CreateTemp("", fmt.Sprintf("haloy-upload-%s-*.tar", strings.ReplaceAll(imageRef, ":", "-")))
+	sanitized := strings.NewReplacer("/", "-", ":", "-").Replace(imageRef)
+	tempFile, err := os.CreateTemp("", fmt.Sprintf("haloy-upload-%s-*.tar", sanitized))
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
