@@ -63,14 +63,6 @@ type ExecResponse struct {
 	Results []ExecResult `json:"results"`
 }
 
-// UpgradeResponse is returned by the upgrade endpoint
-type UpgradeResponse struct {
-	Status          string `json:"status"`                    // "updating", "restarting", "completed", "failed"
-	PreviousVersion string `json:"previousVersion,omitempty"` // Version before upgrade
-	TargetVersion   string `json:"targetVersion,omitempty"`   // Version being upgraded to
-	Message         string `json:"message,omitempty"`         // Additional information or error message
-}
-
 // LayerCheckRequest is sent by client to query which layers already exist on server
 type LayerCheckRequest struct {
 	Digests []string `json:"digests"`

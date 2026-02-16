@@ -28,7 +28,6 @@ It manages:
 		serveCmd(),
 		initCmd(),
 		configCmd(),
-		upgradeCmd(),
 		versionCmd(),
 		verifyCmd(),
 	)

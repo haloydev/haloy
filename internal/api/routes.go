@@ -23,6 +23,4 @@ func (s *APIServer) setupRoutes() {
 	s.router.Handle("POST /v1/exec/{appName}", httpWithAuth(s.handleExec()))
 	s.router.Handle("POST /v1/tunnel/{appName}", withAuth(s.handleTunnel()))
 	s.router.Handle("GET /v1/version", httpWithAuth(s.handleVersion()))
-	s.router.Handle("POST /v1/upgrade", httpWithAuth(s.handleUpgrade()))
-	s.router.Handle("POST /v1/upgrade/restart", httpWithAuth(s.handleUpgradeRestart()))
 }
