@@ -45,7 +45,7 @@ func EnsureVolumes(ctx context.Context, cli *client.Client, logger *slog.Logger,
 		if err != nil {
 			return fmt.Errorf("failed to create volume %s: %w", volumeName, err)
 		}
-		logger.Info("Created volume", "volume", volumeName, "app", appName)
+		logger.Info(fmt.Sprintf("Created volume for %s", appName), "volume", volumeName)
 	}
 
 	return nil
