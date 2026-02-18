@@ -22,9 +22,14 @@ func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, tar
 		return err
 	}
 
-	newImageRef, err := tagImage(ctx, cli, imageRef, targetConfig.Name, deploymentID)
-	if err != nil {
-		return fmt.Errorf("failed to tag image: %w", err)
+	newImageRef := imageRef
+	if targetConfig.Image == nil || targetConfig.Image.History == nil ||
+		targetConfig.Image.History.Strategy != config.HistoryStrategyNone {
+		var err error
+		newImageRef, err = tagImage(ctx, cli, imageRef, targetConfig.Name, deploymentID)
+		if err != nil {
+			return fmt.Errorf("failed to tag image: %w", err)
+		}
 	}
 
 	if targetConfig.DeploymentStrategy == config.DeploymentStrategyReplace {
