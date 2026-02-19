@@ -3,7 +3,7 @@ package constants
 import "os"
 
 const (
-	Version                  = "0.1.0-beta.36"
+	Version                  = "0.1.0-beta.37"
 	DockerNetwork            = "haloy"
 	DefaultDeploymentsToKeep = 6
 	DefaultHealthCheckPath   = "/"
