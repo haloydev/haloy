@@ -265,6 +265,10 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return nil
 			}
 
+			if len(flags.targets) == 0 && !flags.all {
+				flags.all = true
+			}
+
 			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
@@ -280,14 +284,17 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return err
 			}
 
+			servers := configloader.TargetsByServer(targets)
+
 			g, ctx := errgroup.WithContext(ctx)
-			for _, target := range targets {
+			for server, targetNames := range servers {
+				targetConfig := targets[targetNames[0]]
 				g.Go(func() error {
 					prefix := ""
-					if len(targets) > 1 {
-						prefix = target.TargetName
+					if len(servers) > 1 {
+						prefix = server
 					}
-					version, err := getServerVersion(ctx, &target, target.Server, prefix)
+					version, err := getServerVersion(ctx, &targetConfig, server, prefix)
 					if err != nil {
 						return err
 					}
