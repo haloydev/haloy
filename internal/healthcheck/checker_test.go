@@ -2,6 +2,7 @@ package healthcheck
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,7 +120,7 @@ func TestHTTPChecker_Check_ConnectionRefused(t *testing.T) {
 
 func TestHTTPChecker_Check_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second)
+		time.Sleep(300 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -143,11 +144,14 @@ func TestHTTPChecker_Check_Timeout(t *testing.T) {
 	if result.Err == nil {
 		t.Error("Check should return error for timeout")
 	}
+	if !strings.Contains(result.Err.Error(), "request failed") {
+		t.Errorf("timeout error = %v, expected wrapped request failure", result.Err)
+	}
 }
 
 func TestHTTPChecker_Check_ContextCanceled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(5 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -170,6 +174,12 @@ func TestHTTPChecker_Check_ContextCanceled(t *testing.T) {
 
 	if result.Healthy {
 		t.Error("Check returned healthy for canceled context")
+	}
+	if result.Err == nil {
+		t.Fatal("Check should return error for canceled context")
+	}
+	if !errors.Is(result.Err, context.Canceled) {
+		t.Errorf("Check error = %v, expected context canceled", result.Err)
 	}
 }
 
@@ -336,6 +346,12 @@ func TestHTTPChecker_CheckWithRetry_ContextCanceled(t *testing.T) {
 
 	if result.Healthy {
 		t.Error("CheckWithRetry returned healthy after context canceled")
+	}
+	if result.Err == nil {
+		t.Fatal("CheckWithRetry should return context error when canceled")
+	}
+	if !errors.Is(result.Err, context.DeadlineExceeded) {
+		t.Errorf("CheckWithRetry error = %v, expected context deadline exceeded", result.Err)
 	}
 }
 

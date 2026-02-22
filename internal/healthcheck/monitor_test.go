@@ -12,6 +12,20 @@ import (
 	"time"
 )
 
+func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool, message string) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal(message)
+}
+
 // mockTargetProvider implements TargetProvider for testing.
 type mockTargetProvider struct {
 	mu      sync.Mutex
@@ -104,9 +118,6 @@ func TestHealthMonitor_StartStop(t *testing.T) {
 	// Double start should be no-op
 	monitor.Start()
 
-	// Give it time to run a check
-	time.Sleep(150 * time.Millisecond)
-
 	// Stop should work
 	monitor.Stop()
 
@@ -144,8 +155,9 @@ func TestHealthMonitor_RunsChecks(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Wait for at least 2 check cycles
-	time.Sleep(130 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return atomic.LoadInt32(&checkCount) >= 2
+	}, "health checks did not run twice within timeout")
 
 	monitor.Stop()
 
@@ -195,27 +207,19 @@ func TestHealthMonitor_DetectsUnhealthy(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Wait for initial check to complete
-	time.Sleep(50 * time.Millisecond)
-
 	// Make server unhealthy
 	atomic.StoreInt32(&healthy, 0)
 
-	// Wait for fall threshold (2 failures)
-	time.Sleep(100 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		select {
+		case targets := <-stateChanged:
+			return len(targets) == 0
+		default:
+			return false
+		}
+	}, "OnHealthChange was not called with 0 healthy targets after backend became unhealthy")
 
 	monitor.Stop()
-
-	// Check that updater was called with state change
-	select {
-	case targets := <-stateChanged:
-		// After becoming unhealthy, there should be no healthy targets
-		if len(targets) != 0 {
-			t.Errorf("Expected 0 healthy targets after failure, got %d", len(targets))
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Error("OnHealthChange was not called after backend became unhealthy")
-	}
 }
 
 func TestHealthMonitor_DetectsRecovery(t *testing.T) {
@@ -260,14 +264,17 @@ func TestHealthMonitor_DetectsRecovery(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Wait for initial failure
-	time.Sleep(50 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		_, healthyCount, unhealthyCount := monitor.GetStats()
+		return healthyCount == 0 && unhealthyCount == 1
+	}, "backend did not become unhealthy before recovery phase")
 
 	// Make server healthy
 	atomic.StoreInt32(&healthy, 1)
 
-	// Wait for rise threshold (2 successes)
-	time.Sleep(100 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return atomic.LoadInt32(&recoveryDetected) == 1
+	}, "recovery was not detected within timeout")
 
 	monitor.Stop()
 
@@ -306,15 +313,18 @@ func TestHealthMonitor_ForceCheck(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Wait for initial check
-	time.Sleep(50 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return atomic.LoadInt32(&checkCount) >= 1
+	}, "initial health check did not run within timeout")
 
 	initialCount := atomic.LoadInt32(&checkCount)
 
 	// Force an immediate check
 	monitor.ForceCheck()
 
-	time.Sleep(50 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return atomic.LoadInt32(&checkCount) > initialCount
+	}, "ForceCheck did not trigger additional check within timeout")
 
 	finalCount := atomic.LoadInt32(&checkCount)
 
@@ -366,8 +376,9 @@ func TestHealthMonitor_GetHealthyTargets(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Wait for initial check
-	time.Sleep(100 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return len(monitor.GetHealthyTargets()) == 2
+	}, "monitor did not report expected healthy targets within timeout")
 
 	healthy := monitor.GetHealthyTargets()
 
@@ -414,8 +425,10 @@ func TestHealthMonitor_GetStats(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Wait for checks to run
-	time.Sleep(100 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		_, _, unhealthy := monitor.GetStats()
+		return unhealthy >= 1
+	}, "monitor did not observe an unhealthy backend within timeout")
 
 	total, healthy, unhealthy := monitor.GetStats()
 
@@ -445,8 +458,7 @@ func TestHealthMonitor_NoTargets(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Should not panic with no targets
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(120 * time.Millisecond)
 
 	monitor.Stop()
 
@@ -484,8 +496,9 @@ func TestHealthMonitor_DynamicTargets(t *testing.T) {
 	monitor := NewHealthMonitor(config, provider, updater, logger)
 	monitor.Start()
 
-	// Wait for initial check
-	time.Sleep(50 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return len(monitor.GetHealthyTargets()) == 1
+	}, "initial target did not become healthy within timeout")
 
 	// Add a new target
 	provider.SetTargets([]Target{
@@ -493,8 +506,9 @@ func TestHealthMonitor_DynamicTargets(t *testing.T) {
 		{ID: "b", IP: parts[0], Port: parts[1], HealthCheckPath: "/health"},
 	})
 
-	// Wait for next check cycle
-	time.Sleep(50 * time.Millisecond)
+	waitForCondition(t, 2*time.Second, func() bool {
+		return len(monitor.GetHealthyTargets()) == 2
+	}, "new dynamic target did not become healthy within timeout")
 
 	healthy := monitor.GetHealthyTargets()
 

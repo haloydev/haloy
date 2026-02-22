@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -84,6 +85,9 @@ func TestRouteBuilder_Build_DuplicateAlias(t *testing.T) {
 	if err == nil {
 		t.Fatal("Build() expected error for duplicate alias, got nil")
 	}
+	if !strings.Contains(err.Error(), "alias") {
+		t.Fatalf("Build() error = %v, expected duplicate alias context", err)
+	}
 }
 
 func TestRouteBuilder_Build_CanonicalAliasConflict(t *testing.T) {
@@ -94,6 +98,9 @@ func TestRouteBuilder_Build_CanonicalAliasConflict(t *testing.T) {
 	_, err := rb.Build()
 	if err == nil {
 		t.Fatal("Build() expected error for canonical/alias conflict, got nil")
+	}
+	if !strings.Contains(err.Error(), "alias") || !strings.Contains(err.Error(), "app2.example.com") {
+		t.Fatalf("Build() error = %v, expected canonical/alias conflict context", err)
 	}
 }
 

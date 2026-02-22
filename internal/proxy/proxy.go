@@ -322,6 +322,8 @@ func (p *Proxy) httpsHandler() http.Handler {
 
 // findRoute finds a route for the given host (checking canonical and aliases).
 func (p *Proxy) findRoute(config *Config, host string) *Route {
+	host = strings.ToLower(host)
+
 	if route, ok := config.Routes[host]; ok {
 		return route
 	}

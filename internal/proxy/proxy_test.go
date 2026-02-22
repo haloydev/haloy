@@ -51,7 +51,7 @@ func TestFindRoute(t *testing.T) {
 		},
 		{
 			name:      "case insensitive canonical",
-			host:      "example.com",
+			host:      "ExAmPlE.CoM",
 			wantNil:   false,
 			wantCanon: "example.com",
 		},
