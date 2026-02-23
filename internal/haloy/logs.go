@@ -93,6 +93,8 @@ Examples:
 	cmd.Flags().StringVar(&containerID, "container", "", "Stream logs from a specific container ID")
 	cmd.Flags().BoolVar(&allContainers, "all-containers", false, "Stream logs from all containers")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 

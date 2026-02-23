@@ -60,6 +60,8 @@ func StatusAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Show status for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Show status for all targets")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 

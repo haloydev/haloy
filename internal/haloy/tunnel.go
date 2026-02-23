@@ -106,6 +106,8 @@ Examples:
 	cmd.Flags().StringVar(&port, "port", "", "Remote port to tunnel to (default: port from config)")
 	cmd.Flags().StringVar(&containerID, "container", "", "Specific container ID to tunnel to")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 

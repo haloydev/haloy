@@ -104,3 +104,51 @@ case ":$PATH:" in
         echo "Then restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
         ;;
 esac
+
+# --- Install shell completions ---
+SHELL_NAME="$(basename "$SHELL" 2>/dev/null || true)"
+
+install_bash_completions() {
+    if [ "$(id -u)" = "0" ]; then
+        COMP_DIR="/etc/bash_completion.d"
+    else
+        COMP_DIR="$HOME/.local/share/bash-completion/completions"
+    fi
+    mkdir -p "$COMP_DIR"
+    "$INSTALL_PATH" completion bash > "$COMP_DIR/haloy" 2>/dev/null
+    echo "Bash completions installed to $COMP_DIR/haloy"
+}
+
+install_zsh_completions() {
+    COMP_DIR="$HOME/.local/share/zsh/site-functions"
+    mkdir -p "$COMP_DIR"
+    "$INSTALL_PATH" completion zsh > "$COMP_DIR/_haloy" 2>/dev/null
+    echo "Zsh completions installed to $COMP_DIR/_haloy"
+    echo "Note: You may need to add the following to your ~/.zshrc if completions don't work:"
+    echo "    fpath=(~/.local/share/zsh/site-functions \$fpath)"
+    echo "    autoload -U compinit && compinit"
+}
+
+install_fish_completions() {
+    COMP_DIR="$HOME/.config/fish/completions"
+    mkdir -p "$COMP_DIR"
+    "$INSTALL_PATH" completion fish > "$COMP_DIR/haloy.fish" 2>/dev/null
+    echo "Fish completions installed to $COMP_DIR/haloy.fish"
+}
+
+echo ""
+case "$SHELL_NAME" in
+    bash)
+        install_bash_completions
+        ;;
+    zsh)
+        install_zsh_completions
+        ;;
+    fish)
+        install_fish_completions
+        ;;
+    *)
+        echo "Shell completions were not installed (unrecognized shell: $SHELL_NAME)."
+        echo "Run 'haloy completion --help' to install them manually."
+        ;;
+esac

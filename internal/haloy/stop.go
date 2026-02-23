@@ -81,6 +81,8 @@ func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().BoolVarP(&removeContainersFlag, "remove-containers", "r", false, "Remove containers after stopping them")
 	cmd.Flags().BoolVar(&removeVolumesFlag, "remove-volumes", false, "Remove volumes after stopping (requires --remove-containers)")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 

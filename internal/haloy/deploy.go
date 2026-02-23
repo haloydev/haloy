@@ -214,6 +214,8 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&noLogsFlag, "no-logs", false, "Don't stream haloyd deployment logs")
 	cmd.Flags().BoolVar(&flags.includeProtected, "include-protected", false, "Include protected targets when using --all")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 

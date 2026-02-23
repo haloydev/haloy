@@ -88,5 +88,7 @@ func TargetsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Filter specific targets (comma-separated)")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }

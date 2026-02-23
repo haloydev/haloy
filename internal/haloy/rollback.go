@@ -149,6 +149,8 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Deploy to all targets")
 	cmd.Flags().BoolVar(&noLogsFlag, "no-logs", false, "Don't stream deployment logs")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 
@@ -216,6 +218,8 @@ func RollbackTargetsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Deploy to specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Deploy to all targets")
+
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
 
 	return cmd
 }

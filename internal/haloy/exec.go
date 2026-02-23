@@ -102,6 +102,8 @@ Examples:
 	cmd.Flags().BoolVar(&allContainers, "all-containers", false, "Execute on all containers")
 	cmd.Flags().StringVar(&containerID, "container", "", "Execute on specific container ID")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 

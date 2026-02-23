@@ -4,10 +4,32 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/spf13/cobra"
 )
 
-// NewCompletionCmd creates a new completion command
+func completeTargetNames(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	configPath := "."
+	if f := cmd.Flags().Lookup("config"); f != nil && f.Value.String() != "" {
+		configPath = f.Value.String()
+	}
+
+	deployConfig, _, err := configloader.LoadRawDeployConfig(configPath)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	if len(deployConfig.Targets) == 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	names := make([]string, 0, len(deployConfig.Targets))
+	for name := range deployConfig.Targets {
+		names = append(names, name)
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
 func CompletionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       "completion [bash|zsh|fish|powershell]",

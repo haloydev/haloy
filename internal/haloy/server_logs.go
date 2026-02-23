@@ -75,6 +75,8 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Show all target logs")
 	cmd.Flags().BoolVar(&accessLogs, "access-logs", false, "Include proxy access logs in output")
 
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 

@@ -314,6 +314,9 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringVarP(&serverFlag, "server", "s", "", "Server URL (overrides config file)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Get version for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Get version for all targets")
+
+	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
+
 	return cmd
 }
 
