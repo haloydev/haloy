@@ -409,6 +409,39 @@ func TestMergeToTarget(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:         "partial image with build_config defaults repository to target name",
+			deployConfig: config.DeployConfig{},
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					BuildConfig: &config.BuildConfig{
+						Dockerfile: "Dockerfile.prod",
+					},
+				},
+			},
+			targetName:     "my-service",
+			expectedName:   "my-service",
+			expectedServer: "localhost",
+			expectedImage: config.Image{
+				Repository: "my-service",
+			},
+		},
+		{
+			name:         "partial image with only tag defaults repository to target name",
+			deployConfig: config.DeployConfig{},
+			targetConfig: config.TargetConfig{
+				Image: &config.Image{
+					Tag: "v2.0",
+				},
+			},
+			targetName:     "my-app",
+			expectedName:   "my-app",
+			expectedServer: "localhost",
+			expectedImage: config.Image{
+				Repository: "my-app",
+				Tag:        "v2.0",
+			},
+		},
 	}
 
 	for _, tt := range tests {

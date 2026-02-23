@@ -305,7 +305,11 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 		}
 	}
 
-	if tc.Image != nil && tc.Image.Repository == tc.Name &&
+	if tc.Image.Repository == "" {
+		tc.Image.Repository = tc.Name
+	}
+
+	if tc.Image.Repository == tc.Name &&
 		!tc.Image.ShouldBuild() && tc.Image.RegistryAuth == nil {
 		ui.Warn("image '%s' matches the app name but will be pulled from a registry, not built locally.\n"+
 			"  If you intended to build locally, remove the 'image' field or set 'build: true'.", tc.Name)
