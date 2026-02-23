@@ -243,40 +243,9 @@ func uploadImageLayered(ctx context.Context, api *apiclient.APIClient, imageRef,
 			}
 
 			g.Go(func() error {
-				// Open the tar and seek to the layer
-				layerReader, err := openLayerFromTar(tarPath, layerInfo.tarPath)
-				if err != nil {
-					return fmt.Errorf("failed to open layer %s: %w", digest, err)
+				if err := uploadLayerWithRetry(gctx, api, tarPath, layerInfo, digest, progress); err != nil {
+					return err
 				}
-
-				// Wrap reader to track progress
-				trackedReader := &progressReader{
-					reader:   layerReader,
-					progress: progress,
-				}
-
-				// Create and customize the request
-				req, err := api.NewRequest(gctx, "POST", "images/layers", trackedReader)
-				if err != nil {
-					layerReader.Close()
-					return fmt.Errorf("failed to create request for layer %s: %w", digest, err)
-				}
-				req.Header.Set("Content-Type", "application/octet-stream")
-				req.Header.Set("X-Layer-Digest", digest)
-
-				resp, err := api.Do(req)
-				layerReader.Close()
-				if err != nil {
-					return fmt.Errorf("failed to upload layer %s: %w", digest, err)
-				}
-
-				if resp.StatusCode >= 400 {
-					body, _ := io.ReadAll(resp.Body)
-					resp.Body.Close()
-					return fmt.Errorf("failed to upload layer %s: server returned %d: %s", digest, resp.StatusCode, string(body))
-				}
-				resp.Body.Close()
-
 				progress.CompleteItem()
 				return nil
 			})
@@ -303,6 +272,72 @@ func uploadImageLayered(ctx context.Context, api *apiclient.APIClient, imageRef,
 		return fmt.Errorf("failed to assemble image: %w", err)
 	}
 
+	return nil
+}
+
+const (
+	layerUploadMaxRetries     = 2
+	layerUploadInitialBackoff = 2 * time.Second
+)
+
+func uploadLayerWithRetry(ctx context.Context, api *apiclient.APIClient, tarPath string, info layerInfo, digest string, progress *ui.ProgressBar) error {
+	var lastErr error
+	backoff := layerUploadInitialBackoff
+
+	for attempt := range layerUploadMaxRetries + 1 {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+		}
+
+		lastErr = uploadSingleLayer(ctx, api, tarPath, info, digest, progress)
+		if lastErr == nil {
+			return nil
+		}
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+
+	return lastErr
+}
+
+func uploadSingleLayer(ctx context.Context, api *apiclient.APIClient, tarPath string, info layerInfo, digest string, progress *ui.ProgressBar) error {
+	layerReader, err := openLayerFromTar(tarPath, info.tarPath)
+	if err != nil {
+		return fmt.Errorf("failed to open layer %s: %w", digest, err)
+	}
+
+	trackedReader := &progressReader{
+		reader:   layerReader,
+		progress: progress,
+	}
+
+	req, err := api.NewRequest(ctx, "POST", "images/layers", trackedReader)
+	if err != nil {
+		layerReader.Close()
+		return fmt.Errorf("failed to create request for layer %s: %w", digest, err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Layer-Digest", digest)
+
+	resp, err := api.Do(req)
+	layerReader.Close()
+	if err != nil {
+		return fmt.Errorf("failed to upload layer %s: %w", digest, err)
+	}
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return fmt.Errorf("failed to upload layer %s: server returned %d: %s", digest, resp.StatusCode, string(body))
+	}
+	resp.Body.Close()
 	return nil
 }
 
