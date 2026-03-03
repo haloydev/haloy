@@ -1,18 +1,33 @@
-# Haloy
-Haloy is a lightweight deployment and orchestration system designed for developers who want a simple, reliable way to deploy Docker‑based applications to their own servers.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./images/haloy-logo-text-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="./images/haloy-logo-text-light.svg">
+    <img src="./images/haloy-logo-text-light.svg" alt="Haloy" width="220">
+  </picture>
+</p>
 
-[Website](https://haloy.dev) · [Docs](https://haloy.dev/docs)
+<p align="center">Turn any VPS into a production-ready app platform in minutes.</p>
 
-## Features
+<p align="center">Zero-downtime deploys, automatic HTTPS, and instant rollbacks, without complex setup or vendor lock-in.</p>
 
-- **Own your infrastructure** – Deploy to any Linux server you control.
-- **Simple config** – One `haloy.yaml` describes your app, domains, and routes.
-- **Docker-native** – Builds and deploys from your existing Dockerfile.
-- **TLS & domains** – Automated HTTPS via ACME / Let’s Encrypt.
-- **Batteries included** – Single CLI for setup, deploy, and status.
-- **Secure** - Built-in secret management
+<p align="center">
+  <a href="https://haloy.dev">Website</a> ·
+  <a href="https://haloy.dev/docs">Docs</a>
+</p>
 
-## Quickstart
+## ✨ Features
+
+Haloy helps you deploy apps with:
+
+- Fast setup on a fresh VPS
+- Automatic HTTPS
+- Zero-downtime deploys
+- Simple rollbacks
+- Preview environments
+- No Kubernetes required
+- No vendor lock-in
+
+## 🚀 Quickstart
 
 ### Prerequisites
 
