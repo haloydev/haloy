@@ -147,6 +147,26 @@ detect_init_system() {
 
 # --- Docker installation ---
 install_docker() {
+    # Fedora 43+ uses dnf5 where older config-manager flags can break.
+    # Install Docker via repofile to avoid dnf4/dnf5 CLI differences.
+    if [ -f /etc/os-release ]; then
+        # shellcheck source=/dev/null
+        . /etc/os-release
+        if [ "$ID" = "fedora" ]; then
+            dnf remove -y docker docker-client docker-client-latest docker-common \
+                docker-latest docker-latest-logrotate docker-logrotate docker-selinux \
+                docker-engine-selinux docker-engine 2>/dev/null || true
+            dnf install -y dnf-plugins-core
+            fetch_to_file "https://download.docker.com/linux/fedora/docker-ce.repo" "/etc/yum.repos.d/docker-ce.repo"
+            dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl enable docker
+                systemctl start docker
+            fi
+            return 0
+        fi
+    fi
+
     fetch https://sh.haloy.dev/install-docker.sh | sh || return 1
 }
 
