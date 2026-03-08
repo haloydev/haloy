@@ -24,18 +24,14 @@ func TestHaloydConfig_Validate(t *testing.T) {
 		{
 			name: "valid config with domain",
 			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
+				API: HaloydAPIConfig{Domain: "api.example.com"},
 			},
 			wantErr: false,
 		},
 		{
 			name: "invalid domain format",
 			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "invalid domain"},
+				API: HaloydAPIConfig{Domain: "invalid domain"},
 			},
 			wantErr: true,
 			errMsg:  "invalid domain format",
@@ -72,9 +68,7 @@ func TestHaloydConfig_Normalize(t *testing.T) {
 		{
 			name: "config with values",
 			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
+				API: HaloydAPIConfig{Domain: "api.example.com"},
 			},
 		},
 	}
@@ -108,9 +102,7 @@ func TestLoadHaloydConfig(t *testing.T) {
 `,
 			extension: ".yaml",
 			expected: &HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
+				API: HaloydAPIConfig{Domain: "api.example.com"},
 			},
 		},
 		{
@@ -122,9 +114,7 @@ func TestLoadHaloydConfig(t *testing.T) {
 }`,
 			extension: ".json",
 			expected: &HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
+				API: HaloydAPIConfig{Domain: "api.example.com"},
 			},
 		},
 		{
@@ -141,9 +131,7 @@ func TestLoadHaloydConfig(t *testing.T) {
 `,
 			extension: ".yaml",
 			expected: &HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: ""},
+				API: HaloydAPIConfig{Domain: ""},
 			},
 		},
 		{
@@ -212,18 +200,14 @@ func TestSaveHaloydConfig(t *testing.T) {
 		{
 			name: "save yaml config",
 			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
+				API: HaloydAPIConfig{Domain: "api.example.com"},
 			},
 			extension: ".yaml",
 		},
 		{
 			name: "save json config",
 			config: HaloydConfig{
-				API: struct {
-					Domain string `json:"domain" yaml:"domain" toml:"domain"`
-				}{Domain: "api.example.com"},
+				API: HaloydAPIConfig{Domain: "api.example.com"},
 			},
 			extension: ".json",
 		},

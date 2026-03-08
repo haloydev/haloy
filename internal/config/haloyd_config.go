@@ -15,10 +15,12 @@ import (
 )
 
 type HaloydConfig struct {
-	API struct {
-		Domain string `json:"domain" yaml:"domain" toml:"domain"`
-	} `json:"api" yaml:"api" toml:"api"`
+	API           HaloydAPIConfig     `json:"api" yaml:"api" toml:"api"`
 	HealthMonitor HealthMonitorConfig `json:"health_monitor" yaml:"health_monitor" toml:"health_monitor"`
+}
+
+type HaloydAPIConfig struct {
+	Domain string `json:"domain" yaml:"domain" toml:"domain"`
 }
 
 // HealthMonitorConfig holds configuration for continuous health monitoring.
