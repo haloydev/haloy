@@ -347,11 +347,7 @@ func reportImageDiskSpace(ctx context.Context, api *apiclient.APIClient, req api
 		return fmt.Errorf("failed to check server disk space: %w", err)
 	}
 
-	ui.Info(
-		"Server disk space: need %s, have %s free",
-		helpers.FormatBinaryBytes(resp.RequiredBytes),
-		helpers.FormatBinaryBytes(resp.AvailableBytes),
-	)
+	ui.Info("%s", formatDiskSpaceEstimateMessage(req, resp))
 
 	if !resp.OK {
 		return fmt.Errorf(
@@ -363,6 +359,31 @@ func reportImageDiskSpace(ctx context.Context, api *apiclient.APIClient, req api
 	}
 
 	return nil
+}
+
+func formatDiskSpaceEstimateMessage(req apitypes.ImageDiskSpaceCheckRequest, resp apitypes.ImageDiskSpaceCheckResponse) string {
+	return fmt.Sprintf(
+		"Server disk space estimate: need %s, have %s free (%s)",
+		helpers.FormatBinaryBytes(resp.RequiredBytes),
+		helpers.FormatBinaryBytes(resp.AvailableBytes),
+		describeDiskSpaceEstimate(req),
+	)
+}
+
+func describeDiskSpaceEstimate(req apitypes.ImageDiskSpaceCheckRequest) string {
+	reserve := helpers.FormatBinaryBytes(constants.DefaultImageDiskReserve)
+
+	if req.UploadSizeBytes > 0 {
+		return fmt.Sprintf("includes temporary image tar, Docker load, and %s reserve", reserve)
+	}
+
+	parts := make([]string, 0, 4)
+	if req.LayerUploadBytes > 0 {
+		parts = append(parts, "missing layer upload")
+	}
+
+	parts = append(parts, "assembled temp image tar", "Docker load", fmt.Sprintf("%s reserve", reserve))
+	return "includes " + strings.Join(parts, ", ")
 }
 
 func estimateClientAssembledImageSize(req apitypes.ImageAssembleRequest, layers map[string]layerInfo) (uint64, error) {

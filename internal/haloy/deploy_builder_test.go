@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/haloydev/haloy/internal/apitypes"
 )
 
 func TestGetBuilderWorkDir(t *testing.T) {
@@ -109,5 +111,57 @@ func TestUploadImage_TempFilePattern(t *testing.T) {
 			os.Remove(f.Name())
 			f.Close()
 		})
+	}
+}
+
+func TestFormatDiskSpaceEstimateMessage_FullUpload(t *testing.T) {
+	msg := formatDiskSpaceEstimateMessage(
+		apitypes.ImageDiskSpaceCheckRequest{
+			UploadSizeBytes: 512 * 1024 * 1024,
+		},
+		apitypes.ImageDiskSpaceCheckResponse{
+			RequiredBytes:  3*1024*1024*1024 + 128*1024*1024,
+			AvailableBytes: 10 * 1024 * 1024 * 1024,
+		},
+	)
+
+	want := "Server disk space estimate: need 3.1 GiB, have 10.0 GiB free (includes temporary image tar, Docker load, and 2.0 GiB reserve)"
+	if msg != want {
+		t.Fatalf("message = %q, want %q", msg, want)
+	}
+}
+
+func TestFormatDiskSpaceEstimateMessage_LayeredUploadAllLayersCached(t *testing.T) {
+	msg := formatDiskSpaceEstimateMessage(
+		apitypes.ImageDiskSpaceCheckRequest{
+			AssembledImageSizeBytes: 576 * 1024 * 1024,
+		},
+		apitypes.ImageDiskSpaceCheckResponse{
+			RequiredBytes:  3*1024*1024*1024 + 128*1024*1024,
+			AvailableBytes: 10 * 1024 * 1024 * 1024,
+		},
+	)
+
+	want := "Server disk space estimate: need 3.1 GiB, have 10.0 GiB free (includes assembled temp image tar, Docker load, 2.0 GiB reserve)"
+	if msg != want {
+		t.Fatalf("message = %q, want %q", msg, want)
+	}
+}
+
+func TestFormatDiskSpaceEstimateMessage_LayeredUploadWithMissingLayers(t *testing.T) {
+	msg := formatDiskSpaceEstimateMessage(
+		apitypes.ImageDiskSpaceCheckRequest{
+			LayerUploadBytes:        128 * 1024 * 1024,
+			AssembledImageSizeBytes: 576 * 1024 * 1024,
+		},
+		apitypes.ImageDiskSpaceCheckResponse{
+			RequiredBytes:  3*1024*1024*1024 + 256*1024*1024,
+			AvailableBytes: 10 * 1024 * 1024 * 1024,
+		},
+	)
+
+	want := "Server disk space estimate: need 3.2 GiB, have 10.0 GiB free (includes missing layer upload, assembled temp image tar, Docker load, 2.0 GiB reserve)"
+	if msg != want {
+		t.Fatalf("message = %q, want %q", msg, want)
 	}
 }
