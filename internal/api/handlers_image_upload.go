@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/haloydev/haloy/internal/apitypes"
+	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/docker"
 )
 
@@ -45,7 +46,13 @@ func (s *APIServer) handleImageUpload() http.HandlerFunc {
 		}
 
 		// Create temporary file, we defer delete it
-		tempFile, err := os.CreateTemp("", "haloy-image-*.tar")
+		tempDir, err := config.EnsureImageTempDir()
+		if err != nil {
+			http.Error(w, "Failed to prepare temporary directory", http.StatusInternalServerError)
+			return
+		}
+
+		tempFile, err := os.CreateTemp(tempDir, "haloy-image-*.tar")
 		if err != nil {
 			http.Error(w, "Failed to create temporary file", http.StatusInternalServerError)
 			return

@@ -239,7 +239,10 @@ func uploadDiskSpaceRequirements(ctx context.Context, cli dockerInfoProvider, pr
 		return nil, nil
 	}
 
-	tempDir := os.TempDir()
+	tempDir, err := config.ImageTempDirPath()
+	if err != nil {
+		return nil, err
+	}
 	dockerRootDir, err := dockerRootDir(ctx, cli)
 	if err != nil {
 		return nil, err
@@ -256,6 +259,10 @@ func layeredUploadDiskSpaceRequirements(ctx context.Context, cli dockerInfoProvi
 		return nil, nil
 	}
 
+	tempDir, err := config.ImageTempDirPath()
+	if err != nil {
+		return nil, err
+	}
 	dockerRootDir, err := dockerRootDir(ctx, cli)
 	if err != nil {
 		return nil, err
@@ -268,7 +275,7 @@ func layeredUploadDiskSpaceRequirements(ctx context.Context, cli dockerInfoProvi
 
 	return buildDiskSpaceRequirements(probe, constants.DefaultImageDiskReserve,
 		diskSpaceContribution{Path: layerStorageDir, Bytes: layerUploadBytes},
-		diskSpaceContribution{Path: os.TempDir(), Bytes: assembledImageSizeBytes},
+		diskSpaceContribution{Path: tempDir, Bytes: assembledImageSizeBytes},
 		diskSpaceContribution{Path: dockerRootDir, Bytes: assembledImageSizeBytes},
 	)
 }

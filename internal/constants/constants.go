@@ -35,6 +35,7 @@ const (
 	DBDir          = "db"
 	CertStorageDir = "cert-storage"
 	LayersDir      = "layers"
+	TempDir        = "tmp"
 
 	// File names
 	HaloydConfigFileName   = "haloyd.yaml"

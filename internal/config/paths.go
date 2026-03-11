@@ -29,6 +29,28 @@ func DataDir() (string, error) {
 	return constants.SystemDataDir, nil
 }
 
+// ImageTempDirPath returns the directory used for temporary image tar files on the daemon.
+// It is placed under the haloy data directory so large uploads/assembly don't depend on /tmp.
+func ImageTempDirPath() (string, error) {
+	dataDir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, constants.TempDir), nil
+}
+
+// EnsureImageTempDir creates the daemon image temp directory if needed.
+func EnsureImageTempDir() (string, error) {
+	tempDir, err := ImageTempDirPath()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(tempDir, constants.ModeDirPrivate); err != nil {
+		return "", err
+	}
+	return tempDir, nil
+}
+
 // HaloydConfigDir returns the configuration directory for haloyd (daemon).
 // Uses HALOY_CONFIG_DIR env var if set, otherwise defaults to /etc/haloy.
 func HaloydConfigDir() (string, error) {

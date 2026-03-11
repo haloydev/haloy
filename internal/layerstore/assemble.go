@@ -10,13 +10,19 @@ import (
 	"strings"
 
 	"github.com/haloydev/haloy/internal/apitypes"
+	"github.com/haloydev/haloy/internal/config"
 )
 
 // AssembleImageTar creates a docker-loadable tar from cached layers
 // Returns the path to the temporary tar file (caller must clean up)
 func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string, error) {
+	tempDir, err := config.EnsureImageTempDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare temporary directory: %w", err)
+	}
+
 	// Create temporary file for the assembled tar
-	tempFile, err := os.CreateTemp("", "haloy-assembled-*.tar")
+	tempFile, err := os.CreateTemp(tempDir, "haloy-assembled-*.tar")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}

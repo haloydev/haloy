@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/docker/api/types/system"
 	"github.com/haloydev/haloy/internal/apitypes"
+	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 )
 
@@ -54,12 +55,15 @@ func (f fakeLayerStore) GetLayerPath(digest string) (string, error) {
 }
 
 func TestEnsureDiskSpaceForUpload_SameFilesystemCountsTempAndDockerTogether(t *testing.T) {
-	tempDir := os.TempDir()
+	tempDir, err := config.ImageTempDirPath()
+	if err != nil {
+		t.Fatalf("ImageTempDirPath error = %v", err)
+	}
 	dockerRoot := "/var/lib/docker"
 	uploadSize := uint64(1024)
 	requiredBytes := uploadSize*2 + constants.DefaultImageDiskReserve
 
-	err := ensureDiskSpaceForUploadWithDocker(
+	err = ensureDiskSpaceForUploadWithDocker(
 		context.Background(),
 		fakeDockerInfoClient{rootDir: dockerRoot},
 		fakeDiskSpaceProbe{infos: map[string]filesystemInfo{
@@ -82,12 +86,15 @@ func TestEnsureDiskSpaceForUpload_SameFilesystemCountsTempAndDockerTogether(t *t
 }
 
 func TestEnsureDiskSpaceForUpload_DifferentFilesystemsChecksSeparately(t *testing.T) {
-	tempDir := os.TempDir()
+	tempDir, err := config.ImageTempDirPath()
+	if err != nil {
+		t.Fatalf("ImageTempDirPath error = %v", err)
+	}
 	dockerRoot := "/var/lib/docker"
 	uploadSize := uint64(2048)
 	requiredBytes := uploadSize + constants.DefaultImageDiskReserve
 
-	err := ensureDiskSpaceForUploadWithDocker(
+	err = ensureDiskSpaceForUploadWithDocker(
 		context.Background(),
 		fakeDockerInfoClient{rootDir: dockerRoot},
 		fakeDiskSpaceProbe{infos: map[string]filesystemInfo{
@@ -171,13 +178,18 @@ func TestEnsureDiskSpaceForAssemble_UsesEstimatedTarSize(t *testing.T) {
 		t.Fatalf("estimateAssembledImageTarSize error = %v", err)
 	}
 
+	tempDirPath, err := config.ImageTempDirPath()
+	if err != nil {
+		t.Fatalf("ImageTempDirPath error = %v", err)
+	}
+
 	dockerRoot := "/var/lib/docker"
 	err = ensureDiskSpaceForAssembleWithDocker(
 		context.Background(),
 		fakeDockerInfoClient{rootDir: dockerRoot},
 		fakeDiskSpaceProbe{infos: map[string]filesystemInfo{
-			os.TempDir(): {Path: os.TempDir(), AvailableBytes: estimatedBytes + constants.DefaultImageDiskReserve + 1, DeviceID: 1},
-			dockerRoot:   {Path: dockerRoot, AvailableBytes: estimatedBytes + constants.DefaultImageDiskReserve - 1, DeviceID: 2},
+			tempDirPath: {Path: tempDirPath, AvailableBytes: estimatedBytes + constants.DefaultImageDiskReserve + 1, DeviceID: 1},
+			dockerRoot:  {Path: dockerRoot, AvailableBytes: estimatedBytes + constants.DefaultImageDiskReserve - 1, DeviceID: 2},
 		}},
 		store,
 		req,
