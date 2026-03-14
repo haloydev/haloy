@@ -1,9 +1,14 @@
 package constants
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"runtime/debug"
+)
+
+var Version = "dev"
 
 const (
-	Version                  = "0.1.0-beta.42"
 	DockerNetwork            = "haloy"
 	DefaultDeploymentsToKeep = 6
 	DefaultHealthCheckPath   = "/"
@@ -52,3 +57,52 @@ const (
 	ModeFileExec    os.FileMode = 0o755 // scripts/binaries
 	ModeDirPrivate  os.FileMode = 0o700 // private dirs
 )
+
+func defaultVersion() string {
+	buildInfo, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+
+	return versionFromBuildInfo(buildInfo.Main.Version, buildInfo.Settings)
+}
+
+func versionFromBuildInfo(mainVersion string, settings []debug.BuildSetting) string {
+	if mainVersion != "" && mainVersion != "(devel)" {
+		return mainVersion
+	}
+
+	var revision string
+	var modified bool
+	for _, setting := range settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			modified = setting.Value == "true"
+		}
+	}
+
+	if revision == "" {
+		return "dev"
+	}
+
+	if len(revision) > 12 {
+		revision = revision[:12]
+	}
+
+	version := fmt.Sprintf("dev-%s", revision)
+	if modified {
+		version += "-dirty"
+	}
+
+	return version
+}
+
+func init() {
+	if Version != "dev" {
+		return
+	}
+
+	Version = defaultVersion()
+}

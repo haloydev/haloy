@@ -108,3 +108,20 @@ That's it! Your application is now deployed and accessible at your configured do
 - [Commands Reference](https://haloy.dev/docs/commands-reference)
 - [Architecture](https://haloy.dev/docs/architecture)
 - [Examples Repository](https://github.com/haloydev/examples)
+
+## Development
+
+Local builds can embed Git-derived version metadata:
+
+```bash
+make build
+```
+
+Releases are tag-driven. To cut a release:
+
+```bash
+./tools/create-release-tag.sh --next
+
+# Or provide an explicit tag
+./tools/create-release-tag.sh v0.1.0-beta.43
+```

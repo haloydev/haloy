@@ -1,4 +1,7 @@
-.PHONY: test lint fmt check-fmt ci
+.PHONY: tools test lint fmt check-fmt ci-test build build-haloy build-haloyd
+
+VERSION ?= $(shell git describe --tags --dirty --always --match 'v*' 2>/dev/null || echo dev)
+GO_LDFLAGS := -s -w -X github.com/haloydev/haloy/internal/constants.Version=$(VERSION)
 
 # Install required tools
 tools:
@@ -28,3 +31,13 @@ check-fmt:
 # Run all CI checks locally
 ci-test: test lint check-fmt
 	@echo "All checks passed! ✅"
+
+build: build-haloy build-haloyd
+
+build-haloy:
+	@mkdir -p bin
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(GO_LDFLAGS)" -o bin/haloy ./cmd/haloy
+
+build-haloyd:
+	@mkdir -p bin
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(GO_LDFLAGS)" -o bin/haloyd ./cmd/haloyd
