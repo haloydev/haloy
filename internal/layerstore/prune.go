@@ -12,18 +12,12 @@ import (
 	"github.com/haloydev/haloy/internal/storage"
 )
 
-func PruneUnusedLayers(ctx context.Context, logger *slog.Logger) (int, int64, error) {
+func PruneUnusedLayers(ctx context.Context, db *storage.DB, logger *slog.Logger) (int, int64, error) {
 	cli, err := docker.NewClient(ctx)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	defer cli.Close()
-
-	db, err := storage.New()
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to open database: %w", err)
-	}
-	defer db.Close()
 
 	store, err := New(db)
 	if err != nil {

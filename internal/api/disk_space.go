@@ -18,7 +18,6 @@ import (
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/layerstore"
 	"github.com/haloydev/haloy/internal/logging"
-	"github.com/haloydev/haloy/internal/storage"
 	"golang.org/x/sys/unix"
 )
 
@@ -136,13 +135,7 @@ func (s *APIServer) ensureAssembleDiskSpace(ctx context.Context, req apitypes.Im
 		return s.assembleDiskSpaceCheck(ctx, req)
 	}
 
-	db, err := storage.New()
-	if err != nil {
-		return fmt.Errorf("connect to database: %w", err)
-	}
-	defer db.Close()
-
-	store, err := layerstore.New(db)
+	store, err := layerstore.New(s.db)
 	if err != nil {
 		return fmt.Errorf("initialize layer store: %w", err)
 	}
@@ -440,7 +433,7 @@ func (s *APIServer) ensureDiskSpaceOrPruneLayers(ctx context.Context, check func
 	}
 
 	logger := logging.NewLogger(s.logLevel, s.logBroker)
-	pruned, freed, pruneErr := layerstore.PruneUnusedLayers(ctx, logger)
+	pruned, freed, pruneErr := layerstore.PruneUnusedLayers(ctx, s.db, logger)
 	if pruneErr != nil {
 		logger.Warn("Failed to prune unused layers during disk recovery", "error", pruneErr)
 		return err

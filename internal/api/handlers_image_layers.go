@@ -10,7 +10,6 @@ import (
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/layerstore"
-	"github.com/haloydev/haloy/internal/storage"
 )
 
 // handleLayerCheck checks which layers already exist on the server
@@ -27,14 +26,7 @@ func (s *APIServer) handleLayerCheck() http.HandlerFunc {
 			return
 		}
 
-		db, err := storage.New()
-		if err != nil {
-			http.Error(w, "Failed to connect to database", http.StatusInternalServerError)
-			return
-		}
-		defer db.Close()
-
-		store, err := layerstore.New(db)
+		store, err := layerstore.New(s.db)
 		if err != nil {
 			http.Error(w, "Failed to initialize layer store", http.StatusInternalServerError)
 			return
@@ -72,14 +64,7 @@ func (s *APIServer) handleLayerUpload() http.HandlerFunc {
 			return
 		}
 
-		db, err := storage.New()
-		if err != nil {
-			http.Error(w, "Failed to connect to database", http.StatusInternalServerError)
-			return
-		}
-		defer db.Close()
-
-		store, err := layerstore.New(db)
+		store, err := layerstore.New(s.db)
 		if err != nil {
 			http.Error(w, "Failed to initialize layer store", http.StatusInternalServerError)
 			return
@@ -129,14 +114,7 @@ func (s *APIServer) handleImageAssemble() http.HandlerFunc {
 			return
 		}
 
-		db, err := storage.New()
-		if err != nil {
-			http.Error(w, "Failed to connect to database", http.StatusInternalServerError)
-			return
-		}
-		defer db.Close()
-
-		store, err := layerstore.New(db)
+		store, err := layerstore.New(s.db)
 		if err != nil {
 			http.Error(w, "Failed to initialize layer store", http.StatusInternalServerError)
 			return

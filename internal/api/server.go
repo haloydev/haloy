@@ -8,11 +8,13 @@ import (
 
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/logging"
+	"github.com/haloydev/haloy/internal/storage"
 	"golang.org/x/time/rate"
 )
 
 type APIServer struct {
 	router                 *http.ServeMux
+	db                     *storage.DB
 	logBroker              logging.StreamPublisher
 	logLevel               slog.Level
 	apiToken               string
@@ -24,9 +26,10 @@ type APIServer struct {
 	imagePrune             func(context.Context, apitypes.ImagePruneRequest) (apitypes.ImagePruneResponse, error)
 }
 
-func NewServer(apiToken string, logBroker logging.StreamPublisher, logLevel slog.Level) *APIServer {
+func NewServer(apiToken string, db *storage.DB, logBroker logging.StreamPublisher, logLevel slog.Level) *APIServer {
 	s := &APIServer{
 		router:           http.NewServeMux(),
+		db:               db,
 		logBroker:        logBroker,
 		logLevel:         logLevel,
 		apiToken:         apiToken,

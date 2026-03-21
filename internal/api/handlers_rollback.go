@@ -49,7 +49,7 @@ func (s *APIServer) handleRollback() http.HandlerFunc {
 			}
 			defer cli.Close()
 
-			if err := deploy.RollbackApp(ctx, cli, deployConfig, req.TargetDeploymentID, req.NewDeploymentID, deploymentLogger); err != nil {
+			if err := deploy.RollbackApp(ctx, cli, s.db, deployConfig, req.TargetDeploymentID, req.NewDeploymentID, deploymentLogger); err != nil {
 				deploymentLogger.Error("Deployment failed", "app", deployConfig.Name, "error", err)
 				return
 			}
@@ -79,7 +79,7 @@ func (s *APIServer) handleRollbackTargets() http.HandlerFunc {
 		}
 		defer cli.Close()
 
-		targets, err := deploy.GetRollbackTargets(ctx, cli, appName)
+		targets, err := deploy.GetRollbackTargets(ctx, cli, s.db, appName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -102,7 +102,7 @@ func Run(debug bool) {
 		logging.LogFatal(logger, "%s environment variable not set", constants.EnvVarAPIToken)
 	}
 
-	apiServer := api.NewServer(apiToken, logBroker, logLevel)
+	apiServer := api.NewServer(apiToken, db, logBroker, logLevel)
 
 	// Initialize proxy certificate manager
 	certDir := filepath.Join(dataDir, constants.CertStorageDir)
@@ -299,7 +299,7 @@ func Run(debug bool) {
 			if err != nil {
 				logger.Warn("Failed to prune images", "error", err)
 			}
-			if pruned, freed, pruneErr := layerstore.PruneUnusedLayers(ctx, logger); pruneErr != nil {
+			if pruned, freed, pruneErr := layerstore.PruneUnusedLayers(ctx, db, logger); pruneErr != nil {
 				logger.Warn("Failed to prune unused layers", "error", pruneErr)
 			} else if pruned > 0 {
 				logger.Info("Pruned unused layers", "count", pruned, "bytes_freed", freed)
@@ -324,6 +324,11 @@ func Run(debug bool) {
 			if certManager != nil {
 				certManager.Stop()
 			}
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := proxyServer.Shutdown(shutdownCtx); err != nil {
+				logger.Error("Proxy shutdown error", "error", err)
+			}
+			shutdownCancel()
 			cancel()
 			return
 		}
@@ -392,9 +397,7 @@ func listenForDockerEvents(ctx context.Context, cli *client.Client, eventsChan c
 		case err := <-errs:
 			if err != nil {
 				errorsChan <- err
-				// For non-fatal errors we'll try to reconnect instead of exiting
-				if err != io.EOF && !strings.Contains(err.Error(), "connection refused") {
-					// Attempt to reconnect
+				if err == io.EOF || strings.Contains(err.Error(), "connection refused") {
 					time.Sleep(5 * time.Second)
 					events, errs = cli.Events(ctx, eventOptions)
 					continue

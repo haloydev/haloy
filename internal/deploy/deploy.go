@@ -14,7 +14,7 @@ import (
 	"github.com/haloydev/haloy/internal/storage"
 )
 
-func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, targetConfig config.TargetConfig, rawDeployConfig config.DeployConfig, logger *slog.Logger) error {
+func DeployApp(ctx context.Context, cli *client.Client, db *storage.DB, deploymentID string, targetConfig config.TargetConfig, rawDeployConfig config.DeployConfig, logger *slog.Logger) error {
 	imageRef := targetConfig.Image.ImageRef()
 
 	err := docker.EnsureImageUpToDate(ctx, cli, logger, *targetConfig.Image)
@@ -73,7 +73,7 @@ func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, tar
 		logger.Info(fmt.Sprintf("Containers started for %s (%d replicas)", targetConfig.Name, len(runResult)), "count", len(runResult), "deploymentID", deploymentID)
 	}
 
-	handleImageHistory(ctx, cli, rawDeployConfig, deploymentID, newImageRef, logger)
+	handleImageHistory(ctx, cli, db, rawDeployConfig, deploymentID, newImageRef, logger)
 
 	return nil
 }
@@ -81,6 +81,7 @@ func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, tar
 func handleImageHistory(
 	ctx context.Context,
 	cli *client.Client,
+	db *storage.DB,
 	rawDeployConfig config.DeployConfig,
 	deploymentID,
 	newImageRef string,
@@ -103,7 +104,7 @@ func handleImageHistory(
 		logger.Debug("History disabled, skipping cleanup and history storage")
 
 	case config.HistoryStrategyLocal:
-		if err := writeDeployConfigHistory(rawDeployConfig, deploymentID, newImageRef); err != nil {
+		if err := writeDeployConfigHistory(db, rawDeployConfig, deploymentID, newImageRef); err != nil {
 			logger.Warn("Failed to write deploy config history", "error", err)
 		} else {
 			logger.Debug("App configuration saved to history")
@@ -120,7 +121,7 @@ func handleImageHistory(
 		}
 
 	case config.HistoryStrategyRegistry:
-		if err := writeDeployConfigHistory(rawDeployConfig, deploymentID, newImageRef); err != nil {
+		if err := writeDeployConfigHistory(db, rawDeployConfig, deploymentID, newImageRef); err != nil {
 			logger.Warn("Failed to write deploy config history", "error", err)
 		} else {
 			logger.Debug("App configuration saved to history")
@@ -141,7 +142,7 @@ func handleImageHistory(
 	}
 }
 
-func writeDeployConfigHistory(rawDeployConfig config.DeployConfig, deploymentID, newImageRef string) error {
+func writeDeployConfigHistory(db *storage.DB, rawDeployConfig config.DeployConfig, deploymentID, newImageRef string) error {
 	if rawDeployConfig.Image.History == nil {
 		return fmt.Errorf("image.history must be set")
 	}
@@ -149,12 +150,6 @@ func writeDeployConfigHistory(rawDeployConfig config.DeployConfig, deploymentID,
 	if rawDeployConfig.Image.History.Strategy != config.HistoryStrategyNone && rawDeployConfig.Image.History.Count == nil {
 		return fmt.Errorf("image.history.count is required for %s strategy", rawDeployConfig.Image.History.Strategy)
 	}
-
-	store, err := storage.New()
-	if err != nil {
-		return err
-	}
-	defer store.Close()
 
 	rawDeployConfigJSON, err := json.Marshal(rawDeployConfig)
 	if err != nil {
@@ -179,11 +174,11 @@ func writeDeployConfigHistory(rawDeployConfig config.DeployConfig, deploymentID,
 		DeployedImage:   deployedImageJSON,
 	}
 
-	if err := store.SaveDeployment(deployment); err != nil {
+	if err := db.SaveDeployment(deployment); err != nil {
 		return fmt.Errorf("failed to save deployment to database: %w", err)
 	}
 
-	if err := store.PruneOldDeployments(rawDeployConfig.Name, *rawDeployConfig.Image.History.Count); err != nil {
+	if err := db.PruneOldDeployments(rawDeployConfig.Name, *rawDeployConfig.Image.History.Count); err != nil {
 		return fmt.Errorf("failed to prune old deployments: %w", err)
 	}
 

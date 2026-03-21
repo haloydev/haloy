@@ -15,10 +15,10 @@ import (
 )
 
 // RollbackApp is basically a wrapper around DeployApp that allows rolling back to a previous deployment.
-func RollbackApp(ctx context.Context, cli *client.Client, targetConfig config.TargetConfig, targetDeploymentID, newDeploymentID string, logger *slog.Logger) error {
+func RollbackApp(ctx context.Context, cli *client.Client, db *storage.DB, targetConfig config.TargetConfig, targetDeploymentID, newDeploymentID string, logger *slog.Logger) error {
 	appName := targetConfig.Name
 
-	targets, err := GetRollbackTargets(ctx, cli, appName)
+	targets, err := GetRollbackTargets(ctx, cli, db, appName)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func RollbackApp(ctx context.Context, cli *client.Client, targetConfig config.Ta
 			if target.RawDeployConfig == nil {
 				return fmt.Errorf("no raw deploy config stored for app %s: %w", appName, err)
 			}
-			if err := DeployApp(ctx, cli, newDeploymentID, targetConfig, *target.RawDeployConfig, logger); err != nil {
+			if err := DeployApp(ctx, cli, db, newDeploymentID, targetConfig, *target.RawDeployConfig, logger); err != nil {
 				return fmt.Errorf("failed to deploy app %s: %w", appName, err)
 			}
 
@@ -45,16 +45,10 @@ func RollbackApp(ctx context.Context, cli *client.Client, targetConfig config.Ta
 }
 
 // GetRollbackTargets retrieves and sorts all available rollback targets for the specified app.
-func GetRollbackTargets(ctx context.Context, cli *client.Client, appName string) (targets []deploytypes.RollbackTarget, err error) {
+func GetRollbackTargets(ctx context.Context, cli *client.Client, db *storage.DB, appName string) (targets []deploytypes.RollbackTarget, err error) {
 	if appName == "" {
 		return targets, fmt.Errorf("app name cannot be empty")
 	}
-
-	db, err := storage.New()
-	if err != nil {
-		return targets, fmt.Errorf("failed to connect to database: %w", err)
-	}
-	defer db.Close()
 
 	deployments, err := db.GetDeploymentHistory(appName, 50)
 	if err != nil {
