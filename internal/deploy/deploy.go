@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/docker"
+	"github.com/haloydev/haloy/internal/layerstore"
 	"github.com/haloydev/haloy/internal/storage"
 )
 
@@ -81,7 +82,18 @@ func (runtimeStoreFactory) Open() (deploymentStore, error) {
 }
 
 func DeployApp(ctx context.Context, cli *client.Client, deploymentID string, targetConfig config.TargetConfig, rawDeployConfig config.DeployConfig, logger *slog.Logger) error {
-	return deployAppWithDeps(ctx, deploymentID, targetConfig, rawDeployConfig, logger, runtimeDockerOps{cli: cli}, runtimeStoreFactory{})
+	err := deployAppWithDeps(ctx, deploymentID, targetConfig, rawDeployConfig, logger, runtimeDockerOps{cli: cli}, runtimeStoreFactory{})
+	if err != nil {
+		return err
+	}
+
+	if pruned, freed, pruneErr := layerstore.PruneUnusedLayers(ctx, cli, logger); pruneErr != nil {
+		logger.Warn("Failed to prune unused layers", "error", pruneErr)
+	} else if pruned > 0 {
+		logger.Info("Pruned unused layers", "count", pruned, "bytes_freed", freed)
+	}
+
+	return nil
 }
 
 func deployAppWithDeps(

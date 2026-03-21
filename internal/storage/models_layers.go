@@ -83,6 +83,26 @@ func (db *DB) TouchLayers(digests []string) error {
 	return nil
 }
 
+// ListAllLayers returns all layer records
+func (db *DB) ListAllLayers() ([]Layer, error) {
+	query := `SELECT digest, size, created_at, last_used_at FROM layers`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query layers: %w", err)
+	}
+	defer rows.Close()
+
+	var layers []Layer
+	for rows.Next() {
+		var l Layer
+		if err := rows.Scan(&l.Digest, &l.Size, &l.CreatedAt, &l.LastUsedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan layer: %w", err)
+		}
+		layers = append(layers, l)
+	}
+	return layers, nil
+}
+
 // DeleteLayer removes a layer record
 func (db *DB) DeleteLayer(digest string) error {
 	query := `DELETE FROM layers WHERE digest = ?`

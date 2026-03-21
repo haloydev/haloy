@@ -119,6 +119,25 @@ func (db *DB) PruneOldDeployments(appName string, deploymentsToKeep int) error {
 	return nil
 }
 
+func (db *DB) ListDistinctAppNames() ([]string, error) {
+	query := `SELECT DISTINCT app_name FROM deployments`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query distinct app names: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("failed to scan app name: %w", err)
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 func (d *Deployment) GetImageRef() (string, error) {
 	var deployedImage config.Image
 	if err := json.Unmarshal(d.DeployedImage, &deployedImage); err != nil {
