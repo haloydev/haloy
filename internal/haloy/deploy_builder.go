@@ -142,7 +142,7 @@ func UploadImage(ctx context.Context, imageRef string, resolvedTargetConfigs []*
 		return fmt.Errorf("failed to save image to tar: %w", err)
 	}
 
-	tempInfo, err := tempFile.Stat()
+	tempInfo, err := os.Stat(tempFile.Name())
 	if err != nil {
 		return fmt.Errorf("failed to stat image tar: %w", err)
 	}
