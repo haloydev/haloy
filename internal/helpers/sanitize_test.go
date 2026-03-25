@@ -10,12 +10,13 @@ func TestSanitizeString(t *testing.T) {
 	}{
 		{"empty string", "", ""},
 		{"alphanumeric", "abc123XYZ", "abc123XYZ"},
-		{"with hyphens", "my-app-name", "my-app-name"},
+		{"with hyphens", "my-app-name", "my_app_name"},
+		{"with consecutive hyphens", "my--exotic--domain", "my_exotic_domain"},
 		{"with underscores", "my_app_name", "my_app_name"},
 		{"with dots", "my.app.name", "my_app_name"},
 		{"with spaces", "my app name", "my_app_name"},
 		{"mixed disallowed", "my!app@name#$", "my_app_name_"},
-		{"leading/trailing disallowed", ".test-app.", "_test-app_"},
+		{"leading/trailing disallowed", ".test-app.", "_test_app_"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

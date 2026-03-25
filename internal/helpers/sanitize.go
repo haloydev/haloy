@@ -3,7 +3,7 @@ package helpers
 import "strings"
 
 // SanitizeString takes a string and sanitizes it for use as a safe identifier.
-// Allows alphanumeric characters, hyphens, and underscores. Consecutive disallowed
+// Allows alphanumeric characters and underscores. Consecutive disallowed
 // characters are replaced by a single underscore.
 func SanitizeString(input string) string {
 	if input == "" {
@@ -14,7 +14,7 @@ func SanitizeString(input string) string {
 	lastCharWasUnderscore := false
 
 	for _, r := range input {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
 			result.WriteRune(r)
 			lastCharWasUnderscore = false
 		} else {
