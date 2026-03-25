@@ -147,6 +147,15 @@ func (tc *TargetConfig) Validate(format string) error {
 		}
 	}
 
+	if tc.MinReadySeconds != nil {
+		if *tc.MinReadySeconds < 0 {
+			return fmt.Errorf("%s must be >= 0", GetFieldNameForFormat(TargetConfig{}, "MinReadySeconds", format))
+		}
+		if *tc.MinReadySeconds > 600 {
+			return fmt.Errorf("%s must not exceed 600 (10 minutes)", GetFieldNameForFormat(TargetConfig{}, "MinReadySeconds", format))
+		}
+	}
+
 	return nil
 }
 

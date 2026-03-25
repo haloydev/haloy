@@ -529,6 +529,10 @@ func TestMergeToTarget(t *testing.T) {
 				t.Errorf("MergeToTarget() Server = %s, expected %s", result.Server, tt.expectedServer)
 			}
 
+			if result.MinReadySeconds == nil {
+				t.Errorf("MergeToTarget() MinReadySeconds should be normalized to default value")
+			}
+
 			if result.TargetName != tt.targetName {
 				t.Errorf("MergeToTarget() TargetName = %s, expected %s", result.TargetName, tt.targetName)
 			}
@@ -1160,6 +1164,68 @@ image:
 				if img.Repository != expectedRepo {
 					t.Errorf("Images[%s].Repository = %s, expected %s", key, img.Repository, expectedRepo)
 				}
+			}
+		})
+	}
+}
+
+func TestMergeToTarget_MinReadySeconds(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     *int
+		target   *int
+		expected int
+	}{
+		{
+			name:     "inherits from base when target is nil",
+			base:     helpers.Ptr(10),
+			target:   nil,
+			expected: 10,
+		},
+		{
+			name:     "target overrides base",
+			base:     helpers.Ptr(10),
+			target:   helpers.Ptr(30),
+			expected: 30,
+		},
+		{
+			name:     "defaults to 0 when both nil",
+			base:     nil,
+			target:   nil,
+			expected: 0,
+		},
+		{
+			name:     "target explicit zero overrides base",
+			base:     helpers.Ptr(10),
+			target:   helpers.Ptr(0),
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deployConfig := config.DeployConfig{
+				TargetConfig: config.TargetConfig{
+					Name:            "myapp",
+					Server:          "test.haloy.dev",
+					MinReadySeconds: tt.base,
+				},
+			}
+			targetConfig := config.TargetConfig{
+				MinReadySeconds: tt.target,
+			}
+
+			result, err := MergeToTarget(deployConfig, targetConfig, "test-target", "yaml")
+			if err != nil {
+				t.Fatalf("MergeToTarget() unexpected error = %v", err)
+			}
+
+			if result.MinReadySeconds == nil {
+				t.Fatal("MergeToTarget() MinReadySeconds should not be nil after normalization")
+			}
+
+			if *result.MinReadySeconds != tt.expected {
+				t.Errorf("MergeToTarget() MinReadySeconds = %d, expected %d", *result.MinReadySeconds, tt.expected)
 			}
 		})
 	}

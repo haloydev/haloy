@@ -224,6 +224,10 @@ func MergeToTarget(deployConfig config.DeployConfig, targetConfig config.TargetC
 		tc.Replicas = deployConfig.Replicas
 	}
 
+	if tc.MinReadySeconds == nil {
+		tc.MinReadySeconds = deployConfig.MinReadySeconds
+	}
+
 	if tc.Network == "" {
 		tc.Network = deployConfig.Network
 	}
@@ -348,6 +352,10 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 
 	if tc.Replicas == nil {
 		tc.Replicas = helpers.Ptr(constants.DefaultReplicas)
+	}
+
+	if tc.MinReadySeconds == nil {
+		tc.MinReadySeconds = helpers.Ptr(constants.DefaultMinReadySeconds)
 	}
 }
 

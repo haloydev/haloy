@@ -218,6 +218,64 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 			expectError: true,
 			errMsg:      "replicas must be at least 1",
 		},
+		{
+			name: "invalid min_ready_seconds negative",
+			target: TargetConfig{
+				Name:   "haloy-test-app",
+				Server: "haloy.dev",
+				Image: &Image{
+					Repository: "nginx",
+					Tag:        "latest",
+				},
+				MinReadySeconds: helpers.Ptr(-1),
+			},
+			format:      "yaml",
+			expectError: true,
+			errMsg:      "must be >= 0",
+		},
+		{
+			name: "invalid min_ready_seconds over 600",
+			target: TargetConfig{
+				Name:   "haloy-test-app",
+				Server: "haloy.dev",
+				Image: &Image{
+					Repository: "nginx",
+					Tag:        "latest",
+				},
+				MinReadySeconds: helpers.Ptr(601),
+			},
+			format:      "yaml",
+			expectError: true,
+			errMsg:      "must not exceed 600",
+		},
+		{
+			name: "valid min_ready_seconds zero",
+			target: TargetConfig{
+				Name:   "haloy-test-app",
+				Server: "haloy.dev",
+				Image: &Image{
+					Repository: "nginx",
+					Tag:        "latest",
+				},
+				MinReadySeconds: helpers.Ptr(0),
+			},
+			format:      "yaml",
+			expectError: false,
+		},
+		{
+			name: "valid min_ready_seconds 600",
+			target: TargetConfig{
+				Name:   "haloy-test-app",
+				Server: "haloy.dev",
+				Image: &Image{
+					Repository: "nginx",
+					Tag:        "latest",
+				},
+				MinReadySeconds: helpers.Ptr(600),
+			},
+			format:      "yaml",
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {

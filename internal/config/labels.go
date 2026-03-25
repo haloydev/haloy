@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/haloydev/haloy/internal/constants"
@@ -13,6 +14,7 @@ const (
 	LabelDeploymentID    = "dev.haloy.deployment-id"
 	LabelHealthCheckPath = "dev.haloy.health-check-path" // optional default to "/"
 	LabelPort            = "dev.haloy.port"              // optional
+	LabelMinReadySeconds = "dev.haloy.min-ready-seconds" // optional, default 0
 
 	// Format strings for indexed canonical domains and aliases.
 	// Use fmt.Sprintf(LabelDomainCanonical, index) to get "dev.haloy.domain.<index>"
@@ -26,6 +28,7 @@ type ContainerLabels struct {
 	DeploymentID    string
 	HealthCheckPath string
 	Port            Port
+	MinReadySeconds int
 	Domains         []Domain
 }
 
@@ -47,6 +50,12 @@ func ParseContainerLabels(labels map[string]string) (*ContainerLabels, error) {
 		cl.HealthCheckPath = v
 	} else {
 		cl.HealthCheckPath = constants.DefaultHealthCheckPath
+	}
+
+	if v, ok := labels[LabelMinReadySeconds]; ok {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			cl.MinReadySeconds = parsed
+		}
 	}
 
 	// Parse domains
@@ -111,6 +120,10 @@ func (cl *ContainerLabels) ToLabels() map[string]string {
 		LabelDeploymentID:    cl.DeploymentID,
 		LabelHealthCheckPath: cl.HealthCheckPath,
 		LabelPort:            cl.Port.String(),
+	}
+
+	if cl.MinReadySeconds > 0 {
+		labels[LabelMinReadySeconds] = strconv.Itoa(cl.MinReadySeconds)
 	}
 
 	// Iterate through the domains slice.

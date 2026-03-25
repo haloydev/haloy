@@ -14,6 +14,7 @@ const (
 	DefaultHealthCheckPath   = "/"
 	DefaultContainerPort     = "8080"
 	DefaultReplicas          = 1
+	DefaultMinReadySeconds   = 0
 	DefaultImageDiskReserve  = 2 * 1024 * 1024 * 1024
 	CapabilityLayerUpload    = "layer-upload"
 	CapabilityImagePreflight = "image-disk-preflight"

@@ -35,6 +35,7 @@ func RunContainer(ctx context.Context, cli *client.Client, deploymentID, imageRe
 		DeploymentID:    deploymentID,
 		Port:            targetConfig.Port,
 		HealthCheckPath: targetConfig.HealthCheckPath,
+		MinReadySeconds: *targetConfig.MinReadySeconds,
 		Domains:         targetConfig.Domains,
 	}
 	labels := cl.ToLabels()
@@ -300,6 +301,9 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 	if containerInfo.State.Health != nil {
 		if containerInfo.State.Health.Status == "healthy" {
 			logger.Debug("Container is healthy according to Docker healthcheck", "container_id", helpers.SafeIDPrefix(containerID))
+			if err := waitMinReadySeconds(ctx, cli, logger, containerID, containerInfo); err != nil {
+				return HealthCheckResult{Err: err}
+			}
 			return HealthCheckResult{IP: targetIP}
 		}
 
@@ -330,6 +334,9 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 		switch containerInfo.State.Health.Status {
 		case "healthy":
 			logger.Debug("Container is healthy according to Docker healthcheck", "container_id", helpers.SafeIDPrefix(containerID))
+			if err := waitMinReadySeconds(ctx, cli, logger, containerID, containerInfo); err != nil {
+				return HealthCheckResult{Err: err}
+			}
 			return HealthCheckResult{IP: targetIP}
 		case "starting":
 			logger.Info("Container is still starting, falling back to manual health check", "container_id", helpers.SafeIDPrefix(containerID))
@@ -378,10 +385,76 @@ func HealthCheckContainer(ctx context.Context, cli *client.Client, logger *slog.
 	})
 
 	if result.Healthy {
+		if err := waitMinReadySeconds(ctx, cli, logger, containerID, containerInfo); err != nil {
+			return HealthCheckResult{Err: err}
+		}
 		return HealthCheckResult{IP: targetIP}
 	}
 
 	return HealthCheckResult{Err: result.Err}
+}
+
+// waitMinReadySeconds waits for the configured stabilization period after a container
+// passes health checks to verify it doesn't crash shortly after startup.
+// If MinReadySeconds is 0 (the default), this is a no-op.
+func waitMinReadySeconds(ctx context.Context, cli *client.Client, logger *slog.Logger, containerID string, containerInfo container.InspectResponse) error {
+	labels, err := config.ParseContainerLabels(containerInfo.Config.Labels)
+	if err != nil {
+		return fmt.Errorf("failed to parse container labels: %w", err)
+	}
+
+	if labels.MinReadySeconds <= 0 {
+		return nil
+	}
+
+	requiredDuration := time.Duration(labels.MinReadySeconds) * time.Second
+
+	startedAt, err := time.Parse(time.RFC3339Nano, containerInfo.State.StartedAt)
+	if err != nil {
+		return fmt.Errorf("failed to parse container start time: %w", err)
+	}
+
+	elapsed := time.Since(startedAt)
+	if elapsed >= requiredDuration {
+		return nil
+	}
+
+	remaining := requiredDuration - elapsed
+	logger.Info("Waiting for min ready stabilization period",
+		"container_id", helpers.SafeIDPrefix(containerID),
+		"remaining", remaining.Round(time.Second))
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(remaining):
+	}
+
+	freshInfo, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("failed to re-inspect container after min ready wait: %w", err)
+	}
+
+	if freshInfo.State == nil || !freshInfo.State.Running {
+		status := "unknown"
+		exitCode := 0
+		if freshInfo.State != nil {
+			status = freshInfo.State.Status
+			exitCode = freshInfo.State.ExitCode
+		}
+		return fmt.Errorf("container died during min ready stabilization period (status: %s, exit code: %d)", status, exitCode)
+	}
+
+	if freshInfo.State.Restarting {
+		return fmt.Errorf("container entered restart loop during min ready stabilization period (exit code: %d)", freshInfo.State.ExitCode)
+	}
+
+	if freshInfo.State.Health != nil && freshInfo.State.Health.Status == "unhealthy" {
+		return fmt.Errorf("container became unhealthy during min ready stabilization period")
+	}
+
+	logger.Debug("Container passed min ready stabilization period", "container_id", helpers.SafeIDPrefix(containerID))
+	return nil
 }
 
 // GetAppContainers returns a slice of container summaries filtered by labels.

@@ -39,6 +39,7 @@ type TargetConfig struct {
 	Domains            []Domain           `json:"domains,omitempty" yaml:"domains,omitempty" toml:"domains,omitempty"`
 	Env                []EnvVar           `json:"env,omitempty" yaml:"env,omitempty" toml:"env,omitempty"`
 	HealthCheckPath    string             `json:"healthCheckPath,omitempty" yaml:"health_check_path,omitempty" toml:"health_check_path,omitempty"`
+	MinReadySeconds    *int               `json:"minReadySeconds,omitempty" yaml:"min_ready_seconds,omitempty" toml:"min_ready_seconds,omitempty"`
 	Port               Port               `json:"port,omitempty" yaml:"port,omitempty" toml:"port,omitempty"`
 	Replicas           *int               `json:"replicas,omitempty" yaml:"replicas,omitempty" toml:"replicas,omitempty"`
 	Volumes            []string           `json:"volumes,omitempty" yaml:"volumes,omitempty" toml:"volumes,omitempty"`
