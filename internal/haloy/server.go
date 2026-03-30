@@ -36,6 +36,26 @@ func ServerCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	return cmd
 }
 
+func loadServerDeployConfig(ctx context.Context, cmd *cobra.Command, configPath string, flags *appCmdFlags) (config.DeployConfig, string, error) {
+	rawDeployConfig, format, err := configloader.LoadRawDeployConfig(configPath)
+	if err != nil {
+		return config.DeployConfig{}, "", err
+	}
+	rawDeployConfig.Format = format
+
+	if !cmd.Flags().Changed("targets") && !cmd.Flags().Changed("all") {
+		return rawDeployConfig, format, nil
+	}
+
+	filteredDeployConfig, _, err := configloader.Load(ctx, configPath, flags.targets, flags.all)
+	if err != nil {
+		return config.DeployConfig{}, "", err
+	}
+	filteredDeployConfig.Format = format
+
+	return filteredDeployConfig, format, nil
+}
+
 func ServerAddCmd() *cobra.Command {
 	var force bool
 
@@ -265,11 +285,7 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return nil
 			}
 
-			if len(flags.targets) == 0 && !flags.all {
-				flags.all = true
-			}
-
-			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := loadServerDeployConfig(ctx, cmd, *configPath, flags)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}

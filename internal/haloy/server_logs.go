@@ -33,11 +33,7 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 				return streamServerLogs(ctx, nil, serverFlag, accessLogs)
 			}
 
-			if len(flags.targets) == 0 && !flags.all {
-				flags.all = true
-			}
-
-			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
+			rawDeployConfig, format, err := loadServerDeployConfig(ctx, cmd, *configPath, flags)
 			if err != nil {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
