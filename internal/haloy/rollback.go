@@ -38,7 +38,7 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig, *configPath)
 			if err != nil {
 				return fmt.Errorf("failed to resolve secrets: %w", err)
 			}
@@ -99,7 +99,7 @@ Use 'haloy rollback-targets' to list available deployment IDs.`,
 						if availableTarget.RawDeployConfig == nil {
 							return &PrefixedError{Err: errors.New("unable to find configuration for rollback"), Prefix: prefix}
 						}
-						newResolvedDeployConfig, err := configloader.ResolveSecrets(ctx, *availableTarget.RawDeployConfig)
+						newResolvedDeployConfig, err := configloader.ResolveSecrets(ctx, *availableTarget.RawDeployConfig, *configPath)
 						if err != nil {
 							return &PrefixedError{Err: fmt.Errorf("unable to resolve secrets for the deploy config. This usually occurs when secrets names have been changed or deleted between deployments: %w", err), Prefix: prefix}
 						}
@@ -172,7 +172,7 @@ func RollbackTargetsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig, *configPath)
 			if err != nil {
 				return fmt.Errorf("failed to resolve secrets: %w", err)
 			}

@@ -34,7 +34,7 @@ func StopAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig, *configPath)
 			if err != nil {
 				return fmt.Errorf("failed to resolve secrets: %w", err)
 			}

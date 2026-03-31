@@ -64,7 +64,7 @@ Examples:
 				return fmt.Errorf("unable to load config: %w", err)
 			}
 
-			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig)
+			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig, *configPath)
 			if err != nil {
 				return fmt.Errorf("unable to resolve secrets: %w", err)
 			}
