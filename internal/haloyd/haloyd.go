@@ -256,8 +256,11 @@ func Run(debug bool) {
 						// Extract logs from failed containers before removing them to allow debugging
 						logContainerFailureLogs(cleanupCtx, cli, deploymentLogger, appFailures)
 
-						if _, err := docker.StopContainers(cleanupCtx, cli, deploymentLogger, de.AppName, ""); err != nil {
+						if _, err := docker.StopContainersByDeploymentID(cleanupCtx, cli, deploymentLogger, de.AppName, de.DeploymentID); err != nil {
 							deploymentLogger.Warn("Failed to stop containers during cleanup", "error", err)
+						}
+						if _, err := docker.RemoveContainersByDeploymentID(cleanupCtx, cli, deploymentLogger, de.AppName, de.DeploymentID); err != nil {
+							deploymentLogger.Warn("Failed to remove containers during cleanup", "error", err)
 						}
 						var failureReasons []string
 						for _, f := range appFailures {

@@ -118,6 +118,26 @@ func StopContainers(ctx context.Context, cli *client.Client, logger *slog.Logger
 		}
 	}
 
+	return stopContainerList(ctx, cli, logger, containersToStop)
+}
+
+func StopContainersByDeploymentID(ctx context.Context, cli *client.Client, logger *slog.Logger, appName, deploymentID string) (stoppedIDs []string, err error) {
+	containerList, err := GetAppContainers(ctx, cli, true, appName)
+	if err != nil {
+		return stoppedIDs, err
+	}
+
+	var containersToStop []container.Summary
+	for _, containerInfo := range containerList {
+		if containerInfo.Labels[config.LabelDeploymentID] == deploymentID {
+			containersToStop = append(containersToStop, containerInfo)
+		}
+	}
+
+	return stopContainerList(ctx, cli, logger, containersToStop)
+}
+
+func stopContainerList(ctx context.Context, cli *client.Client, logger *slog.Logger, containersToStop []container.Summary) (stoppedIDs []string, err error) {
 	if len(containersToStop) == 0 {
 		return stoppedIDs, nil
 	}
@@ -136,7 +156,6 @@ func StopContainers(ctx context.Context, cli *client.Client, logger *slog.Logger
 		return stoppedIDs, err
 	}
 
-	// Verify all stopped containers have reached "exited" state
 	for _, containerID := range stoppedIDs {
 		if err := waitForContainerExited(ctx, cli, containerID, 10*time.Second); err != nil {
 			return stoppedIDs, fmt.Errorf("failed to verify container stopped: %w", err)
@@ -238,20 +257,43 @@ func RemoveContainers(ctx context.Context, cli *client.Client, logger *slog.Logg
 	if err != nil {
 		return removedIDs, err
 	}
+
+	var containersToRemove []container.Summary
 	for _, containerInfo := range containerList {
 		deploymentID := containerInfo.Labels[config.LabelDeploymentID]
-		if deploymentID == ignoreDeploymentID {
-			continue
+		if deploymentID != ignoreDeploymentID {
+			containersToRemove = append(containersToRemove, containerInfo)
 		}
+	}
+
+	return removeContainerList(ctx, cli, logger, containersToRemove)
+}
+
+func RemoveContainersByDeploymentID(ctx context.Context, cli *client.Client, logger *slog.Logger, appName, deploymentID string) (removedIDs []string, err error) {
+	containerList, err := GetAppContainers(ctx, cli, true, appName)
+	if err != nil {
+		return removedIDs, err
+	}
+
+	var containersToRemove []container.Summary
+	for _, containerInfo := range containerList {
+		if containerInfo.Labels[config.LabelDeploymentID] == deploymentID {
+			containersToRemove = append(containersToRemove, containerInfo)
+		}
+	}
+
+	return removeContainerList(ctx, cli, logger, containersToRemove)
+}
+
+func removeContainerList(ctx context.Context, cli *client.Client, logger *slog.Logger, containers []container.Summary) (removedIDs []string, err error) {
+	for _, containerInfo := range containers {
 		err := cli.ContainerRemove(ctx, containerInfo.ID, container.RemoveOptions{Force: true})
 		if err != nil {
-			// If already removed, that's fine
 			if client.IsErrNotFound(err) {
 				continue
 			}
 			return removedIDs, fmt.Errorf("failed to remove container %s: %w", helpers.SafeIDPrefix(containerInfo.ID), err)
 		}
-		// Verify container is actually removed
 		if err := verifyContainerRemoved(ctx, cli, containerInfo.ID, 10*time.Second); err != nil {
 			return removedIDs, err
 		}
