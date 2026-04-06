@@ -160,9 +160,11 @@ func groupSources(sources []*config.ValueSource, providers *config.SecretProvide
 			case "onepassword":
 				sourceConfig, found = providers.OnePassword[sourceName]
 			case "sops":
-				sourceConfig, found := providers.SOPS[sourceName]
+				var sopsConfig config.SOPSSourceConfig
+				sopsConfig, found = providers.SOPS[sourceName]
 				if found {
-					sourceConfig.File = resolveSOPSPath(sourceConfig.File, configDir)
+					sopsConfig.File = resolveSOPSPath(sopsConfig.File, configDir)
+					sourceConfig = sopsConfig
 				}
 				// case "doppler":
 				// 	sourceConfig, found = providers.Doppler[sourceName]
