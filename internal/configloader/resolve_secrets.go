@@ -4,13 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/jinzhu/copier"
 )
 
-func ResolveSecrets(ctx context.Context, deployConfig config.DeployConfig) (config.DeployConfig, error) {
+func ResolveSecrets(ctx context.Context, deployConfig config.DeployConfig, configPath string) (config.DeployConfig, error) {
+	configFile, err := FindConfigFile(configPath)
+	if err != nil {
+		return config.DeployConfig{}, fmt.Errorf("failed to determine config file path: %w", err)
+	}
+	configDir := filepath.Dir(configFile)
+
 	var resolvedConfig config.DeployConfig
 	if err := copier.Copy(&resolvedConfig, &deployConfig); err != nil {
 		return config.DeployConfig{}, fmt.Errorf("failed to copy config for resolution: %w", err)
@@ -22,7 +29,7 @@ func ResolveSecrets(ctx context.Context, deployConfig config.DeployConfig) (conf
 	}
 
 	// Group and fetch secrets once for the entire deploy config
-	groupedSources, err := groupSources(allSources, resolvedConfig.SecretProviders, resolvedConfig.Format)
+	groupedSources, err := groupSources(allSources, resolvedConfig.SecretProviders, resolvedConfig.Format, configDir)
 	if err != nil {
 		return config.DeployConfig{}, fmt.Errorf("failed to group sources: %w", err)
 	}
@@ -114,7 +121,7 @@ type fetchGroup struct {
 }
 
 // groupSources organizes the ValueSource instances into bulk fetch operations.
-func groupSources(sources []*config.ValueSource, providers *config.SecretProviders, configFormat string) (map[groupKey]fetchGroup, error) {
+func groupSources(sources []*config.ValueSource, providers *config.SecretProviders, configFormat string, configDir string) (map[groupKey]fetchGroup, error) {
 	groups := make(map[groupKey]fetchGroup)
 
 	// if there are no providers are defined we'll check if there are any from.secret in the config and return an error.
@@ -134,13 +141,13 @@ func groupSources(sources []*config.ValueSource, providers *config.SecretProvide
 
 		parts := strings.SplitN(vs.From.Secret, ":", 2)
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid secret reference format: '%s'. Expected 'provider:source_name.key'", vs.From.Secret)
+			return nil, fmt.Errorf("invalid secret reference format: '%s'. Expected 'provider:source_name:key'", vs.From.Secret)
 		}
 		provider, ref := parts[0], parts[1]
 
-		refParts := strings.SplitN(ref, ".", 2)
+		refParts := strings.SplitN(ref, ":", 2)
 		if len(refParts) != 2 {
-			return nil, fmt.Errorf("invalid secret reference format: '%s'. Expected 'source_name.key'", ref)
+			return nil, fmt.Errorf("invalid secret reference format: '%s'. Expected 'source_name:key'", ref)
 		}
 		sourceName, extractKey := refParts[0], refParts[1]
 
@@ -152,6 +159,13 @@ func groupSources(sources []*config.ValueSource, providers *config.SecretProvide
 			switch provider {
 			case "onepassword":
 				sourceConfig, found = providers.OnePassword[sourceName]
+			case "sops":
+				var sopsConfig config.SOPSSourceConfig
+				sopsConfig, found = providers.SOPS[sourceName]
+				if found {
+					sopsConfig.File = resolveSOPSPath(sopsConfig.File, configDir)
+					sourceConfig = sopsConfig
+				}
 				// case "doppler":
 				// 	sourceConfig, found = providers.Doppler[sourceName]
 				// 	// Add cases for other providers here
@@ -188,6 +202,9 @@ func fetchGroupedSources(ctx context.Context, groups map[groupKey]fetchGroup) (m
 		case "onepassword":
 			config := group.sourceConfig.(config.OnePasswordSourceConfig)
 			fetchedSecrets, err = fetchFrom1Password(ctx, config)
+		case "sops":
+			config := group.sourceConfig.(config.SOPSSourceConfig)
+			fetchedSecrets, err = fetchFromSOPS(ctx, config)
 		// Add cases for other providers here
 		default:
 			err = fmt.Errorf("unsupported secret provider: %s", group.provider)
@@ -218,7 +235,7 @@ func extractValues(sources []*config.ValueSource, cache map[groupKey]map[string]
 		} else if vs.From.Secret != "" {
 			parts := strings.SplitN(vs.From.Secret, ":", 2)
 			provider, ref := parts[0], parts[1]
-			refParts := strings.SplitN(ref, ".", 2)
+			refParts := strings.SplitN(ref, ":", 2)
 			sourceName, extractKey := refParts[0], refParts[1]
 
 			key := groupKey(fmt.Sprintf("%s:%s", provider, sourceName))
