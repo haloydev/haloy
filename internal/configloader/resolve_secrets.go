@@ -233,7 +233,7 @@ func extractValues(sources []*config.ValueSource, cache map[groupKey]map[string]
 		} else if vs.From.Secret != "" {
 			parts := strings.SplitN(vs.From.Secret, ":", 2)
 			provider, ref := parts[0], parts[1]
-			refParts := strings.SplitN(ref, ".", 2)
+			refParts := strings.SplitN(ref, ":", 2)
 			sourceName, extractKey := refParts[0], refParts[1]
 
 			key := groupKey(fmt.Sprintf("%s:%s", provider, sourceName))
