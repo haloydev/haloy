@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/volume"
@@ -17,14 +16,20 @@ import (
 // and creates the named volumes with the app label for later cleanup.
 func EnsureVolumes(ctx context.Context, cli *client.Client, logger *slog.Logger, appName string, volumes []string) error {
 	for _, volSpec := range volumes {
-		volumeName := parseVolumeName(volSpec)
-		if volumeName == "" {
+		parsed, err := config.ParseVolumeSpec(volSpec)
+		if err != nil {
+			return err
+		}
+
+		if !parsed.IsNamedVolume() {
 			// Not a named volume (likely a bind mount), skip
 			continue
 		}
 
+		volumeName := parsed.Source
+
 		// Check if volume already exists
-		_, err := cli.VolumeInspect(ctx, volumeName)
+		_, err = cli.VolumeInspect(ctx, volumeName)
 		if err == nil {
 			// Volume exists, skip creation
 			logger.Debug("Volume already exists", "volume", volumeName)
@@ -49,29 +54,6 @@ func EnsureVolumes(ctx context.Context, cli *client.Client, logger *slog.Logger,
 	}
 
 	return nil
-}
-
-// parseVolumeName extracts the volume name from a volume specification.
-// Returns empty string if the spec is a bind mount (path-based) rather than a named volume.
-// Examples:
-//   - "postgres-data:/var/lib/postgresql" -> "postgres-data"
-//   - "my-vol:/data:ro" -> "my-vol"
-//   - "/host/path:/container/path" -> "" (bind mount)
-//   - "./relative:/container/path" -> "" (bind mount)
-func parseVolumeName(volSpec string) string {
-	parts := strings.Split(volSpec, ":")
-	if len(parts) < 2 {
-		return ""
-	}
-
-	source := parts[0]
-
-	// If source contains a path separator or starts with ".", it's a bind mount
-	if strings.Contains(source, "/") || strings.HasPrefix(source, ".") {
-		return ""
-	}
-
-	return source
 }
 
 func RemoveVolumes(ctx context.Context, cli *client.Client, logger *slog.Logger, appName string) error {

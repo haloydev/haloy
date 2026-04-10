@@ -111,6 +111,34 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "valid target config with named volume and linux container path",
+			target: TargetConfig{
+				Name:   "haloy-test-app",
+				Server: "haloy.dev",
+				Image: &Image{
+					Repository: "nginx",
+					Tag:        "latest",
+				},
+				Volumes: []string{"app-data:/pb/pb_data"},
+			},
+			format:      "yaml",
+			expectError: false,
+		},
+		{
+			name: "valid target config with linux bind mount",
+			target: TargetConfig{
+				Name:   "haloy-test-app",
+				Server: "haloy.dev",
+				Image: &Image{
+					Repository: "nginx",
+					Tag:        "latest",
+				},
+				Volumes: []string{"/srv/app-data:/pb/pb_data"},
+			},
+			format:      "yaml",
+			expectError: false,
+		},
+		{
 			name: "invalid - missing server",
 			target: TargetConfig{
 				Name: "haloy-test-app",
@@ -172,6 +200,21 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 			format:      "yaml",
 			expectError: true,
 			errMsg:      "environment variable 'name' cannot be empty",
+		},
+		{
+			name: "invalid windows bind mount source",
+			target: TargetConfig{
+				Name:   "haloy-test-app",
+				Server: "haloy.dev",
+				Image: &Image{
+					Repository: "nginx",
+					Tag:        "latest",
+				},
+				Volumes: []string{`C:\data:/pb/pb_data`},
+			},
+			format:      "yaml",
+			expectError: true,
+			errMsg:      "must use a Linux absolute path",
 		},
 		{
 			name: "invalid volume mapping",

@@ -3,10 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/haloydev/haloy/internal/helpers"
 )
@@ -108,30 +106,8 @@ func (tc *TargetConfig) Validate(format string) error {
 	}
 
 	for _, volume := range tc.Volumes {
-		// Expected format: /host/path:/container/path[:options] or volume-name:/container/path[:options]
-		parts := strings.Split(volume, ":")
-		if len(parts) < 2 || len(parts) > 3 {
-			return fmt.Errorf("invalid volume mapping '%s'; expected 'host-path:/container/path[:options]'", volume)
-		}
-
-		hostPath := strings.TrimSpace(parts[0])
-		if hostPath == "" {
-			return fmt.Errorf("volume host path cannot be empty in '%s'", volume)
-		}
-
-		// Check if this is a filesystem bind mount (not a named volume)
-		// Named volumes don't contain path separators and don't start with '.'
-		if strings.Contains(hostPath, "/") || strings.HasPrefix(hostPath, ".") {
-			// This appears to be a filesystem path, require it to be absolute
-			if !filepath.IsAbs(hostPath) {
-				return fmt.Errorf("volume host path '%s' in '%s' must be absolute when using filesystem bind mounts. Relative paths don't work when the daemon runs in a container", hostPath, volume)
-			}
-		}
-
-		// Container path must be absolute
-		containerPath := strings.TrimSpace(parts[1])
-		if !filepath.IsAbs(containerPath) {
-			return fmt.Errorf("volume container path '%s' in '%s' is not an absolute path", containerPath, volume)
+		if _, err := ParseVolumeSpec(volume); err != nil {
+			return err
 		}
 	}
 
