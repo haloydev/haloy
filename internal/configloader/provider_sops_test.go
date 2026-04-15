@@ -36,7 +36,7 @@ func TestFetchFromSOPS_YAMLAndJSONNestedFlatten(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte(tt.payload), nil)
+			withSOPSProviderTestDoubles(t, []byte(tt.payload), nil)
 
 			got, err := fetchFromSOPS(context.Background(), tt.cfg)
 			if err != nil {
@@ -53,7 +53,7 @@ func TestFetchFromSOPS_YAMLAndJSONNestedFlatten(t *testing.T) {
 }
 
 func TestFetchFromSOPS_ArraysAndNestedArrays(t *testing.T) {
-	withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte(`users:
+	withSOPSProviderTestDoubles(t, []byte(`users:
   - name: alice
     roles: [admin, dev]
 `), nil)
@@ -77,7 +77,7 @@ func TestFetchFromSOPS_ArraysAndNestedArrays(t *testing.T) {
 }
 
 func TestFetchFromSOPS_DotenvOverrideBehavior(t *testing.T) {
-	withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte("A=first\nA=second\nB=value\n"), nil)
+	withSOPSProviderTestDoubles(t, []byte("A=first\nA=second\nB=value\n"), nil)
 
 	got, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: ".env"})
 	if err != nil {
@@ -94,7 +94,7 @@ func TestFetchFromSOPS_DotenvOverrideBehavior(t *testing.T) {
 
 func TestFetchFromSOPS_UnsupportedFormatUnknownExtensionAndBinaryRejected(t *testing.T) {
 	t.Run("unsupported format override", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte("x: 1"), nil)
+		withSOPSProviderTestDoubles(t, []byte("x: 1"), nil)
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: "secrets.yaml", Format: "xml"})
 		if err == nil {
 			t.Fatal("expected unsupported format error")
@@ -105,7 +105,7 @@ func TestFetchFromSOPS_UnsupportedFormatUnknownExtensionAndBinaryRejected(t *tes
 	})
 
 	t.Run("unknown extension without format", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte("x: 1"), nil)
+		withSOPSProviderTestDoubles(t, []byte("x: 1"), nil)
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: "secrets.unknown"})
 		if err == nil {
 			t.Fatal("expected unknown extension error")
@@ -116,7 +116,7 @@ func TestFetchFromSOPS_UnsupportedFormatUnknownExtensionAndBinaryRejected(t *tes
 	})
 
 	t.Run("binary rejected", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte("irrelevant"), nil)
+		withSOPSProviderTestDoubles(t, []byte("irrelevant"), nil)
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: "secrets.bin", Format: "binary"})
 		if err == nil {
 			t.Fatal("expected binary format rejection")
@@ -129,7 +129,7 @@ func TestFetchFromSOPS_UnsupportedFormatUnknownExtensionAndBinaryRejected(t *tes
 
 func TestFetchFromSOPS_CollisionsAndKeyWithDotRejection(t *testing.T) {
 	t.Run("object key containing dot rejected", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte("app.config: value\n"), nil)
+		withSOPSProviderTestDoubles(t, []byte("app.config: value\n"), nil)
 
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: "secrets.yaml"})
 		if err == nil {
@@ -153,7 +153,7 @@ func TestFetchFromSOPS_CollisionsAndKeyWithDotRejection(t *testing.T) {
 }
 
 func TestFetchFromSOPS_ScalarConversion(t *testing.T) {
-	withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte(`
+	withSOPSProviderTestDoubles(t, []byte(`
 flag: true
 count: 42
 ratio: 1.5
@@ -180,7 +180,7 @@ nothing: null
 
 func TestFetchFromSOPS_MissingFileRequiredDiagnostic(t *testing.T) {
 	t.Run("missing required file field", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte("x: 1"), nil)
+		withSOPSProviderTestDoubles(t, []byte("x: 1"), nil)
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{})
 		if err == nil {
 			t.Fatal("expected required file validation error")
@@ -192,13 +192,13 @@ func TestFetchFromSOPS_MissingFileRequiredDiagnostic(t *testing.T) {
 		}
 	})
 
-	t.Run("missing file path read error", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, nil, nil, errors.New("open failed"))
+	t.Run("missing file path decrypt error", func(t *testing.T) {
+		withSOPSProviderTestDoubles(t, nil, errors.New("open failed"))
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: "missing.yaml"})
 		if err == nil {
-			t.Fatal("expected read error")
+			t.Fatal("expected decrypt error")
 		}
-		for _, want := range []string{"provider=sops", "stage=read", "path=missing.yaml"} {
+		for _, want := range []string{"provider=sops", "stage=decrypt", "path=missing.yaml"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("expected error to contain %q, got %q", want, err.Error())
 			}
@@ -208,12 +208,7 @@ func TestFetchFromSOPS_MissingFileRequiredDiagnostic(t *testing.T) {
 
 func TestFetchFromSOPS_StageSpecificContextualErrors(t *testing.T) {
 	t.Run("decrypt stage", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, []byte("encrypted"), nil, nil)
-		originalDecrypt := sopsDecryptDataFn
-		defer func() { sopsDecryptDataFn = originalDecrypt }()
-		sopsDecryptDataFn = func(_ []byte, _ string) ([]byte, error) {
-			return nil, errors.New("decrypt boom")
-		}
+		withSOPSProviderTestDoubles(t, nil, errors.New("decrypt boom"))
 
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: "secrets.yaml"})
 		if err == nil {
@@ -225,7 +220,7 @@ func TestFetchFromSOPS_StageSpecificContextualErrors(t *testing.T) {
 	})
 
 	t.Run("parse stage", func(t *testing.T) {
-		withSOPSProviderTestDoubles(t, []byte("encrypted"), []byte("invalid: ["), nil)
+		withSOPSProviderTestDoubles(t, []byte("invalid: ["), nil)
 		_, err := fetchFromSOPS(context.Background(), config.SOPSSourceConfig{File: "secrets.yaml"})
 		if err == nil {
 			t.Fatal("expected parse error")
@@ -238,20 +233,13 @@ func TestFetchFromSOPS_StageSpecificContextualErrors(t *testing.T) {
 
 func TestFetchFromSOPS_UsesResolvedFilePathFromConfig(t *testing.T) {
 	baseDir := t.TempDir()
-	var readPath string
+	var decryptPath string
 
-	originalRead := sopsReadFileFn
-	originalDecrypt := sopsDecryptDataFn
-	defer func() {
-		sopsReadFileFn = originalRead
-		sopsDecryptDataFn = originalDecrypt
-	}()
+	original := sopsDecryptFileFn
+	defer func() { sopsDecryptFileFn = original }()
 
-	sopsReadFileFn = func(path string) ([]byte, error) {
-		readPath = path
-		return []byte("encrypted"), nil
-	}
-	sopsDecryptDataFn = func(_ []byte, _ string) ([]byte, error) {
+	sopsDecryptFileFn = func(_ context.Context, path string, _ string) ([]byte, error) {
+		decryptPath = path
 		return []byte("key: value\n"), nil
 	}
 
@@ -262,28 +250,23 @@ func TestFetchFromSOPS_UsesResolvedFilePathFromConfig(t *testing.T) {
 	}
 
 	expected := filepath.Clean(filepath.Join(baseDir, "secrets/enc.yaml"))
-	if filepath.Clean(readPath) != expected {
-		t.Fatalf("expected read path %q, got %q", expected, readPath)
+	if filepath.Clean(decryptPath) != expected {
+		t.Fatalf("expected decrypt path %q, got %q", expected, decryptPath)
 	}
 }
 
-func withSOPSProviderTestDoubles(t *testing.T, encrypted []byte, decrypted []byte, readErr error) {
+func withSOPSProviderTestDoubles(t *testing.T, decrypted []byte, decryptErr error) {
 	t.Helper()
 
-	originalRead := sopsReadFileFn
-	originalDecrypt := sopsDecryptDataFn
+	original := sopsDecryptFileFn
 	t.Cleanup(func() {
-		sopsReadFileFn = originalRead
-		sopsDecryptDataFn = originalDecrypt
+		sopsDecryptFileFn = original
 	})
 
-	sopsReadFileFn = func(_ string) ([]byte, error) {
-		if readErr != nil {
-			return nil, readErr
+	sopsDecryptFileFn = func(_ context.Context, _ string, _ string) ([]byte, error) {
+		if decryptErr != nil {
+			return nil, decryptErr
 		}
-		return encrypted, nil
-	}
-	sopsDecryptDataFn = func(_ []byte, _ string) ([]byte, error) {
 		return decrypted, nil
 	}
 }

@@ -4,23 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/getsops/sops/v3/decrypt"
+	"github.com/haloydev/haloy/internal/cmdexec"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
-var (
-	sopsReadFileFn    = os.ReadFile
-	sopsDecryptDataFn = decrypt.Data
-)
+var sopsDecryptFileFn = defaultSOPSDecryptFile
+
+func defaultSOPSDecryptFile(ctx context.Context, filePath, format string) ([]byte, error) {
+	output, err := cmdexec.RunCLICommand(ctx, "sops", "decrypt", "--output-type", format, filePath)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(output), nil
+}
 
 func fetchFromSOPS(ctx context.Context, cfg config.SOPSSourceConfig) (map[string]string, error) {
 	if strings.TrimSpace(cfg.File) == "" {
@@ -34,12 +38,7 @@ func fetchFromSOPS(ctx context.Context, cfg config.SOPSSourceConfig) (map[string
 		return nil, formatSOPSError("validate", cfg.File, err)
 	}
 
-	encryptedData, err := sopsReadFileFn(resolvedPath)
-	if err != nil {
-		return nil, formatSOPSError("read", cfg.File, err)
-	}
-
-	plaintext, err := sopsDecryptDataFn(encryptedData, format)
+	plaintext, err := sopsDecryptFileFn(ctx, resolvedPath, format)
 	if err != nil {
 		return nil, formatSOPSError("decrypt", cfg.File, err)
 	}
