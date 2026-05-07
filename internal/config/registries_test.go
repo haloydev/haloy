@@ -225,3 +225,20 @@ func TestLoadSaveServerRegistries(t *testing.T) {
 		t.Fatalf("loaded auth = %#v, want saved credentials", auth)
 	}
 }
+
+func TestServerRegistriesPathUsesDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv(constants.EnvVarDataDir, dataDir)
+	t.Setenv(constants.EnvVarConfigDir, configDir)
+
+	path, err := ServerRegistriesPath()
+	if err != nil {
+		t.Fatalf("ServerRegistriesPath() unexpected error = %v", err)
+	}
+
+	want := filepath.Join(dataDir, constants.RegistriesFileName)
+	if path != want {
+		t.Fatalf("ServerRegistriesPath() = %q, want %q", path, want)
+	}
+}

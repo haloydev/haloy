@@ -116,7 +116,7 @@ func (s *APIServer) handleRegistryLogout() http.HandlerFunc {
 func loadServerRegistries() (*config.ServerRegistriesConfig, error) {
 	path, err := config.ServerRegistriesPath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server registry config path: %w", err)
+		return nil, fmt.Errorf("failed to get server registry path: %w", err)
 	}
 
 	registries, err := config.LoadServerRegistries(path)
@@ -132,7 +132,7 @@ func loadServerRegistries() (*config.ServerRegistriesConfig, error) {
 func saveServerRegistries(registries *config.ServerRegistriesConfig) error {
 	path, err := config.ServerRegistriesPath()
 	if err != nil {
-		return fmt.Errorf("failed to get server registry config path: %w", err)
+		return fmt.Errorf("failed to get server registry path: %w", err)
 	}
 	return config.SaveServerRegistries(registries, path)
 }

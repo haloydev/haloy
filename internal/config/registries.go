@@ -32,11 +32,11 @@ func NormalizeRegistryServer(server string) string {
 }
 
 func ServerRegistriesPath() (string, error) {
-	configDir, err := HaloydConfigDir()
+	dataDir, err := DataDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, constants.RegistriesFileName), nil
+	return filepath.Join(dataDir, constants.RegistriesFileName), nil
 }
 
 func LoadServerRegistries(path string) (*ServerRegistriesConfig, error) {
@@ -93,7 +93,7 @@ func SaveServerRegistries(registries *ServerRegistriesConfig, path string) error
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), constants.ModeDirPrivate); err != nil {
-		return fmt.Errorf("failed to create registry config directory: %w", err)
+		return fmt.Errorf("failed to create registry data directory: %w", err)
 	}
 	if err := os.WriteFile(path, data, constants.ModeFileSecret); err != nil {
 		return err

@@ -13,7 +13,7 @@ import (
 )
 
 func TestHandleRegistryLoginStoresCredentials(t *testing.T) {
-	t.Setenv(constants.EnvVarConfigDir, t.TempDir())
+	t.Setenv(constants.EnvVarDataDir, t.TempDir())
 	s := newTestAPIServerForDeploy()
 
 	body := `{"server":"registry-1.docker.io","username":"docker-user","password":"docker-token"}`
@@ -52,7 +52,7 @@ func TestHandleRegistryLoginStoresCredentials(t *testing.T) {
 }
 
 func TestHandleRegistriesListRedactsPasswords(t *testing.T) {
-	t.Setenv(constants.EnvVarConfigDir, t.TempDir())
+	t.Setenv(constants.EnvVarDataDir, t.TempDir())
 	path, err := config.ServerRegistriesPath()
 	if err != nil {
 		t.Fatalf("ServerRegistriesPath() error = %v", err)
@@ -95,7 +95,7 @@ func TestHandleRegistriesListRedactsPasswords(t *testing.T) {
 }
 
 func TestHandleRegistryLogoutRemovesCredentials(t *testing.T) {
-	t.Setenv(constants.EnvVarConfigDir, t.TempDir())
+	t.Setenv(constants.EnvVarDataDir, t.TempDir())
 	path, err := config.ServerRegistriesPath()
 	if err != nil {
 		t.Fatalf("ServerRegistriesPath() error = %v", err)
