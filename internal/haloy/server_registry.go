@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/config"
-	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/mattn/go-isatty"
@@ -81,7 +79,7 @@ func ServerRegistryLoginCmd(configPath *string, flags *appCmdFlags) *cobra.Comma
 				return err
 			}
 
-			targets, err := resolveRegistryTargets(cmd.Context(), registryConfigPath(configPath), flags, serverOverride)
+			targets, err := resolveRegistryTargets(cmd.Context(), cmd, registryConfigPath(configPath), flags, serverOverride)
 			if err != nil {
 				return err
 			}
@@ -123,7 +121,7 @@ func ServerRegistryLogoutCmd(configPath *string, flags *appCmdFlags) *cobra.Comm
 				return err
 			}
 
-			targets, err := resolveRegistryTargets(cmd.Context(), registryConfigPath(configPath), flags, serverOverride)
+			targets, err := resolveRegistryTargets(cmd.Context(), cmd, registryConfigPath(configPath), flags, serverOverride)
 			if err != nil {
 				return err
 			}
@@ -156,7 +154,7 @@ func ServerRegistryListCmd(configPath *string, flags *appCmdFlags) *cobra.Comman
 				return err
 			}
 
-			targets, err := resolveRegistryTargets(cmd.Context(), registryConfigPath(configPath), flags, serverOverride)
+			targets, err := resolveRegistryTargets(cmd.Context(), cmd, registryConfigPath(configPath), flags, serverOverride)
 			if err != nil {
 				return err
 			}
@@ -227,7 +225,7 @@ func registryConfigPath(configPath *string) string {
 	return *configPath
 }
 
-func resolveRegistryTargets(ctx context.Context, configPath string, flags *appCmdFlags, serverOverride string) ([]registryTarget, error) {
+func resolveRegistryTargets(ctx context.Context, cmd *cobra.Command, configPath string, flags *appCmdFlags, serverOverride string) ([]registryTarget, error) {
 	if serverOverride != "" {
 		normalized, err := helpers.NormalizeServerURL(serverOverride)
 		if err != nil {
@@ -236,57 +234,21 @@ func resolveRegistryTargets(ctx context.Context, configPath string, flags *appCm
 		return []registryTarget{{Server: normalized}}, nil
 	}
 
-	selected := appCmdFlags{}
-	if flags != nil {
-		selected = *flags
-	}
-	if err := selected.validateTargetFlags(); err != nil {
-		return nil, err
-	}
-
-	rawDeployConfig, format, err := configloader.Load(ctx, configPath, selected.targets, selected.all)
-	if err != nil {
-		return nil, fmt.Errorf("unable to load config: %w", err)
-	}
-	if format == "" {
-		format = rawDeployConfig.Format
-	}
-
-	resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig, configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve secrets: %w", err)
-	}
-
-	targets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
+	serverTargets, err := resolveServerTargets(ctx, cmd, configPath, flags)
 	if err != nil {
 		return nil, err
 	}
-
-	targetNames := make([]string, 0, len(targets))
-	for targetName := range targets {
-		targetNames = append(targetNames, targetName)
+	if !serverTargetSelectorsChanged(cmd) && len(serverTargets) > 1 {
+		return nil, fmt.Errorf("multiple servers available, please specify targets with --targets or use --all")
 	}
-	sort.Strings(targetNames)
 
-	seen := make(map[string]bool)
-	registryTargets := make([]registryTarget, 0, len(targetNames))
-	for _, targetName := range targetNames {
-		target := targets[targetName]
-		normalized, err := helpers.NormalizeServerURL(target.Server)
-		if err != nil {
-			return nil, fmt.Errorf("target '%s': invalid server URL %q: %w", targetName, target.Server, err)
-		}
-		if seen[normalized] {
-			continue
-		}
-		seen[normalized] = true
-		targetCopy := target
+	registryTargets := make([]registryTarget, 0, len(serverTargets))
+	for _, target := range serverTargets {
 		registryTargets = append(registryTargets, registryTarget{
-			Server:       normalized,
-			TargetConfig: &targetCopy,
+			Server:       target.Server,
+			TargetConfig: target.TargetConfig,
 		})
 	}
-
 	return registryTargets, nil
 }
 

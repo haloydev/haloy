@@ -7,7 +7,6 @@ import (
 
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/config"
-	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
@@ -33,31 +32,14 @@ The logs are streamed in real-time and will continue until interrupted (Ctrl+C).
 				return streamServerLogs(ctx, nil, serverFlag, accessLogs)
 			}
 
-			rawDeployConfig, format, err := loadServerDeployConfig(ctx, cmd, *configPath, flags)
-			if err != nil {
-				return fmt.Errorf("unable to load config: %w", err)
-			}
-
-			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig, *configPath)
-			if err != nil {
-				return fmt.Errorf("failed to resolve secrets: %w", err)
-			}
-
-			targets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
+			servers, err := resolveServerTargets(ctx, cmd, *configPath, flags)
 			if err != nil {
 				return err
 			}
-
-			servers := configloader.TargetsByServer(targets)
-
 			g, ctx := errgroup.WithContext(ctx)
-			for server, targetNames := range servers {
-				targetConfig, exists := targets[targetNames[0]]
-				if !exists {
-					return fmt.Errorf("failed to find target config for server")
-				}
+			for _, serverTarget := range servers {
 				g.Go(func() error {
-					return streamServerLogs(ctx, &targetConfig, server, accessLogs)
+					return streamServerLogs(ctx, serverTarget.TargetConfig, serverTarget.Server, accessLogs)
 				})
 			}
 

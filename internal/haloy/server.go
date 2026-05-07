@@ -11,7 +11,6 @@ import (
 	"github.com/haloydev/haloy/internal/apiclient"
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/config"
-	"github.com/haloydev/haloy/internal/configloader"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
@@ -35,26 +34,6 @@ func ServerCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.AddCommand(ServerVersionCmd(configPath, flags))
 
 	return cmd
-}
-
-func loadServerDeployConfig(ctx context.Context, cmd *cobra.Command, configPath string, flags *appCmdFlags) (config.DeployConfig, string, error) {
-	rawDeployConfig, format, err := configloader.LoadRawDeployConfig(configPath)
-	if err != nil {
-		return config.DeployConfig{}, "", err
-	}
-	rawDeployConfig.Format = format
-
-	if !cmd.Flags().Changed("targets") && !cmd.Flags().Changed("all") {
-		return rawDeployConfig, format, nil
-	}
-
-	filteredDeployConfig, _, err := configloader.Load(ctx, configPath, flags.targets, flags.all)
-	if err != nil {
-		return config.DeployConfig{}, "", err
-	}
-	filteredDeployConfig.Format = format
-
-	return filteredDeployConfig, format, nil
 }
 
 func ServerAddCmd() *cobra.Command {
@@ -286,32 +265,19 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				return nil
 			}
 
-			rawDeployConfig, format, err := loadServerDeployConfig(ctx, cmd, *configPath, flags)
-			if err != nil {
-				return fmt.Errorf("unable to load config: %w", err)
-			}
-
-			resolvedDeployConfig, err := configloader.ResolveSecrets(ctx, rawDeployConfig, *configPath)
-			if err != nil {
-				return fmt.Errorf("failed to resolve secrets: %w", err)
-			}
-
-			targets, err := configloader.ExtractTargets(resolvedDeployConfig, format)
+			servers, err := resolveServerTargets(ctx, cmd, *configPath, flags)
 			if err != nil {
 				return err
 			}
 
-			servers := configloader.TargetsByServer(targets)
-
 			g, ctx := errgroup.WithContext(ctx)
-			for server, targetNames := range servers {
-				targetConfig := targets[targetNames[0]]
+			for _, serverTarget := range servers {
 				g.Go(func() error {
 					prefix := ""
 					if len(servers) > 1 {
-						prefix = server
+						prefix = serverTarget.Server
 					}
-					version, err := getServerVersion(ctx, &targetConfig, server, prefix)
+					version, err := getServerVersion(ctx, serverTarget.TargetConfig, serverTarget.Server, prefix)
 					if err != nil {
 						return err
 					}

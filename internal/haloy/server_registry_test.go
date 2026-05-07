@@ -331,8 +331,40 @@ targets:
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "multiple targets available") {
-		t.Fatalf("expected multi-target selector error, got %v", err)
+	if !strings.Contains(err.Error(), "multiple servers available") {
+		t.Fatalf("expected multi-server selector error, got %v", err)
+	}
+}
+
+func TestServerRegistryCommandUsesInheritedTopLevelServerForMultiTargetConfig(t *testing.T) {
+	t.Setenv(constants.EnvVarConfigDir, t.TempDir())
+
+	requests := 0
+	srv := httptest.NewServer(registryLoginTestHandler(t, "top-level-token", &requests))
+	defer srv.Close()
+
+	configPath := writeRegistryCommandConfig(t, `
+server: `+srv.URL+`
+api_token:
+  value: top-level-token
+targets:
+  api:
+    domains:
+      - domain: api.example.com
+  worker:
+    domains:
+      - domain: worker.example.com
+`)
+
+	cmd := ServerRegistryLoginCmd(&configPath, &appCmdFlags{})
+	cmd.SetArgs([]string{"docker.io", "--username", "docker-user", "--password-stdin"})
+	cmd.SetIn(strings.NewReader("docker-token\n"))
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("login command error = %v", err)
+	}
+
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
 	}
 }
 
