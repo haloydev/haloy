@@ -26,6 +26,11 @@ func (s *APIServer) handleDeploy() http.HandlerFunc {
 			return
 		}
 
+		if err := s.applyServerRegistryAuth(&req.TargetConfig); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to resolve server registry authentication: %v", err), http.StatusInternalServerError)
+			return
+		}
+
 		if err := req.TargetConfig.Validate(req.TargetConfig.Format); err != nil {
 			http.Error(w, fmt.Sprintf("Invalid deploy configuration: %v", err), http.StatusBadRequest)
 			return

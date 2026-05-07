@@ -87,6 +87,43 @@ func TestShouldWarnUnauthenticatedDockerHubPull(t *testing.T) {
 	}
 }
 
+func TestNormalizedPullRef(t *testing.T) {
+	tests := []struct {
+		name  string
+		image config.Image
+		want  string
+	}{
+		{
+			name:  "docker hub official image",
+			image: config.Image{Repository: "postgres", Tag: "18"},
+			want:  "docker.io/library/postgres:18",
+		},
+		{
+			name:  "docker hub namespaced image",
+			image: config.Image{Repository: "library/postgres", Tag: "18"},
+			want:  "docker.io/library/postgres:18",
+		},
+		{
+			name:  "explicit docker hub image",
+			image: config.Image{Repository: "docker.io/library/postgres", Tag: "18"},
+			want:  "docker.io/library/postgres:18",
+		},
+		{
+			name:  "non docker hub image",
+			image: config.Image{Repository: "ghcr.io/example/postgres", Tag: "18"},
+			want:  "ghcr.io/example/postgres:18",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizedPullRef(tt.image); got != tt.want {
+				t.Fatalf("normalizedPullRef() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFormatImagePullError(t *testing.T) {
 	rateLimitErr := errors.New("Error response from daemon: error from registry: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit")
 
@@ -106,6 +143,7 @@ func TestFormatImagePullError(t *testing.T) {
 			wantContains: []string{
 				"Docker Hub rate limit reached",
 				"without registry credentials",
+				"haloy server registry login",
 				"image.registry",
 				"local docker login is not sent",
 			},

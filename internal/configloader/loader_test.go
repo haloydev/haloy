@@ -660,7 +660,8 @@ func TestMergeImage(t *testing.T) {
 			name: "target image merges with base",
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
-					Tag: "1.21", // Only override tag
+					Tag:        "1.21", // Only override tag
+					PullPolicy: config.PullPolicyIfMissing,
 				},
 			},
 			images:    images,
@@ -668,6 +669,7 @@ func TestMergeImage(t *testing.T) {
 			expected: &config.Image{
 				Repository: "nginx", // From base
 				Tag:        "1.21",  // Overridden
+				PullPolicy: config.PullPolicyIfMissing,
 				History: &config.ImageHistory{
 					Strategy: config.HistoryStrategyLocal,
 					Count:    helpers.Ptr(5),
@@ -744,6 +746,10 @@ func TestMergeImage(t *testing.T) {
 				if result != nil && result.Tag != tt.expected.Tag {
 					t.Errorf("mergeImage() Tag = %s, expected %s",
 						result.Tag, tt.expected.Tag)
+				}
+				if result != nil && result.PullPolicy != tt.expected.PullPolicy {
+					t.Errorf("mergeImage() PullPolicy = %s, expected %s",
+						result.PullPolicy, tt.expected.PullPolicy)
 				}
 				if result != nil && tt.expected.History != nil {
 					if result.History == nil {
@@ -1069,6 +1075,25 @@ func TestOmittedImageFieldShouldBuild(t *testing.T) {
 
 	if result.Image.Repository != "myapp" {
 		t.Errorf("omitted image field should set Repository to app name, got '%s'", result.Image.Repository)
+	}
+}
+
+func TestPresetServiceImagesDefaultToPullIfMissing(t *testing.T) {
+	deployConfig := config.DeployConfig{
+		TargetConfig: config.TargetConfig{
+			Name:   "postgres",
+			Server: "test.haloy.dev",
+			Preset: config.PresetDatabase,
+			Image:  &config.Image{Repository: "postgres", Tag: "18"},
+		},
+	}
+
+	result, err := MergeToTarget(deployConfig, config.TargetConfig{}, "postgres", "yaml")
+	if err != nil {
+		t.Fatalf("MergeToTarget() unexpected error = %v", err)
+	}
+	if result.Image.PullPolicy != config.PullPolicyIfMissing {
+		t.Fatalf("Image.PullPolicy = %q, want %q", result.Image.PullPolicy, config.PullPolicyIfMissing)
 	}
 }
 

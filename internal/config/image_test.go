@@ -97,6 +97,15 @@ func TestImage_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid image with pull policy",
+			image: Image{
+				Repository: "postgres",
+				Tag:        "18",
+				PullPolicy: PullPolicyIfMissing,
+			},
+			wantErr: false,
+		},
+		{
 			name: "empty repository",
 			image: Image{
 				Repository: "",
@@ -122,6 +131,16 @@ func TestImage_Validate(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "contains whitespace",
+		},
+		{
+			name: "invalid pull policy",
+			image: Image{
+				Repository: "postgres",
+				Tag:        "18",
+				PullPolicy: "sometimes",
+			},
+			wantErr: true,
+			errMsg:  "image.pull_policy 'sometimes' is invalid",
 		},
 		{
 			name: "registry strategy with latest tag",
@@ -205,6 +224,33 @@ func TestImage_Validate(t *testing.T) {
 				if err != nil {
 					t.Errorf("Validate() unexpected error = %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestImage_EffectivePullPolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		img  Image
+		want PullPolicy
+	}{
+		{
+			name: "default pull policy is always",
+			img:  Image{Repository: "nginx"},
+			want: PullPolicyAlways,
+		},
+		{
+			name: "explicit pull policy",
+			img:  Image{Repository: "nginx", PullPolicy: PullPolicyIfMissing},
+			want: PullPolicyIfMissing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.img.EffectivePullPolicy(); got != tt.want {
+				t.Fatalf("EffectivePullPolicy() = %q, want %q", got, tt.want)
 			}
 		})
 	}

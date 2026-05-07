@@ -38,12 +38,7 @@ func getRegistryAuthString(imageConfig *config.Image) (string, error) {
 }
 
 func isDockerHubServer(server string) bool {
-	switch strings.ToLower(strings.TrimSpace(server)) {
-	case "docker.io", "index.docker.io", "registry-1.docker.io":
-		return true
-	default:
-		return false
-	}
+	return config.NormalizeRegistryServer(server) == "docker.io"
 }
 
 func isDockerHubImage(imageConfig config.Image) bool {
@@ -64,11 +59,37 @@ func shouldWarnUnauthenticatedDockerHubPull(imageConfig config.Image, registryAu
 	return registryAuth == "" && isDockerHubImage(imageConfig)
 }
 
+func normalizedPullRef(imageConfig config.Image) string {
+	imageRef := imageConfig.ImageRef()
+	server := config.NormalizeRegistryServer(imageConfig.GetRegistryServer())
+	if server != "docker.io" {
+		return imageRef
+	}
+
+	repository := strings.TrimSpace(imageConfig.Repository)
+	if strings.Contains(repository, "/") {
+		first, _, _ := strings.Cut(repository, "/")
+		if strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost" {
+			return imageRef
+		}
+		return "docker.io/" + imageRef
+	}
+	return "docker.io/library/" + imageRef
+}
+
+func registryAuthMode(registryAuth string) string {
+	if registryAuth == "" {
+		return "none"
+	}
+	return "configured"
+}
+
 func dockerHubPullRateLimitHint(imageConfig config.Image) string {
 	if imageConfig.RegistryAuth == nil {
 		return "Hint: Docker Hub rate limit reached. " +
 			"Haloy pulled this Docker Hub image without registry credentials on the deployment server. " +
-			"Add Docker Hub credentials to image.registry for this target, use a registry mirror/cache, " +
+			"Run 'haloy server registry login <server-url> docker.io --username <user> --password-stdin', " +
+			"add Docker Hub credentials to image.registry for this target, use a registry mirror/cache, " +
 			"or wait for Docker Hub's pull limit window to reset. " +
 			"A local docker login is not sent to remote deployments."
 	}
@@ -91,6 +112,7 @@ func formatImagePullError(imageRef string, imageConfig config.Image, err error) 
 
 func EnsureImageUpToDate(ctx context.Context, cli *client.Client, logger *slog.Logger, imageConfig config.Image) error {
 	imageRef := imageConfig.ImageRef()
+	pullPolicy := imageConfig.EffectivePullPolicy()
 
 	local, err := cli.ImageInspect(ctx, imageRef)
 	localExists := (err == nil)
@@ -104,6 +126,19 @@ func EnsureImageUpToDate(ctx context.Context, cli *client.Client, logger *slog.L
 		return nil
 	}
 
+	if localExists && pullPolicy == config.PullPolicyIfMissing {
+		logger.Info("Using local image", "image", normalizedPullRef(imageConfig), "pull_policy", pullPolicy)
+		return nil
+	}
+
+	if pullPolicy == config.PullPolicyNever {
+		if localExists {
+			logger.Info("Using local image", "image", normalizedPullRef(imageConfig), "pull_policy", pullPolicy)
+			return nil
+		}
+		return fmt.Errorf("image '%s' not found locally and image.pull_policy is 'never'", imageRef)
+	}
+
 	registryAuth, err := getRegistryAuthString(&imageConfig)
 	if err != nil {
 		return fmt.Errorf("failed to resolve registry auth for image %s: %w", imageRef, err)
@@ -112,7 +147,11 @@ func EnsureImageUpToDate(ctx context.Context, cli *client.Client, logger *slog.L
 	if localExists {
 		remote, err := cli.DistributionInspect(ctx, imageRef, registryAuth)
 		if err != nil {
-			logger.Debug("Failed to check remote registry, using local image", "image", imageRef, "error", err)
+			if isDockerHubImage(imageConfig) && isDockerHubPullRateLimitError(err) {
+				logger.Warn("Failed to check Docker Hub for image updates due to rate limits; using local image", "image", normalizedPullRef(imageConfig), "error", err)
+			} else {
+				logger.Debug("Failed to check remote registry, using local image", "image", imageRef, "error", err)
+			}
 			return nil
 		}
 
@@ -129,7 +168,7 @@ func EnsureImageUpToDate(ctx context.Context, cli *client.Client, logger *slog.L
 	}
 
 	// If we reach here, either the image doesn't exist locally or the remote digest doesn't match
-	logger.Debug(fmt.Sprintf("Pulling image %s...", imageRef), "image", imageRef)
+	logger.Info("Pulling image", "image", normalizedPullRef(imageConfig), "registry", config.NormalizeRegistryServer(imageConfig.GetRegistryServer()), "auth", registryAuthMode(registryAuth), "pull_policy", pullPolicy)
 	if shouldWarnUnauthenticatedDockerHubPull(imageConfig, registryAuth) {
 		logger.Warn("Pulling Docker Hub image without registry credentials; this may hit Docker Hub anonymous pull limits", "image", imageRef)
 	}

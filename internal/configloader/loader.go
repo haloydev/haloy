@@ -73,6 +73,9 @@ func mergeImage(targetConfig config.TargetConfig, images map[string]*config.Imag
 			if targetConfig.Image.Tag != "" {
 				merged.Tag = targetConfig.Image.Tag
 			}
+			if targetConfig.Image.PullPolicy != "" {
+				merged.PullPolicy = targetConfig.Image.PullPolicy
+			}
 			if targetConfig.Image.History != nil {
 				merged.History = targetConfig.Image.History
 			}
@@ -275,6 +278,9 @@ func applyPreset(tc *config.TargetConfig) error {
 				Strategy: config.HistoryStrategyNone,
 			}
 		}
+		if tc.Image != nil && tc.Image.PullPolicy == "" {
+			tc.Image.PullPolicy = config.PullPolicyIfMissing
+		}
 
 		tc.Protected = helpers.Ptr(true)
 
@@ -290,6 +296,9 @@ func applyPreset(tc *config.TargetConfig) error {
 			tc.Image.History = &config.ImageHistory{
 				Strategy: config.HistoryStrategyNone,
 			}
+		}
+		if tc.Image != nil && tc.Image.PullPolicy == "" {
+			tc.Image.PullPolicy = config.PullPolicyIfMissing
 		}
 
 	}

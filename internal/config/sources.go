@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
 )
 
 // SourceReference defines a reference to a value from an external source.
@@ -54,4 +55,41 @@ func (vs *ValueSource) Validate() error {
 	}
 
 	return nil
+}
+
+func (vs *ValueSource) ResolveEnvOnly() (string, error) {
+	if vs.Value != "" {
+		return vs.Value, nil
+	}
+	if vs.From == nil {
+		return "", errors.New("must provide either 'value' or 'from'")
+	}
+	if vs.From.Env == "" {
+		return "", errors.New("only environment sources are supported here")
+	}
+	value, ok := os.LookupEnv(vs.From.Env)
+	if !ok {
+		return "", fmt.Errorf("environment variable '%s' is not set", vs.From.Env)
+	}
+	if value == "" {
+		return "", fmt.Errorf("environment variable '%s' is empty", vs.From.Env)
+	}
+	return value, nil
+}
+
+func ResolveRegistryAuth(auth RegistryAuth) (*RegistryAuth, error) {
+	username, err := auth.Username.ResolveEnvOnly()
+	if err != nil {
+		return nil, fmt.Errorf("registry username: %w", err)
+	}
+	password, err := auth.Password.ResolveEnvOnly()
+	if err != nil {
+		return nil, fmt.Errorf("registry password: %w", err)
+	}
+
+	return &RegistryAuth{
+		Server:   auth.Server,
+		Username: ValueSource{Value: username},
+		Password: ValueSource{Value: password},
+	}, nil
 }

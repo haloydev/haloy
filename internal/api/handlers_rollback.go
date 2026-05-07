@@ -30,6 +30,11 @@ func (s *APIServer) handleRollback() http.HandlerFunc {
 			return
 		}
 
+		if err := s.applyServerRegistryAuth(&deployConfig); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to resolve server registry authentication: %v", err), http.StatusInternalServerError)
+			return
+		}
+
 		if err := deployConfig.Validate(deployConfig.Format); err != nil {
 			http.Error(w, fmt.Sprintf("Invalid deploy configuration: %v", err), http.StatusBadRequest)
 			return

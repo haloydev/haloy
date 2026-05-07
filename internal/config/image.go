@@ -13,6 +13,7 @@ import (
 type Image struct {
 	Repository   string        `json:"repository" yaml:"repository" toml:"repository"`
 	Tag          string        `json:"tag,omitempty" yaml:"tag,omitempty" toml:"tag,omitempty"`
+	PullPolicy   PullPolicy    `json:"pullPolicy,omitempty" yaml:"pull_policy,omitempty" toml:"pull_policy,omitempty"`
 	History      *ImageHistory `json:"history,omitempty" yaml:"history,omitempty" toml:"history,omitempty"`
 	RegistryAuth *RegistryAuth `json:"registry,omitempty" yaml:"registry,omitempty" toml:"registry,omitempty"`
 	Build        *bool         `json:"build,omitempty" yaml:"build,omitempty" toml:"build,omitempty"`
@@ -37,6 +38,14 @@ type RegistryAuth struct {
 	Username ValueSource `json:"username" yaml:"username" toml:"username"`
 	Password ValueSource `json:"password" yaml:"password" toml:"password"`
 }
+
+type PullPolicy string
+
+const (
+	PullPolicyAlways    PullPolicy = "always"
+	PullPolicyIfMissing PullPolicy = "if_missing"
+	PullPolicyNever     PullPolicy = "never"
+)
 
 func (i *Image) ShouldBuild() bool {
 	// Build is explicitly set to false
@@ -64,6 +73,13 @@ func (i *Image) GetEffectivePushStrategy() BuildPushOption {
 	}
 
 	return BuildPushOptionServer
+}
+
+func (i *Image) EffectivePullPolicy() PullPolicy {
+	if i.PullPolicy != "" {
+		return i.PullPolicy
+	}
+	return PullPolicyAlways
 }
 
 func (i *Image) ImageRef() string {
@@ -114,6 +130,13 @@ func (i *Image) Validate(format string) error {
 
 	if strings.ContainsAny(i.Tag, " \t\n\r") {
 		return fmt.Errorf("image.tag '%s' contains whitespace", i.Tag)
+	}
+
+	if i.PullPolicy != "" {
+		validPullPolicies := []PullPolicy{PullPolicyAlways, PullPolicyIfMissing, PullPolicyNever}
+		if !slices.Contains(validPullPolicies, i.PullPolicy) {
+			return fmt.Errorf("image.pull_policy '%s' is invalid (must be 'always', 'if_missing', or 'never')", i.PullPolicy)
+		}
 	}
 
 	if i.History != nil {

@@ -45,6 +45,7 @@ const (
 
 	// File names
 	HaloydConfigFileName   = "haloyd.yaml"
+	RegistriesFileName     = "registries.yaml"
 	ClientConfigFileName   = "client.yaml"
 	ConfigEnvFileName      = ".env"
 	ConfigEnvLocalFileName = ".env.local"

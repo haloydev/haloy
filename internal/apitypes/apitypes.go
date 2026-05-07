@@ -64,6 +64,25 @@ type VersionResponse struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
+type RegistryLoginRequest struct {
+	Server   string `json:"server"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type RegistryLogoutRequest struct {
+	Server string `json:"server"`
+}
+
+type RegistryEntry struct {
+	Server   string `json:"server"`
+	Username string `json:"username"`
+}
+
+type RegistriesResponse struct {
+	Registries []RegistryEntry `json:"registries"`
+}
+
 type ExecRequest struct {
 	Command       []string `json:"command"`                 // Required: command to execute
 	ContainerID   string   `json:"containerId,omitempty"`   // Optional: specific container ID

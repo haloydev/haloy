@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/haloydev/haloy/internal/apitypes"
+	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/logging"
 	"github.com/haloydev/haloy/internal/storage"
 	"golang.org/x/time/rate"
@@ -24,6 +25,7 @@ type APIServer struct {
 	assembleDiskSpaceCheck func(context.Context, apitypes.ImageAssembleRequest) error
 	imageDiskSpaceCheck    func(context.Context, apitypes.ImageDiskSpaceCheckRequest) (diskSpaceCheckResult, error)
 	imagePrune             func(context.Context, apitypes.ImagePruneRequest) (apitypes.ImagePruneResponse, error)
+	registryAuthProvider   func(config.Image) (*config.RegistryAuth, error)
 }
 
 func NewServer(apiToken string, db *storage.DB, logBroker logging.StreamPublisher, logLevel slog.Level) *APIServer {
@@ -36,8 +38,47 @@ func NewServer(apiToken string, db *storage.DB, logBroker logging.StreamPublishe
 		rateLimiter:      NewRateLimiter(rate.Limit(5), 10),   // 5 req/sec, burst of 10
 		layerRateLimiter: NewRateLimiter(rate.Limit(50), 100), // 50 req/sec, burst of 100 for layer uploads
 	}
+	s.registryAuthProvider = loadServerRegistryAuthForImage
 	s.setupRoutes()
 	return s
+}
+
+func loadServerRegistryAuthForImage(image config.Image) (*config.RegistryAuth, error) {
+	registries, err := loadServerRegistries()
+	if err != nil {
+		return nil, err
+	}
+	return registries.AuthForImage(image)
+}
+
+func shouldApplyServerRegistryAuth(image *config.Image) bool {
+	if image == nil || image.RegistryAuth != nil {
+		return false
+	}
+	if image.ShouldBuild() && image.GetEffectivePushStrategy() == config.BuildPushOptionServer {
+		return false
+	}
+	return true
+}
+
+func (s *APIServer) applyServerRegistryAuth(targetConfig *config.TargetConfig) error {
+	if targetConfig == nil || !shouldApplyServerRegistryAuth(targetConfig.Image) {
+		return nil
+	}
+	if s.registryAuthProvider == nil {
+		return nil
+	}
+
+	auth, err := s.registryAuthProvider(*targetConfig.Image)
+	if err != nil {
+		return err
+	}
+	if auth == nil {
+		return nil
+	}
+
+	targetConfig.Image.RegistryAuth = auth
+	return nil
 }
 
 func (s *APIServer) ListenAndServe(addr string) error {

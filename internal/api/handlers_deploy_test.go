@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/logging"
 )
 
@@ -85,5 +86,82 @@ func TestHandleDeploy_RejectsUnknownFields(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "unknown field") {
 		t.Fatalf("body = %q, expected unknown field error", rr.Body.String())
+	}
+}
+
+func TestApplyServerRegistryAuth(t *testing.T) {
+	serverAuth := &config.RegistryAuth{
+		Server:   "docker.io",
+		Username: config.ValueSource{Value: "server-user"},
+		Password: config.ValueSource{Value: "server-token"},
+	}
+	s := newTestAPIServerForDeploy()
+	s.registryAuthProvider = func(image config.Image) (*config.RegistryAuth, error) {
+		if image.Repository != "postgres" {
+			t.Fatalf("provider image.Repository = %q, want postgres", image.Repository)
+		}
+		return serverAuth, nil
+	}
+
+	target := config.TargetConfig{
+		Image: &config.Image{Repository: "postgres", Tag: "18"},
+	}
+	if err := s.applyServerRegistryAuth(&target); err != nil {
+		t.Fatalf("applyServerRegistryAuth() unexpected error = %v", err)
+	}
+	if target.Image.RegistryAuth == nil {
+		t.Fatal("RegistryAuth = nil, want server auth")
+	}
+	if target.Image.RegistryAuth.Username.Value != "server-user" {
+		t.Fatalf("RegistryAuth.Username.Value = %q, want server-user", target.Image.RegistryAuth.Username.Value)
+	}
+}
+
+func TestApplyServerRegistryAuth_DoesNotOverrideTargetAuth(t *testing.T) {
+	s := newTestAPIServerForDeploy()
+	s.registryAuthProvider = func(image config.Image) (*config.RegistryAuth, error) {
+		t.Fatal("provider should not be called when target auth is set")
+		return nil, nil
+	}
+
+	targetAuth := &config.RegistryAuth{
+		Server:   "docker.io",
+		Username: config.ValueSource{Value: "target-user"},
+		Password: config.ValueSource{Value: "target-token"},
+	}
+	target := config.TargetConfig{
+		Image: &config.Image{
+			Repository:   "postgres",
+			Tag:          "18",
+			RegistryAuth: targetAuth,
+		},
+	}
+	if err := s.applyServerRegistryAuth(&target); err != nil {
+		t.Fatalf("applyServerRegistryAuth() unexpected error = %v", err)
+	}
+	if target.Image.RegistryAuth != targetAuth {
+		t.Fatal("RegistryAuth was overridden, want target auth to win")
+	}
+}
+
+func TestApplyServerRegistryAuth_DoesNotApplyToServerBuild(t *testing.T) {
+	s := newTestAPIServerForDeploy()
+	s.registryAuthProvider = func(image config.Image) (*config.RegistryAuth, error) {
+		t.Fatal("provider should not be called for images uploaded from local builds")
+		return nil, nil
+	}
+
+	build := true
+	target := config.TargetConfig{
+		Image: &config.Image{
+			Repository: "my-app",
+			Build:      &build,
+		},
+	}
+	if err := s.applyServerRegistryAuth(&target); err != nil {
+		t.Fatalf("applyServerRegistryAuth() unexpected error = %v", err)
+	}
+	if target.Image.RegistryAuth != nil {
+		t.Fatal("RegistryAuth was set for a server build, want nil")
 	}
 }
