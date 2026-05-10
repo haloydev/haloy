@@ -228,21 +228,39 @@ func (dm *DeploymentManager) UpdateDeployments(healthy []HealthyContainer) (hasC
 	dm.deployments = newDeployments
 
 	compareResult := compareDeployments(oldDeployments, newDeployments)
-	hasChanged = len(compareResult.AddedDeployments) > 0 ||
+	deploymentsChanged := len(compareResult.AddedDeployments) > 0 ||
 		len(compareResult.RemovedDeployments) > 0 ||
 		len(compareResult.UpdatedDeployments) > 0
 
+	failedDeploymentsChanged := dm.updateFailedDeployments(compareResult, newDeployments)
+
+	hasChanged = deploymentsChanged || failedDeploymentsChanged
+	dm.compareResult = compareResult
+	return hasChanged
+}
+
+func (dm *DeploymentManager) updateFailedDeployments(compareResult compareResult, activeDeployments map[string]Deployment) (hasChanged bool) {
+	activeDomains := deploymentDomainSet(activeDeployments)
+
 	for appName, deployment := range compareResult.RemovedDeployments {
+		if deploymentOverlapsDomains(deployment, activeDomains) {
+			if _, exists := dm.failedDeployments[appName]; exists {
+				delete(dm.failedDeployments, appName)
+				hasChanged = true
+			}
+			continue
+		}
 		dm.failedDeployments[appName] = deployment
-	}
-	for appName := range compareResult.AddedDeployments {
-		delete(dm.failedDeployments, appName)
-	}
-	for appName := range compareResult.UpdatedDeployments {
-		delete(dm.failedDeployments, appName)
+		hasChanged = true
 	}
 
-	dm.compareResult = compareResult
+	for appName, deployment := range dm.failedDeployments {
+		if _, exists := activeDeployments[appName]; exists || deploymentOverlapsDomains(deployment, activeDomains) {
+			delete(dm.failedDeployments, appName)
+			hasChanged = true
+		}
+	}
+
 	return hasChanged
 }
 

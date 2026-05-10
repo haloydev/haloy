@@ -110,3 +110,101 @@ func TestFailedDeploymentsClearedOnRedeploy(t *testing.T) {
 		t.Fatalf("expected deployment ID deploy-2, got %s", deployments["myapp"].Labels.DeploymentID)
 	}
 }
+
+func TestFailedDeploymentClearedWhenRenamedAppReusesDomain(t *testing.T) {
+	dm := NewDeploymentManager(nil, nil)
+
+	oldLabels := &config.ContainerLabels{
+		AppName:      "old-app",
+		DeploymentID: "deploy-1",
+		Port:         config.Port(constants.DefaultContainerPort),
+		Domains: []config.Domain{
+			{Canonical: "app.example.com"},
+		},
+	}
+
+	dm.UpdateDeployments([]HealthyContainer{
+		{
+			ContainerID: "c1",
+			Labels:      oldLabels,
+			IP:          "10.0.0.1",
+			Port:        "8080",
+		},
+	})
+	dm.UpdateDeployments(nil)
+
+	if _, ok := dm.FailedDeployments()["old-app"]; !ok {
+		t.Fatal("expected old-app to be tracked as failed after removal")
+	}
+
+	newLabels := &config.ContainerLabels{
+		AppName:      "new-app",
+		DeploymentID: "deploy-2",
+		Port:         config.Port(constants.DefaultContainerPort),
+		Domains: []config.Domain{
+			{Canonical: "app.example.com"},
+		},
+	}
+
+	dm.UpdateDeployments([]HealthyContainer{
+		{
+			ContainerID: "c2",
+			Labels:      newLabels,
+			IP:          "10.0.0.2",
+			Port:        "8080",
+		},
+	})
+
+	if len(dm.FailedDeployments()) != 0 {
+		t.Fatalf("expected failed deployment to be cleared after renamed app reused domain, got %d", len(dm.FailedDeployments()))
+	}
+
+	deployments := dm.Deployments()
+	if _, ok := deployments["new-app"]; !ok {
+		t.Fatal("expected new-app to be active")
+	}
+}
+
+func TestRemovedDeploymentNotTrackedAsFailedWhenReplacementUsesAlias(t *testing.T) {
+	dm := NewDeploymentManager(nil, nil)
+
+	oldLabels := &config.ContainerLabels{
+		AppName:      "old-app",
+		DeploymentID: "deploy-1",
+		Port:         config.Port(constants.DefaultContainerPort),
+		Domains: []config.Domain{
+			{Canonical: "app.example.com", Aliases: []string{"www.example.com"}},
+		},
+	}
+
+	dm.UpdateDeployments([]HealthyContainer{
+		{
+			ContainerID: "c1",
+			Labels:      oldLabels,
+			IP:          "10.0.0.1",
+			Port:        "8080",
+		},
+	})
+
+	newLabels := &config.ContainerLabels{
+		AppName:      "new-app",
+		DeploymentID: "deploy-2",
+		Port:         config.Port(constants.DefaultContainerPort),
+		Domains: []config.Domain{
+			{Canonical: "www.example.com"},
+		},
+	}
+
+	dm.UpdateDeployments([]HealthyContainer{
+		{
+			ContainerID: "c2",
+			Labels:      newLabels,
+			IP:          "10.0.0.2",
+			Port:        "8080",
+		},
+	})
+
+	if len(dm.FailedDeployments()) != 0 {
+		t.Fatalf("expected removed old-app not to be tracked as failed when new-app owns an overlapping alias, got %d", len(dm.FailedDeployments()))
+	}
+}
