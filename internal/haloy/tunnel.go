@@ -22,8 +22,9 @@ import (
 
 func TunnelCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	var (
-		port        string
-		containerID string
+		localPortFlag  string
+		remotePortFlag string
+		containerID    string
 	)
 
 	cmd := &cobra.Command{
@@ -32,8 +33,9 @@ func TunnelCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 		Long: `Create a TCP tunnel to a running container, allowing local connections to be
 forwarded to the container's port.
 
-If local-port is omitted, it defaults to the port configured for the target in haloy.yaml.
-The remote port also defaults to the configured port. Use --port to override the remote port.
+If local-port and --port are omitted, the local port defaults to the port configured
+for the target in haloy.yaml. The remote port also defaults to the configured port.
+Use --remote-port to override the container port.
 
 Examples:
   # Tunnel to postgres (uses port 5432 from config for both local and remote)
@@ -41,21 +43,20 @@ Examples:
   # Then connect: psql -h localhost -p 5432
 
   # Use a different local port
-  haloy tunnel 15432 -t postgres
+  haloy tunnel -t postgres --port 15432
   # Then connect: psql -h localhost -p 15432
+
+  # Use a different local port with the positional form
+  haloy tunnel 15432 -t postgres
+
+  # Use a different remote container port
+  haloy tunnel -t postgres --port 15432 --remote-port 5432
 
   # Tunnel to a specific container (for apps with replicas)
   haloy tunnel --container abc123`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-
-			// Validate remote port override if provided
-			if port != "" {
-				if err := helpers.ValidatePort(port); err != nil {
-					return fmt.Errorf("invalid remote port: %w", err)
-				}
-			}
 
 			rawDeployConfig, format, err := configloader.Load(ctx, *configPath, flags.targets, flags.all)
 			if err != nil {
@@ -82,33 +83,54 @@ Examples:
 				break
 			}
 
-			// Determine local port: use argument if provided, otherwise default to target's configured port
-			var localPort string
-			if len(args) > 0 {
-				localPort = args[0]
-			} else {
-				if target.Port == "" {
-					return fmt.Errorf("no port configured for target %q; specify local port as argument", target.Name)
-				}
-				localPort = target.Port.String()
+			localPort, remotePort, err := resolveTunnelPorts(target, args, localPortFlag, remotePortFlag)
+			if err != nil {
+				return err
 			}
 
-			if err := helpers.ValidatePort(localPort); err != nil {
-				return fmt.Errorf("invalid port: %w", err)
-			}
-
-			return runTunnel(ctx, &target, localPort, port, containerID)
+			return runTunnel(ctx, &target, localPort, remotePort, containerID)
 		},
 	}
 
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Target to tunnel to (required for multi-target configs)")
-	cmd.Flags().StringVar(&port, "port", "", "Remote port to tunnel to (default: port from config)")
+	cmd.Flags().StringVar(&localPortFlag, "port", "", "Local port to listen on (default: port from config)")
+	cmd.Flags().StringVar(&remotePortFlag, "remote-port", "", "Remote container port to tunnel to (default: port from config)")
 	cmd.Flags().StringVar(&containerID, "container", "", "Specific container ID to tunnel to")
 
 	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
 
 	return cmd
+}
+
+func resolveTunnelPorts(target config.TargetConfig, args []string, localPortFlag, remotePortFlag string) (string, string, error) {
+	if len(args) > 0 && localPortFlag != "" {
+		return "", "", fmt.Errorf("local port specified twice: use either [local-port] or --port")
+	}
+
+	var localPort string
+	switch {
+	case localPortFlag != "":
+		localPort = localPortFlag
+	case len(args) > 0:
+		localPort = args[0]
+	case target.Port != "":
+		localPort = target.Port.String()
+	default:
+		return "", "", fmt.Errorf("no port configured for target %q; specify local port as argument or with --port", target.Name)
+	}
+
+	if err := helpers.ValidatePort(localPort); err != nil {
+		return "", "", fmt.Errorf("invalid local port: %w", err)
+	}
+
+	if remotePortFlag != "" {
+		if err := helpers.ValidatePort(remotePortFlag); err != nil {
+			return "", "", fmt.Errorf("invalid remote port: %w", err)
+		}
+	}
+
+	return localPort, remotePortFlag, nil
 }
 
 func runTunnel(ctx context.Context, targetConfig *config.TargetConfig, localPort, remotePort, containerID string) error {
@@ -227,13 +249,13 @@ func runTunnel(ctx context.Context, targetConfig *config.TargetConfig, localPort
 // dialTunnel establishes a TCP tunnel to a container through the API server.
 // host should include the port (e.g., "example.com:443").
 // It returns a net.Conn that can be used to communicate with the container.
-func dialTunnel(host string, useTLS bool, token, appName, port, containerID string) (net.Conn, error) {
+func dialTunnel(host string, useTLS bool, token, appName, remotePort, containerID string) (net.Conn, error) {
 	// Build path with query params
 	path := fmt.Sprintf("/v1/tunnel/%s", appName)
 
 	params := make([]string, 0)
-	if port != "" {
-		params = append(params, "port="+port)
+	if remotePort != "" {
+		params = append(params, "port="+remotePort)
 	}
 	if containerID != "" {
 		params = append(params, "container="+containerID)
