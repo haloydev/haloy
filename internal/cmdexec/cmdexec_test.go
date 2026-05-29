@@ -76,7 +76,7 @@ func TestRunCLICommandInDir_ReportsMissingCommand(t *testing.T) {
 
 func TestRunCLICommandWithOptions_FastCommandDoesNotPrintWaitMessage(t *testing.T) {
 	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
-	stderr := configureCLIWaitMessageTestDoubles(t, true)
+	waitOutput := configureCLIWaitMessageTestDoubles(t, true)
 
 	output, err := RunCLICommandWithOptions(
 		context.Background(),
@@ -93,14 +93,14 @@ func TestRunCLICommandWithOptions_FastCommandDoesNotPrintWaitMessage(t *testing.
 	if output != "done" {
 		t.Fatalf("RunCLICommandWithOptions() output = %q, want done", output)
 	}
-	if stderr.String() != "" {
-		t.Fatalf("RunCLICommandWithOptions() stderr = %q, want no wait message", stderr.String())
+	if waitOutput.String() != "" {
+		t.Fatalf("RunCLICommandWithOptions() wait output = %q, want no wait message", waitOutput.String())
 	}
 }
 
 func TestRunCLICommandWithOptions_SlowCommandPrintsWaitMessageOnce(t *testing.T) {
 	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
-	stderr := configureCLIWaitMessageTestDoubles(t, true)
+	waitOutput := configureCLIWaitMessageTestDoubles(t, true)
 
 	output, err := RunCLICommandWithOptions(
 		context.Background(),
@@ -118,14 +118,14 @@ func TestRunCLICommandWithOptions_SlowCommandPrintsWaitMessageOnce(t *testing.T)
 	if output != "done" {
 		t.Fatalf("RunCLICommandWithOptions() output = %q, want done", output)
 	}
-	if got, want := stderr.String(), "waiting\n"; got != want {
-		t.Fatalf("RunCLICommandWithOptions() stderr = %q, want %q", got, want)
+	if got, want := waitOutput.String(), "waiting\n"; got != want {
+		t.Fatalf("RunCLICommandWithOptions() wait output = %q, want %q", got, want)
 	}
 }
 
 func TestRunCLICommandWithOptions_NonTerminalDoesNotPrintWaitMessage(t *testing.T) {
 	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
-	stderr := configureCLIWaitMessageTestDoubles(t, false)
+	waitOutput := configureCLIWaitMessageTestDoubles(t, false)
 
 	output, err := RunCLICommandWithOptions(
 		context.Background(),
@@ -143,8 +143,8 @@ func TestRunCLICommandWithOptions_NonTerminalDoesNotPrintWaitMessage(t *testing.
 	if output != "done" {
 		t.Fatalf("RunCLICommandWithOptions() output = %q, want done", output)
 	}
-	if stderr.String() != "" {
-		t.Fatalf("RunCLICommandWithOptions() stderr = %q, want no wait message", stderr.String())
+	if waitOutput.String() != "" {
+		t.Fatalf("RunCLICommandWithOptions() wait output = %q, want no wait message", waitOutput.String())
 	}
 }
 
@@ -170,19 +170,21 @@ func TestRunCLICommand_ReportsExitStderr(t *testing.T) {
 func configureCLIWaitMessageTestDoubles(t *testing.T, terminal bool) *bytes.Buffer {
 	t.Helper()
 
-	originalOutput := cliWaitMessageOutput
+	originalPrint := cliWaitMessagePrint
 	originalIsTerminal := cliWaitMessageIsTerminal
 
-	var stderr bytes.Buffer
-	cliWaitMessageOutput = &stderr
+	var output bytes.Buffer
+	cliWaitMessagePrint = func(message string) {
+		fmt.Fprintln(&output, message)
+	}
 	cliWaitMessageIsTerminal = func() bool { return terminal }
 
 	t.Cleanup(func() {
-		cliWaitMessageOutput = originalOutput
+		cliWaitMessagePrint = originalPrint
 		cliWaitMessageIsTerminal = originalIsTerminal
 	})
 
-	return &stderr
+	return &output
 }
 
 func helperProcessPath(t *testing.T) string {

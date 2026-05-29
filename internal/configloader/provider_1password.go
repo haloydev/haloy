@@ -9,7 +9,7 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 )
 
-const onePasswordWaitMessage = "Resolving secrets from 1password"
+const onePasswordWaitMessage = "Waiting for 1Password. Approve the prompt or unlock the app if needed."
 
 var run1PasswordCLICommand = cmdexec.RunCLICommandWithOptions
 

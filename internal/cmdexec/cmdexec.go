@@ -4,20 +4,22 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/haloydev/haloy/internal/ui"
 	"github.com/mattn/go-isatty"
 )
 
 const defaultCLICommandWaitDelay = time.Second
 
 var (
-	cliWaitMessageOutput     io.Writer = os.Stderr
-	cliWaitMessageIsTerminal           = func() bool { return isatty.IsTerminal(os.Stderr.Fd()) }
+	cliWaitMessagePrint = func(message string) {
+		ui.Info("%s", message)
+	}
+	cliWaitMessageIsTerminal = func() bool { return isatty.IsTerminal(os.Stdout.Fd()) }
 )
 
 type CLICommandOptions struct {
@@ -133,7 +135,7 @@ func runCLICommand(cmd *exec.Cmd, opts CLICommandOptions) error {
 	case err := <-done:
 		return err
 	case <-timer.C:
-		fmt.Fprintln(cliWaitMessageOutput, opts.WaitMessage)
+		cliWaitMessagePrint(opts.WaitMessage)
 		return <-done
 	}
 }
