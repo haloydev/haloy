@@ -80,19 +80,11 @@ func resolveServerTargetAPIToken(ctx context.Context, target *config.TargetConfi
 		return nil
 	}
 
-	tokenOnlyConfig := config.DeployConfig{
-		TargetConfig: config.TargetConfig{
-			APIToken: target.APIToken,
-		},
-		SecretProviders: deployConfig.SecretProviders,
-	}
-	tokenOnlyConfig.Format = format
-
-	resolvedConfig, err := configloader.ResolveSecrets(ctx, tokenOnlyConfig, configPath)
+	resolvedAPIToken, err := configloader.ResolveValueSource(ctx, target.APIToken, deployConfig.SecretProviders, format, configPath)
 	if err != nil {
 		return err
 	}
-	target.APIToken = resolvedConfig.APIToken
+	target.APIToken = resolvedAPIToken
 	return nil
 }
 

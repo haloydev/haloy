@@ -28,22 +28,59 @@ func ResolveSecrets(ctx context.Context, deployConfig config.DeployConfig, confi
 		return resolvedConfig, nil
 	}
 
-	// Group and fetch secrets once for the entire deploy config
-	groupedSources, err := groupSources(allSources, resolvedConfig.SecretProviders, resolvedConfig.Format, configDir)
+	if err := resolveValueSources(ctx, allSources, resolvedConfig.SecretProviders, resolvedConfig.Format, configDir); err != nil {
+		return config.DeployConfig{}, err
+	}
+
+	return resolvedConfig, nil
+}
+
+// ResolveValueSource resolves a single ValueSource using the same provider logic
+// as ResolveSecrets, returning a resolved copy without mutating the input.
+func ResolveValueSource(ctx context.Context, valueSource *config.ValueSource, providers *config.SecretProviders, format, configPath string) (*config.ValueSource, error) {
+	if valueSource == nil {
+		return nil, nil
+	}
+
+	resolvedValueSource := *valueSource
+	if resolvedValueSource.From == nil {
+		return &resolvedValueSource, nil
+	}
+
+	configFile, err := FindConfigFile(configPath)
 	if err != nil {
-		return config.DeployConfig{}, fmt.Errorf("failed to group sources: %w", err)
+		return nil, fmt.Errorf("failed to determine config file path: %w", err)
+	}
+	configDir := filepath.Dir(configFile)
+
+	if err := resolveValueSources(ctx, []*config.ValueSource{&resolvedValueSource}, providers, format, configDir); err != nil {
+		return nil, err
+	}
+
+	return &resolvedValueSource, nil
+}
+
+func resolveValueSources(ctx context.Context, sources []*config.ValueSource, providers *config.SecretProviders, format, configDir string) error {
+	if len(sources) == 0 {
+		return nil
+	}
+
+	// Group and fetch secrets once for the selected sources.
+	groupedSources, err := groupSources(sources, providers, format, configDir)
+	if err != nil {
+		return fmt.Errorf("failed to group sources: %w", err)
 	}
 
 	fetchedDataCache, err := fetchGroupedSources(ctx, groupedSources)
 	if err != nil {
-		return config.DeployConfig{}, fmt.Errorf("failed to fetch grouped sources: %w", err)
+		return fmt.Errorf("failed to fetch grouped sources: %w", err)
 	}
 
-	if err := extractValues(allSources, fetchedDataCache); err != nil {
-		return config.DeployConfig{}, fmt.Errorf("failed to extract values: %w", err)
+	if err := extractValues(sources, fetchedDataCache); err != nil {
+		return fmt.Errorf("failed to extract values: %w", err)
 	}
 
-	return resolvedConfig, nil
+	return nil
 }
 
 func gatherValueSources(deployConfig *config.DeployConfig) []*config.ValueSource {
