@@ -149,7 +149,7 @@ func TestImage_Validate(t *testing.T) {
 				Tag:        "latest",
 				History: &ImageHistory{
 					Strategy: HistoryStrategyRegistry,
-					Count:    helpers.Ptr(5),
+					Count:    new(5),
 					Pattern:  "v*",
 				},
 			},
@@ -163,7 +163,7 @@ func TestImage_Validate(t *testing.T) {
 				Tag:        "main",
 				History: &ImageHistory{
 					Strategy: HistoryStrategyRegistry,
-					Count:    helpers.Ptr(5),
+					Count:    new(5),
 					Pattern:  "v*",
 				},
 			},
@@ -177,7 +177,7 @@ func TestImage_Validate(t *testing.T) {
 				Tag:        "v1.2.3",
 				History: &ImageHistory{
 					Strategy: HistoryStrategyRegistry,
-					Count:    helpers.Ptr(5),
+					Count:    new(5),
 					Pattern:  "v*",
 				},
 			},
@@ -267,7 +267,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "valid local strategy with count",
 			history: ImageHistory{
 				Strategy: HistoryStrategyLocal,
-				Count:    helpers.Ptr(5),
+				Count:    new(5),
 			},
 			wantErr: false,
 		},
@@ -275,7 +275,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "valid registry strategy with count and pattern",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.Ptr(10),
+				Count:    new(10),
 				Pattern:  "v*",
 			},
 			wantErr: false,
@@ -324,7 +324,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "local strategy with zero count",
 			history: ImageHistory{
 				Strategy: HistoryStrategyLocal,
-				Count:    helpers.Ptr(0),
+				Count:    new(0),
 			},
 			wantErr: true,
 			errMsg:  "must be at least 1",
@@ -333,7 +333,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "registry strategy with negative count",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.Ptr(-1),
+				Count:    new(-1),
 			},
 			wantErr: true,
 			errMsg:  "must be at least 1",
@@ -342,7 +342,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "registry strategy missing pattern",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.Ptr(5),
+				Count:    new(5),
 				Pattern:  "",
 			},
 			wantErr: true,
@@ -352,7 +352,7 @@ func TestImageHistory_Validate(t *testing.T) {
 			name: "registry strategy with whitespace pattern",
 			history: ImageHistory{
 				Strategy: HistoryStrategyRegistry,
-				Count:    helpers.Ptr(5),
+				Count:    new(5),
 				Pattern:  "   ",
 			},
 			wantErr: true,
@@ -594,7 +594,7 @@ func TestImage_Validate_WithBuildConfig(t *testing.T) {
 
 func TestImageDecodeHook(t *testing.T) {
 	decodeHook := ImageDecodeHook()
-	imageType := reflect.TypeOf(Image{})
+	imageType := reflect.TypeFor[Image]()
 
 	tests := []struct {
 		name     string
@@ -604,22 +604,22 @@ func TestImageDecodeHook(t *testing.T) {
 		{
 			name:     "string image ref",
 			data:     "nginx:alpine",
-			expected: map[string]interface{}{"repository": "nginx:alpine"},
+			expected: map[string]any{"repository": "nginx:alpine"},
 		},
 		{
 			name:     "string with registry",
 			data:     "ghcr.io/user/repo:v1",
-			expected: map[string]interface{}{"repository": "ghcr.io/user/repo:v1"},
+			expected: map[string]any{"repository": "ghcr.io/user/repo:v1"},
 		},
 		{
 			name:     "empty string",
 			data:     "",
-			expected: map[string]interface{}{"repository": ""},
+			expected: map[string]any{"repository": ""},
 		},
 		{
 			name:     "map passes through",
-			data:     map[string]interface{}{"repository": "nginx", "tag": "latest"},
-			expected: map[string]interface{}{"repository": "nginx", "tag": "latest"},
+			data:     map[string]any{"repository": "nginx", "tag": "latest"},
+			expected: map[string]any{"repository": "nginx", "tag": "latest"},
 		},
 		{
 			name:     "int passes through",
@@ -643,10 +643,10 @@ func TestImageDecodeHook(t *testing.T) {
 
 func TestImageDecodeHook_NonImageType(t *testing.T) {
 	decodeHook := ImageDecodeHook()
-	stringType := reflect.TypeOf("")
+	stringType := reflect.TypeFor[string]()
 
 	data := "nginx:alpine"
-	result, err := decodeHook(reflect.TypeOf(data), stringType, data)
+	result, err := decodeHook(reflect.TypeFor[string](), stringType, data)
 	if err != nil {
 		t.Errorf("expected no error for non-Image target type, got %v", err)
 	}

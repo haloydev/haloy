@@ -167,12 +167,15 @@ func imagePruneErrorHint(target config.TargetConfig) []string {
 
 	if target.Image != nil && target.Image.History != nil && target.Image.History.Count != nil && *target.Image.History.Count > 1 {
 		reducedKeep := *target.Image.History.Count - 1
-		hints = append(hints,
-			fmt.Sprintf("Hint: current image.history.count is %d; if you can keep one fewer rollback, try '%s'.",
+		hints = append(
+			hints,
+			fmt.Sprintf(
+				"Hint: current image.history.count is %d; if you can keep one fewer rollback, try '%s'.",
 				*target.Image.History.Count,
 				imagePruneCommandHint(".", target, reducedKeep, true, false),
 			),
-			fmt.Sprintf("Hint: if that helps, lower image.history.count from %d to %d in your config for future deploys.",
+			fmt.Sprintf(
+				"Hint: if that helps, lower image.history.count from %d to %d in your config for future deploys.",
 				*target.Image.History.Count,
 				reducedKeep,
 			),

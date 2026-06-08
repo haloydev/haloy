@@ -242,7 +242,8 @@ func uploadDiskSpaceRequirements(ctx context.Context, cli dockerInfoProvider, pr
 		return nil, err
 	}
 
-	return buildDiskSpaceRequirements(probe, constants.DefaultImageDiskReserve,
+	return buildDiskSpaceRequirements(
+		probe, constants.DefaultImageDiskReserve,
 		diskSpaceContribution{Path: tempDir, Bytes: uploadSize},
 		diskSpaceContribution{Path: dockerRootDir, Bytes: uploadSize},
 	)
@@ -267,7 +268,8 @@ func layeredUploadDiskSpaceRequirements(ctx context.Context, cli dockerInfoProvi
 		return nil, err
 	}
 
-	return buildDiskSpaceRequirements(probe, constants.DefaultImageDiskReserve,
+	return buildDiskSpaceRequirements(
+		probe, constants.DefaultImageDiskReserve,
 		diskSpaceContribution{Path: layerStorageDir, Bytes: layerUploadBytes},
 		diskSpaceContribution{Path: tempDir, Bytes: assembledImageSizeBytes},
 		diskSpaceContribution{Path: dockerRootDir, Bytes: assembledImageSizeBytes},

@@ -13,7 +13,6 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
-	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/jinzhu/copier"
 	"github.com/knadh/koanf/providers/file"
@@ -282,7 +281,7 @@ func applyPreset(tc *config.TargetConfig) error {
 			tc.Image.PullPolicy = config.PullPolicyIfMissing
 		}
 
-		tc.Protected = helpers.Ptr(true)
+		tc.Protected = new(true)
 
 	case config.PresetService:
 		if tc.DeploymentStrategy == "" {
@@ -314,7 +313,7 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 	if tc.Image == nil {
 		tc.Image = &config.Image{
 			Repository: tc.Name,
-			Build:      helpers.Ptr(true),
+			Build:      new(true),
 		}
 	}
 
@@ -323,7 +322,7 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 		// same local-build defaults as an omitted image field.
 		tc.Image.Repository = tc.Name
 		if tc.Image.Build == nil && tc.Image.BuildConfig == nil {
-			tc.Image.Build = helpers.Ptr(true)
+			tc.Image.Build = new(true)
 		}
 	}
 
@@ -336,14 +335,14 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 	if tc.Image.History == nil {
 		tc.Image.History = &config.ImageHistory{
 			Strategy: config.HistoryStrategyLocal,
-			Count:    helpers.Ptr(int(constants.DefaultDeploymentsToKeep)),
+			Count:    new(int(constants.DefaultDeploymentsToKeep)),
 		}
 	} else {
 		if tc.Image.History.Strategy == "" {
 			tc.Image.History.Strategy = config.HistoryStrategyLocal
 		}
 		if tc.Image.History.Strategy == config.HistoryStrategyLocal && tc.Image.History.Count == nil {
-			tc.Image.History.Count = helpers.Ptr(int(constants.DefaultDeploymentsToKeep))
+			tc.Image.History.Count = new(int(constants.DefaultDeploymentsToKeep))
 		}
 	}
 
@@ -360,11 +359,11 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 	}
 
 	if tc.Replicas == nil {
-		tc.Replicas = helpers.Ptr(constants.DefaultReplicas)
+		tc.Replicas = new(constants.DefaultReplicas)
 	}
 
 	if tc.MinReadySeconds == nil {
-		tc.MinReadySeconds = helpers.Ptr(constants.DefaultMinReadySeconds)
+		tc.MinReadySeconds = new(constants.DefaultMinReadySeconds)
 	}
 }
 
@@ -476,7 +475,7 @@ func LoadRawDeployConfig(configPath string) (config.DeployConfig, string, error)
 	}
 
 	configKeys := k.Keys()
-	deployConfigType := reflect.TypeOf(config.DeployConfig{})
+	deployConfigType := reflect.TypeFor[config.DeployConfig]()
 
 	if err := config.CheckUnknownFields(deployConfigType, configKeys, format); err != nil {
 		return config.DeployConfig{}, "", err

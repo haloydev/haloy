@@ -352,7 +352,7 @@ func pushImageToRegistry(ctx context.Context, imageRef string, image *config.Ima
 	err := pushCmd.Run()
 
 	var cached, pushed, mounted int
-	for _, line := range strings.Split(stdoutBuf.String(), "\n") {
+	for line := range strings.SplitSeq(stdoutBuf.String(), "\n") {
 		switch {
 		case strings.Contains(line, "Layer already exists"):
 			cached++

@@ -125,7 +125,7 @@ func PortDecodeHook() mapstructure.DecodeHookFuncType {
 		data any,
 	) (any, error) {
 		// Only process if target type is Port
-		if t != reflect.TypeOf(Port("")) {
+		if t != reflect.TypeFor[Port]() {
 			return data, nil
 		}
 

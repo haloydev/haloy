@@ -321,9 +321,9 @@ func TestStateTracker_ConcurrentAccess(t *testing.T) {
 	done := make(chan bool)
 
 	// Concurrent reads and writes
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
-			for j := 0; j < 100; j++ {
+			for j := range 100 {
 				st.RecordResult(Result{Target: targets[j%3], Healthy: j%2 == 0})
 				st.GetHealthyTargets()
 				st.GetStats()
@@ -334,7 +334,7 @@ func TestStateTracker_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 }

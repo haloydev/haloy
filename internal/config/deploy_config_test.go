@@ -92,7 +92,7 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 				Server:          "haloy.dev",
 				HealthCheckPath: "/health",
 				Port:            "8080",
-				Replicas:        helpers.Ptr(2),
+				Replicas:        new(2),
 				Network:         "bridge",
 				Volumes:         []string{"/host:/container"},
 				PreDeploy:       []string{"echo pre"},
@@ -255,7 +255,7 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 					Repository: "nginx",
 					Tag:        "latest",
 				},
-				Replicas: helpers.Ptr(0),
+				Replicas: new(0),
 			},
 			format:      "yaml",
 			expectError: true,
@@ -270,7 +270,7 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 					Repository: "nginx",
 					Tag:        "latest",
 				},
-				MinReadySeconds: helpers.Ptr(-1),
+				MinReadySeconds: new(-1),
 			},
 			format:      "yaml",
 			expectError: true,
@@ -285,7 +285,7 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 					Repository: "nginx",
 					Tag:        "latest",
 				},
-				MinReadySeconds: helpers.Ptr(601),
+				MinReadySeconds: new(601),
 			},
 			format:      "yaml",
 			expectError: true,
@@ -300,7 +300,7 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 					Repository: "nginx",
 					Tag:        "latest",
 				},
-				MinReadySeconds: helpers.Ptr(0),
+				MinReadySeconds: new(0),
 			},
 			format:      "yaml",
 			expectError: false,
@@ -314,7 +314,7 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 					Repository: "nginx",
 					Tag:        "latest",
 				},
-				MinReadySeconds: helpers.Ptr(600),
+				MinReadySeconds: new(600),
 			},
 			format:      "yaml",
 			expectError: false,
@@ -664,7 +664,7 @@ func TestValueSource_Validate(t *testing.T) {
 
 func TestPortDecodeHook(t *testing.T) {
 	decodeHook := PortDecodeHook()
-	portType := reflect.TypeOf(Port(""))
+	portType := reflect.TypeFor[Port]()
 
 	tests := []struct {
 		name        string
@@ -747,11 +747,11 @@ func TestPortDecodeHook(t *testing.T) {
 
 func TestPortDecodeHook_NonPortType(t *testing.T) {
 	decodeHook := PortDecodeHook()
-	stringType := reflect.TypeOf("")
+	stringType := reflect.TypeFor[string]()
 
 	// Test that the hook returns data unchanged when target is not Port type
 	data := "8080"
-	result, err := decodeHook(reflect.TypeOf(data), stringType, data)
+	result, err := decodeHook(reflect.TypeFor[string](), stringType, data)
 	if err != nil {
 		t.Errorf("expected no error for non-Port target type, got %v", err)
 	}

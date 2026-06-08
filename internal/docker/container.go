@@ -224,7 +224,7 @@ func stopContainersConcurrent(ctx context.Context, cli *client.Client, logger *s
 }
 
 func stopSingleContainer(ctx context.Context, cli *client.Client, logger *slog.Logger, containerID string) error {
-	stopOptions := container.StopOptions{Timeout: helpers.Ptr(20)}
+	stopOptions := container.StopOptions{Timeout: new(20)}
 
 	err := cli.ContainerStop(ctx, containerID, stopOptions)
 	if err == nil {

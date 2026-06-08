@@ -4,7 +4,7 @@ vars:
   VERSION:
     sh: git describe --tags --dirty --always --match 'v*' 2>/dev/null || echo dev
   GO_LDFLAGS: -s -w -X github.com/haloydev/haloy/internal/constants.Version={{.VERSION}}
-  GO_VULN_TOOLCHAIN: go1.25.11
+  GO_VULN_TOOLCHAIN: go1.26.4
 
 tasks:
   tools:

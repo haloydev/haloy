@@ -2,6 +2,7 @@ package haloy
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -35,13 +36,7 @@ func TargetsCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 					}
 				}
 				for name := range targets {
-					found := false
-					for _, t := range flags.targets {
-						if t == name {
-							found = true
-							break
-						}
-					}
+					found := slices.Contains(flags.targets, name)
 					if !found {
 						delete(targets, name)
 					}

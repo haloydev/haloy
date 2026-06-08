@@ -171,7 +171,8 @@ func Run(debug bool) {
 		logger.Error("Initial update failed", "error", err)
 	}
 
-	logger.Info("haloyd successfully initialized",
+	logger.Info(
+		"haloyd successfully initialized",
 		logging.AttrHaloydInitComplete, true, // signal that the initialization is complete (haloyd init), used for logs.
 	)
 

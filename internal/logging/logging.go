@@ -57,7 +57,8 @@ func LogFatal(logger *slog.Logger, message string, args ...any) {
 // LogDeploymentComplete marks a deployment as successfully completed
 // This sends the completion signal that tells CLI clients to stop streaming
 func LogDeploymentComplete(logger *slog.Logger, domains []string, deploymentID, appName, message string) {
-	logger.Info(message,
+	logger.Info(
+		message,
 		AttrApp, appName,
 		AttrDeploymentID, deploymentID,
 		AttrDomains, domains,
@@ -69,7 +70,8 @@ func LogDeploymentComplete(logger *slog.Logger, domains []string, deploymentID, 
 // LogDeploymentFailed marks a deployment as failed
 // This sends the failure signal that tells CLI clients to stop streaming with error
 func LogDeploymentFailed(logger *slog.Logger, deploymentID, appName, message string, err error) {
-	logger.Error(message,
+	logger.Error(
+		message,
 		AttrApp, appName,
 		AttrDeploymentID, deploymentID,
 		AttrError, err,

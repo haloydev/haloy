@@ -1,6 +1,6 @@
 module github.com/haloydev/haloy
 
-go 1.25
+go 1.26.4
 
 require (
 	github.com/charmbracelet/lipgloss v1.1.0

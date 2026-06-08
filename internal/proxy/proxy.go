@@ -440,7 +440,8 @@ func (p *Proxy) serveErrorPage(w http.ResponseWriter, statusCode int, message st
 
 // logRequest logs an HTTP request in structured JSON format.
 func (p *Proxy) logRequest(r *http.Request, statusCode int, duration time.Duration) {
-	p.logger.Info("request",
+	p.logger.Info(
+		"request",
 		"method", r.Method,
 		"host", r.Host,
 		"path", r.URL.Path,

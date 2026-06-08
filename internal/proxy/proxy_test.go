@@ -101,7 +101,7 @@ func TestSelectBackend_SingleBackend(t *testing.T) {
 	}
 
 	// Call multiple times - should always return the same backend
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		backend := p.selectBackend(route)
 		if backend.IP != "10.0.0.1" || backend.Port != "8080" {
 			t.Errorf("selectBackend() = %v, want {10.0.0.1 8080}", backend)
@@ -197,13 +197,11 @@ func TestSelectBackend_Concurrent(t *testing.T) {
 	results := make(chan string, 100)
 
 	// Spawn many goroutines to test concurrent access
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			backend := p.selectBackend(route)
 			results <- backend.IP
-		}()
+		})
 	}
 
 	wg.Wait()

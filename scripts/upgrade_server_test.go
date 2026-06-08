@@ -170,7 +170,8 @@ func runUpgradeScript(t *testing.T, f upgradeFixture, env ...string) (string, er
 	}
 
 	cmd := exec.Command("sh", filepath.Join(wd, "upgrade-server.sh"))
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(
+		os.Environ(),
 		"PATH="+f.binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"HALOY_UPGRADE_INIT_SYSTEM=systemd",
 		"HALOY_UPGRADE_SLEEP_SECONDS=0",

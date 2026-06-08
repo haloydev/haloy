@@ -596,8 +596,8 @@ func extractDigestFromPath(layerPath string) string {
 	}
 
 	// Handle older buildkit format: blobs/sha256/<hash>/layer.tar
-	if strings.HasPrefix(dir, "blobs/sha256/") {
-		hash := strings.TrimPrefix(dir, "blobs/sha256/")
+	if after, ok := strings.CutPrefix(dir, "blobs/sha256/"); ok {
+		hash := after
 		return "sha256:" + hash
 	}
 

@@ -45,7 +45,7 @@ func GetConfigParser(format string) (koanf.Parser, error) {
 // GetFieldNameForFormat returns the field name as it appears in the specified format
 func GetFieldNameForFormat(v any, fieldName, format string) string {
 	t := reflect.TypeOf(v)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -138,21 +138,20 @@ func getKnownFields(structType reflect.Type, format string) []string {
 
 // collectFields recursively collects field names from a struct type
 func collectFields(structType reflect.Type, format string, prefix string, fields *[]string) {
-	if structType.Kind() == reflect.Ptr {
+	if structType.Kind() == reflect.Pointer {
 		structType = structType.Elem()
 	}
 	if structType.Kind() != reflect.Struct {
 		return
 	}
 
-	for i := 0; i < structType.NumField(); i++ {
-		field := structType.Field(i)
+	for field := range structType.Fields() {
 		if !field.IsExported() {
 			continue
 		}
 
 		fieldType := field.Type
-		if fieldType.Kind() == reflect.Ptr {
+		if fieldType.Kind() == reflect.Pointer {
 			fieldType = fieldType.Elem()
 		}
 
@@ -180,7 +179,7 @@ func collectFields(structType reflect.Type, format string, prefix string, fields
 		// Handle maps with struct values (like Targets map[string]*TargetConfig)
 		if fieldType.Kind() == reflect.Map {
 			valueType := fieldType.Elem()
-			if valueType.Kind() == reflect.Ptr {
+			if valueType.Kind() == reflect.Pointer {
 				valueType = valueType.Elem()
 			}
 			if valueType.Kind() == reflect.Struct {
@@ -190,7 +189,7 @@ func collectFields(structType reflect.Type, format string, prefix string, fields
 			} else if valueType.Kind() == reflect.Map {
 				// Handle nested maps (like SecretProviders -> OnePassword -> map[string]Config)
 				nestedValueType := valueType.Elem()
-				if nestedValueType.Kind() == reflect.Ptr {
+				if nestedValueType.Kind() == reflect.Pointer {
 					nestedValueType = nestedValueType.Elem()
 				}
 				if nestedValueType.Kind() == reflect.Struct {
@@ -202,7 +201,7 @@ func collectFields(structType reflect.Type, format string, prefix string, fields
 			collectFields(fieldType, format, fullFieldName, fields)
 		} else if fieldType.Kind() == reflect.Slice {
 			elemType := fieldType.Elem()
-			if elemType.Kind() == reflect.Ptr {
+			if elemType.Kind() == reflect.Pointer {
 				elemType = elemType.Elem()
 			}
 			if elemType.Kind() == reflect.Struct {

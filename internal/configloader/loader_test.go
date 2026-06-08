@@ -130,7 +130,7 @@ func TestMergeToTarget(t *testing.T) {
 					Pattern:  "v*",
 				},
 			},
-			expectedBuild: helpers.Ptr(false),
+			expectedBuild: new(false),
 		},
 		{
 			name:         "override with registry auth",
@@ -427,7 +427,7 @@ func TestMergeToTarget(t *testing.T) {
 			expectedImage: config.Image{
 				Repository: "my-service",
 			},
-			expectedBuild: helpers.Ptr(true),
+			expectedBuild: new(true),
 		},
 		{
 			name:         "partial image with only tag defaults repository to target name",
@@ -444,7 +444,7 @@ func TestMergeToTarget(t *testing.T) {
 				Repository: "my-app",
 				Tag:        "v2.0",
 			},
-			expectedBuild: helpers.Ptr(true),
+			expectedBuild: new(true),
 		},
 		{
 			name:         "partial image with only history defaults repository to target name and keeps local build",
@@ -465,7 +465,7 @@ func TestMergeToTarget(t *testing.T) {
 					Strategy: config.HistoryStrategyNone,
 				},
 			},
-			expectedBuild: helpers.Ptr(true),
+			expectedBuild: new(true),
 		},
 		{
 			name:         "partial image history count overrides default local history and keeps local build",
@@ -473,7 +473,7 @@ func TestMergeToTarget(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					History: &config.ImageHistory{
-						Count: helpers.Ptr(3),
+						Count: new(3),
 					},
 				},
 			},
@@ -484,10 +484,10 @@ func TestMergeToTarget(t *testing.T) {
 				Repository: "my-app",
 				History: &config.ImageHistory{
 					Strategy: config.HistoryStrategyLocal,
-					Count:    helpers.Ptr(3),
+					Count:    new(3),
 				},
 			},
-			expectedBuild: helpers.Ptr(true),
+			expectedBuild: new(true),
 		},
 		{
 			name: "base partial image with only history defaults repository to target name and keeps local build",
@@ -510,7 +510,7 @@ func TestMergeToTarget(t *testing.T) {
 					Strategy: config.HistoryStrategyNone,
 				},
 			},
-			expectedBuild: helpers.Ptr(true),
+			expectedBuild: new(true),
 		},
 	}
 
@@ -617,7 +617,7 @@ func TestMergeImage(t *testing.T) {
 		Tag:        "1.20",
 		History: &config.ImageHistory{
 			Strategy: config.HistoryStrategyLocal,
-			Count:    helpers.Ptr(5),
+			Count:    new(5),
 		},
 	}
 
@@ -672,7 +672,7 @@ func TestMergeImage(t *testing.T) {
 				PullPolicy: config.PullPolicyIfMissing,
 				History: &config.ImageHistory{
 					Strategy: config.HistoryStrategyLocal,
-					Count:    helpers.Ptr(5),
+					Count:    new(5),
 				},
 			},
 		},
@@ -834,7 +834,7 @@ func TestExpandBuildArgsFromEnv(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "myapp",
-					Build:      helpers.Ptr(true),
+					Build:      new(true),
 				},
 				Env: []config.EnvVar{
 					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}, BuildArg: true},
@@ -852,7 +852,7 @@ func TestExpandBuildArgsFromEnv(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "myapp",
-					Build:      helpers.Ptr(true),
+					Build:      new(true),
 				},
 				Env: []config.EnvVar{
 					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}},
@@ -866,7 +866,7 @@ func TestExpandBuildArgsFromEnv(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "myapp",
-					Build:      helpers.Ptr(true),
+					Build:      new(true),
 					BuildConfig: &config.BuildConfig{
 						Args: []config.BuildArg{
 							{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "development"}},
@@ -888,7 +888,7 @@ func TestExpandBuildArgsFromEnv(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "myapp",
-					Build:      helpers.Ptr(true),
+					Build:      new(true),
 				},
 				Env: []config.EnvVar{
 					{
@@ -914,7 +914,7 @@ func TestExpandBuildArgsFromEnv(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository: "myapp",
-					Build:      helpers.Ptr(false),
+					Build:      new(false),
 				},
 				Env: []config.EnvVar{
 					{Name: "NODE_ENV", ValueSource: config.ValueSource{Value: "production"}, BuildArg: true},
@@ -937,7 +937,7 @@ func TestExpandBuildArgsFromEnv(t *testing.T) {
 			targetConfig: config.TargetConfig{
 				Image: &config.Image{
 					Repository:  "myapp",
-					Build:       helpers.Ptr(true),
+					Build:       new(true),
 					BuildConfig: nil, // No build config initially
 				},
 				Env: []config.EnvVar{
@@ -999,7 +999,7 @@ func TestMergeToTargetWithBuildArgExpansion(t *testing.T) {
 			Name: "myapp",
 			Image: &config.Image{
 				Repository: "myapp",
-				Build:      helpers.Ptr(true),
+				Build:      new(true),
 			},
 			Server: "test.haloy.dev",
 			Env: []config.EnvVar{
@@ -1203,14 +1203,14 @@ func TestMergeToTarget_MinReadySeconds(t *testing.T) {
 	}{
 		{
 			name:     "inherits from base when target is nil",
-			base:     helpers.Ptr(10),
+			base:     new(10),
 			target:   nil,
 			expected: 10,
 		},
 		{
 			name:     "target overrides base",
-			base:     helpers.Ptr(10),
-			target:   helpers.Ptr(30),
+			base:     new(10),
+			target:   new(30),
 			expected: 30,
 		},
 		{
@@ -1221,8 +1221,8 @@ func TestMergeToTarget_MinReadySeconds(t *testing.T) {
 		},
 		{
 			name:     "target explicit zero overrides base",
-			base:     helpers.Ptr(10),
-			target:   helpers.Ptr(0),
+			base:     new(10),
+			target:   new(0),
 			expected: 0,
 		},
 	}

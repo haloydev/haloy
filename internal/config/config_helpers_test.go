@@ -6,7 +6,7 @@ import (
 )
 
 func TestCheckUnknownFields(t *testing.T) {
-	deployConfigType := reflect.TypeOf(DeployConfig{})
+	deployConfigType := reflect.TypeFor[DeployConfig]()
 	tests := []struct {
 		name    string
 		keys    []string

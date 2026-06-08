@@ -22,11 +22,11 @@ type Image struct {
 
 func ImageDecodeHook() mapstructure.DecodeHookFuncType {
 	return func(f reflect.Type, t reflect.Type, data any) (any, error) {
-		if t != reflect.TypeOf(Image{}) {
+		if t != reflect.TypeFor[Image]() {
 			return data, nil
 		}
 		if v, ok := data.(string); ok {
-			return map[string]interface{}{"repository": v}, nil
+			return map[string]any{"repository": v}, nil
 		}
 		return data, nil
 	}
