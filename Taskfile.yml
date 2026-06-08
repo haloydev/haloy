@@ -28,7 +28,7 @@ tasks:
     env:
       GOTOOLCHAIN: '{{.GO_VULN_TOOLCHAIN}}'
     cmds:
-      - govulncheck ./...
+      - go run ./tools/vulncheck
 
   fmt:
     desc: Format code

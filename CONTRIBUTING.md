@@ -2,7 +2,7 @@ Contributions are welcome under the [MIT License](LICENSE). Here's how to get in
 
 ## Getting Started
 
-Prerequisites: [Go 1.25](https://go.dev/dl/), [Docker](https://docs.docker.com/get-docker/), and [Task](https://taskfile.dev/docs/installation).
+Prerequisites: [Go 1.26.4](https://go.dev/dl/), [Docker](https://docs.docker.com/get-docker/), and [Task](https://taskfile.dev/docs/installation).
 
 ```bash
 git clone https://github.com/haloydev/haloy.git
