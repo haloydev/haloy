@@ -4,12 +4,14 @@ vars:
   VERSION:
     sh: git describe --tags --dirty --always --match 'v*' 2>/dev/null || echo dev
   GO_LDFLAGS: -s -w -X github.com/haloydev/haloy/internal/constants.Version={{.VERSION}}
+  GO_VULN_TOOLCHAIN: go1.25.11
 
 tasks:
   tools:
     desc: Install required tools
     cmds:
       - go install mvdan.cc/gofumpt@latest
+      - go install golang.org/x/vuln/cmd/govulncheck@latest
 
   test:
     desc: Run tests
@@ -20,6 +22,13 @@ tasks:
     desc: Run linting
     cmds:
       - go vet ./...
+
+  vuln:
+    desc: Run Go vulnerability scan
+    env:
+      GOTOOLCHAIN: '{{.GO_VULN_TOOLCHAIN}}'
+    cmds:
+      - govulncheck ./...
 
   fmt:
     desc: Format code

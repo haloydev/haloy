@@ -33,8 +33,14 @@ jobs:
       - name: Install Task
         uses: go-task/setup-task@v2
 
+      - name: Install tools
+        run: task tools
+
       - name: Run tests
         run: task test
+
+      - name: Run vulnerability scan
+        run: task vuln
 
   build-and-publish:
     name: Build and Publish

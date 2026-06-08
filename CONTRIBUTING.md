@@ -22,6 +22,7 @@ Key directories:
 - `task fmt` - format code
 - `task test` - run tests
 - `task lint` - run linter
+- `task vuln` - scan Go code and dependencies for known vulnerabilities
 - `task ci-test` - run all CI checks locally (formatting, linting, tests). Run this before pushing.
 
 ## Submitting Changes

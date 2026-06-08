@@ -60,6 +60,14 @@ check_release_prerequisites() {
         echo "  task tools"
         exit 1
     fi
+
+    if ! command -v govulncheck > /dev/null 2>&1; then
+        error "Missing required command: govulncheck"
+        echo ""
+        echo "Install project tools before cutting a release:"
+        echo "  task tools"
+        exit 1
+    fi
 }
 
 usage() {
@@ -262,8 +270,9 @@ main() {
     echo ""
     echo "The following actions will be performed:"
     echo "  1. Run tests (task ci-test)"
-    echo "  2. Create annotated tag $version_tag on HEAD"
-    echo "  3. git push origin $version_tag"
+    echo "  2. Run vulnerability scan (task vuln)"
+    echo "  3. Create annotated tag $version_tag on HEAD"
+    echo "  4. git push origin $version_tag"
     echo ""
 
     read -rp "Proceed? [y/N] " confirm
@@ -276,6 +285,11 @@ main() {
     info "Running tests (task ci-test)..."
     task ci-test
     success "Tests passed"
+    echo ""
+
+    info "Running vulnerability scan (task vuln)..."
+    task vuln
+    success "Vulnerability scan passed"
     echo ""
 
     info "Creating annotated tag $version_tag..."
