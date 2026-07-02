@@ -15,6 +15,9 @@ import (
 var allowedFindings = []allowedFinding{
 	{OSV: "GO-2026-4883", Module: "github.com/docker/docker"},
 	{OSV: "GO-2026-4887", Module: "github.com/docker/docker"},
+	{OSV: "GO-2026-5617", Module: "github.com/docker/docker"},
+	{OSV: "GO-2026-5668", Module: "github.com/docker/docker"},
+	{OSV: "GO-2026-5746", Module: "github.com/docker/docker"},
 }
 
 type allowedFinding struct {

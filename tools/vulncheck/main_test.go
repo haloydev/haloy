@@ -11,13 +11,16 @@ func TestEvaluateFindingsAllowsKnownDockerFindingsWithoutFixedVersion(t *testing
 	input := strings.NewReader(`
 {"finding":{"osv":"GO-2026-4883","trace":[{"module":"github.com/docker/docker","version":"v28.0.4+incompatible","package":"github.com/docker/docker/client","function":"ImagePull"},{"module":"github.com/haloydev/haloy","package":"github.com/haloydev/haloy/internal/docker","function":"EnsureImageUpToDate"}]}}
 {"finding":{"osv":"GO-2026-4887","trace":[{"module":"github.com/docker/docker","version":"v28.0.4+incompatible","package":"github.com/docker/docker/client","function":"ImagePush"},{"module":"github.com/haloydev/haloy","package":"github.com/haloydev/haloy/internal/docker","function":"PushImage"}]}}
+{"finding":{"osv":"GO-2026-5617","trace":[{"module":"github.com/docker/docker","version":"v28.0.4+incompatible","package":"github.com/docker/docker/client","function":"ContainerCreate"},{"module":"github.com/haloydev/haloy","package":"github.com/haloydev/haloy/internal/docker","function":"RunContainer"}]}}
+{"finding":{"osv":"GO-2026-5668","trace":[{"module":"github.com/docker/docker","version":"v28.0.4+incompatible","package":"github.com/docker/docker/client","function":"ContainerStart"},{"module":"github.com/haloydev/haloy","package":"github.com/haloydev/haloy/internal/docker","function":"RunContainer"}]}}
+{"finding":{"osv":"GO-2026-5746","trace":[{"module":"github.com/docker/docker","version":"v28.0.4+incompatible","package":"github.com/docker/docker/client","function":"ContainerExecAttach"},{"module":"github.com/haloydev/haloy","package":"github.com/haloydev/haloy/internal/docker","function":"ExecInContainer"}]}}
 `)
 
 	unexpected, allowed, err := evaluateFindings(input, allowedFindings)
 
 	require.NoError(t, err)
 	require.Empty(t, unexpected)
-	require.Equal(t, []string{"GO-2026-4883", "GO-2026-4887"}, allowed)
+	require.Equal(t, []string{"GO-2026-4883", "GO-2026-4887", "GO-2026-5617", "GO-2026-5668", "GO-2026-5746"}, allowed)
 }
 
 func TestEvaluateFindingsFailsAllowedIDWhenFixedVersionExists(t *testing.T) {
