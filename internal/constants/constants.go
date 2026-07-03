@@ -20,7 +20,6 @@ const (
 	CapabilityImagePreflight = "image-disk-preflight"
 
 	CertificatesHTTPProviderPort = "8080"
-	APIServerPort                = "9999"
 
 	// Environment variables
 	EnvVarAPIToken  = "HALOY_API_TOKEN"

@@ -1,16 +1,21 @@
 package haloydcli
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -293,18 +298,24 @@ func checkDockerNetwork() checkResult {
 	}
 }
 
-func checkAPIHealth() checkResult {
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-	}
+const apiHealthCheckTimeout = 2 * time.Second
 
-	url := fmt.Sprintf("http://localhost:%s/version", constants.APIServerPort)
-	resp, err := client.Get(url)
+func checkAPIHealth() checkResult {
+	client, req, err := apiHealthCheckRequest()
 	if err != nil {
 		return checkResult{
 			name:    "API health",
 			passed:  false,
-			message: "not responding (service may not be running)",
+			message: fmt.Sprintf("failed to prepare check: %v", err),
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return checkResult{
+			name:    "API health",
+			passed:  false,
+			message: fmt.Sprintf("not responding (service may not be running): %v", err),
 		}
 	}
 	defer resp.Body.Close()
@@ -313,13 +324,64 @@ func checkAPIHealth() checkResult {
 		return checkResult{
 			name:    "API health",
 			passed:  false,
-			message: fmt.Sprintf("unhealthy (status %d)", resp.StatusCode),
+			message: fmt.Sprintf("unhealthy (status %d at %s; if the API domain changed, restart haloyd)", resp.StatusCode, req.URL),
 		}
 	}
 
 	return checkResult{
 		name:    "API health",
 		passed:  true,
-		message: fmt.Sprintf("responding on port %s", constants.APIServerPort),
+		message: fmt.Sprintf("responding at %s", req.URL),
 	}
+}
+
+func apiHealthCheckRequest() (*http.Client, *http.Request, error) {
+	apiDomain, err := configuredAPIDomain()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	endpoint := helpers.BuildServerURL(apiDomain) + "/health"
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client := &http.Client{Timeout: apiHealthCheckTimeout}
+	if !helpers.IsLocalhost(apiDomain) {
+		// Connect to the proxy on loopback while keeping the configured domain
+		// as request host, so the check works without DNS for the domain.
+		dialer := &net.Dialer{Timeout: apiHealthCheckTimeout}
+		client.Transport = &http.Transport{
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", "443"))
+			},
+			TLSClientConfig: &tls.Config{
+				// This is a local service health check. Certificate validity is
+				// covered by the daemon's certificate manager and external clients.
+				InsecureSkipVerify: true,
+			},
+		}
+	}
+
+	return client, req, nil
+}
+
+func configuredAPIDomain() (string, error) {
+	configDir, err := config.HaloydConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	cfg, err := loadHaloydConfig(configDir)
+	if err != nil {
+		return "", err
+	}
+
+	domain := strings.TrimSpace(strings.ToLower(cfg.API.Domain))
+	if domain == "" {
+		return "localhost", nil
+	}
+
+	return helpers.NormalizeServerURL(domain)
 }
