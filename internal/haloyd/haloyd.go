@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -24,7 +25,7 @@ import (
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/layerstore"
 	"github.com/haloydev/haloy/internal/logging"
-	"github.com/haloydev/haloy/internal/proxy"
+	"github.com/haloydev/haloy/internal/proxyclient"
 	"github.com/haloydev/haloy/internal/storage"
 )
 
@@ -104,6 +105,15 @@ func Run(debug bool) {
 
 	apiServer := api.NewServer(apiToken, db, logBroker, logLevel)
 
+	// The API is served on a loopback listener; the proxy forwards API-domain
+	// and localhost API traffic to it.
+	apiListenAddr := net.JoinHostPort(constants.HaloydAPIHost, constants.HaloydAPIPort)
+	go func() {
+		if err := apiServer.ListenAndServe(apiListenAddr); err != nil {
+			logging.LogFatal(logger, "API listener failed", "addr", apiListenAddr, "error", err)
+		}
+	}()
+
 	// Get API domain for proxy routing (default to localhost for local development).
 	// Seed the proxy with this before the initial deployment discovery so the
 	// control plane stays reachable even if discovery or certificate renewal fails.
@@ -112,28 +122,27 @@ func Run(debug bool) {
 		apiDomain = haloydConfig.API.Domain
 	}
 
-	// Initialize proxy certificate manager
-	certDir := filepath.Join(dataDir, constants.CertStorageDir)
-	proxyCertManager, err := proxy.NewCertManager(certDir, logger)
-	if err != nil {
-		logging.LogFatal(logger, "Failed to create proxy certificate manager", "error", err)
+	// Connect to the haloy-proxy data plane. Snapshots are pushed over its
+	// control socket and persisted to disk, so the proxy keeps serving (and
+	// can restart) while haloyd is down or upgrading.
+	proxyClient := proxyclient.New(dataDir, logger)
+	proxyClient.Start(ctx)
+	apiServer.SetProxyStatusFunc(proxyClient.Status)
+
+	if err := proxyClient.WaitReady(ctx, 30*time.Second); err != nil {
+		logger.Error("haloy-proxy is not responding; no traffic is being served. "+
+			"Make sure the haloy-proxy service is installed and running "+
+			"(re-run the server install/upgrade script if it is missing). "+
+			"haloyd keeps retrying in the background.",
+			"error", err)
 	}
 
-	// Create and start the proxy with the API server handler
-	proxyServer := proxy.New(logger, proxyCertManager, apiServer.Handler())
-	initialRoutes := proxy.NewRouteBuilder()
-	initialRoutes.SetAPIDomain(apiDomain)
-	initialConfig, err := initialRoutes.Build()
-	if err != nil {
-		logging.LogFatal(logger, "Failed to build initial proxy config", "error", err)
+	// Seed the proxy with an API-domain-only snapshot before the initial
+	// deployment discovery so the control plane stays reachable even if
+	// discovery or certificate renewal fails.
+	if err := proxyClient.Push(ctx, buildSnapshot(nil, nil, apiDomain, nil)); err != nil {
+		logger.Warn("Failed to push initial proxy config", "error", err)
 	}
-	proxyServer.UpdateConfig(initialConfig)
-
-	// Start proxy on HTTP and HTTPS ports
-	if err := proxyServer.Start(":80", ":443"); err != nil {
-		logging.LogFatal(logger, "Failed to start proxy", "error", err)
-	}
-	logger.Info("Proxy started", "http", ":80", "https", ":443")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -156,7 +165,7 @@ func Run(debug bool) {
 		Cli:               cli,
 		DeploymentManager: deploymentManager,
 		CertManager:       certManager,
-		Proxy:             proxyServer,
+		ProxyPusher:       proxyClient,
 		APIDomain:         apiDomain,
 	}
 
@@ -200,7 +209,7 @@ func Run(debug bool) {
 			healthConfig = healthcheck.DefaultConfig()
 		}
 
-		healthUpdater := NewHealthConfigUpdater(deploymentManager, proxyServer, apiDomain, logger)
+		healthUpdater := NewHealthConfigUpdater(deploymentManager, proxyClient, apiDomain, logger)
 		healthMonitor = healthcheck.NewHealthMonitor(healthConfig, deploymentManager, healthUpdater, logger)
 		healthMonitor.Start()
 	}
@@ -309,12 +318,14 @@ func Run(debug bool) {
 
 		case domainUpdated := <-certUpdateSignal:
 			logger.Info("Received cert update signal", "domain", domainUpdated)
-			if err := proxyCertManager.ReloadCertificates(); err != nil {
+			reloadCtx, cancelReload := context.WithTimeout(ctx, 30*time.Second)
+			if err := proxyClient.ReloadCerts(reloadCtx); err != nil {
 				logger.Error("Failed to reload certificates",
 					"reason", "cert update",
 					"domain", domainUpdated,
 					"error", err)
 			}
+			cancelReload()
 
 		case <-maintenanceTicker.C:
 			logger.Info("Performing periodic maintenance...")
@@ -339,11 +350,6 @@ func Run(debug bool) {
 		case err := <-errorsChan:
 			logger.Error("Error from docker events", "error", err)
 
-		case err := <-proxyServer.Err():
-			// A dead listener means no traffic is being served; exit so
-			// systemd restarts haloyd.
-			logging.LogFatal(logger, "Proxy listener failed", "error", err)
-
 		case <-sigChan:
 			logger.Info("Received shutdown signal, stopping haloyd...")
 			if healthMonitor != nil {
@@ -352,11 +358,6 @@ func Run(debug bool) {
 			if certManager != nil {
 				certManager.Stop()
 			}
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			if err := proxyServer.Shutdown(shutdownCtx); err != nil {
-				logger.Error("Proxy shutdown error", "error", err)
-			}
-			shutdownCancel()
 			cancel()
 			return
 		}

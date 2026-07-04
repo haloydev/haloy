@@ -73,6 +73,9 @@ main() {
     HALOYD_BIN=""
     [ -f /usr/local/bin/haloyd ] && HALOYD_BIN="/usr/local/bin/haloyd"
 
+    PROXY_BIN=""
+    [ -f /usr/local/bin/haloy-proxy ] && PROXY_BIN="/usr/local/bin/haloy-proxy"
+
     CONFIG_DIR=""
     [ -d /etc/haloy ] && CONFIG_DIR="/etc/haloy"
 
@@ -81,28 +84,35 @@ main() {
 
     INIT_SYSTEM=$(detect_init_system)
     SERVICE_EXISTS=false
+    PROXY_SERVICE_EXISTS=false
 
     case "$INIT_SYSTEM" in
         systemd)
             systemctl is-enabled haloyd >/dev/null 2>&1 && SERVICE_EXISTS=true
+            systemctl is-enabled haloy-proxy >/dev/null 2>&1 && PROXY_SERVICE_EXISTS=true
+            [ -f /etc/systemd/system/haloy-proxy.service ] && PROXY_SERVICE_EXISTS=true
             ;;
         openrc)
             [ -f /etc/init.d/haloyd ] && SERVICE_EXISTS=true
+            [ -f /etc/init.d/haloy-proxy ] && PROXY_SERVICE_EXISTS=true
             ;;
         sysvinit)
             [ -f /etc/init.d/haloyd ] && SERVICE_EXISTS=true
+            [ -f /etc/init.d/haloy-proxy ] && PROXY_SERVICE_EXISTS=true
             ;;
     esac
 
     # Check if anything is installed
-    if [ -z "$HALOYD_BIN" ] && [ -z "$CONFIG_DIR" ] && [ -z "$DATA_DIR" ] && [ "$SERVICE_EXISTS" = "false" ]; then
+    if [ -z "$HALOYD_BIN" ] && [ -z "$PROXY_BIN" ] && [ -z "$CONFIG_DIR" ] && [ -z "$DATA_DIR" ] && [ "$SERVICE_EXISTS" = "false" ] && [ "$PROXY_SERVICE_EXISTS" = "false" ]; then
         echo "  No Haloy installation detected."
         exit 0
     fi
 
     echo "  ${BOLD}Components found:${RESET}"
     [ -n "$HALOYD_BIN" ] && echo "    - Binary: $HALOYD_BIN"
+    [ -n "$PROXY_BIN" ] && echo "    - Binary: $PROXY_BIN"
     [ "$SERVICE_EXISTS" = "true" ] && echo "    - Service: haloyd ($INIT_SYSTEM)"
+    [ "$PROXY_SERVICE_EXISTS" = "true" ] && echo "    - Service: haloy-proxy ($INIT_SYSTEM)"
     [ -n "$CONFIG_DIR" ] && echo "    - Config: $CONFIG_DIR"
     [ -n "$DATA_DIR" ] && echo "    - Data: $DATA_DIR"
     echo ""
@@ -111,41 +121,51 @@ main() {
     warn "Deployed containers will NOT be removed."
     echo ""
 
-    # --- Stop and remove service ---
-    if [ "$SERVICE_EXISTS" = "true" ]; then
-        echo "Stopping service..."
+    # --- Stop and remove services ---
+    if [ "$SERVICE_EXISTS" = "true" ] || [ "$PROXY_SERVICE_EXISTS" = "true" ]; then
+        echo "Stopping services..."
         case "$INIT_SYSTEM" in
             systemd)
-                systemctl stop haloyd 2>/dev/null && success "Service stopped" || warn "Service was not running"
-                systemctl disable haloyd 2>/dev/null && success "Service disabled" || true
+                systemctl stop haloyd 2>/dev/null && success "haloyd stopped" || warn "haloyd was not running"
+                systemctl disable haloyd 2>/dev/null || true
                 rm -f /etc/systemd/system/haloyd.service
+                systemctl stop haloy-proxy 2>/dev/null && success "haloy-proxy stopped" || warn "haloy-proxy was not running"
+                systemctl disable haloy-proxy 2>/dev/null || true
+                rm -f /etc/systemd/system/haloy-proxy.service
                 systemctl daemon-reload
-                success "Systemd service removed"
+                success "Systemd services removed"
                 ;;
             openrc)
-                rc-service haloyd stop 2>/dev/null && success "Service stopped" || warn "Service was not running"
-                rc-update del haloyd default 2>/dev/null && success "Service disabled" || true
+                rc-service haloyd stop 2>/dev/null && success "haloyd stopped" || warn "haloyd was not running"
+                rc-update del haloyd default 2>/dev/null || true
                 rm -f /etc/init.d/haloyd
-                success "OpenRC service removed"
+                rc-service haloy-proxy stop 2>/dev/null && success "haloy-proxy stopped" || warn "haloy-proxy was not running"
+                rc-update del haloy-proxy default 2>/dev/null || true
+                rm -f /etc/init.d/haloy-proxy
+                success "OpenRC services removed"
                 ;;
             sysvinit)
-                /etc/init.d/haloyd stop 2>/dev/null && success "Service stopped" || warn "Service was not running"
+                /etc/init.d/haloyd stop 2>/dev/null && success "haloyd stopped" || warn "haloyd was not running"
+                [ -f /etc/init.d/haloy-proxy ] && { /etc/init.d/haloy-proxy stop 2>/dev/null && success "haloy-proxy stopped" || warn "haloy-proxy was not running"; }
                 if command -v update-rc.d >/dev/null 2>&1; then
                     update-rc.d -f haloyd remove 2>/dev/null || true
+                    update-rc.d -f haloy-proxy remove 2>/dev/null || true
                 elif command -v chkconfig >/dev/null 2>&1; then
                     chkconfig --del haloyd 2>/dev/null || true
+                    chkconfig --del haloy-proxy 2>/dev/null || true
                 fi
-                rm -f /etc/init.d/haloyd
-                success "SysVinit service removed"
+                rm -f /etc/init.d/haloyd /etc/init.d/haloy-proxy
+                success "SysVinit services removed"
                 ;;
         esac
     fi
 
-    # --- Remove binary ---
-    if [ -n "$HALOYD_BIN" ]; then
-        echo "Removing binary..."
-        rm -f "$HALOYD_BIN"
-        success "Binary removed"
+    # --- Remove binaries ---
+    if [ -n "$HALOYD_BIN" ] || [ -n "$PROXY_BIN" ]; then
+        echo "Removing binaries..."
+        [ -n "$HALOYD_BIN" ] && rm -f "$HALOYD_BIN"
+        [ -n "$PROXY_BIN" ] && rm -f "$PROXY_BIN"
+        success "Binaries removed"
     fi
 
     # --- Remove config ---

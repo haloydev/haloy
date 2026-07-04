@@ -10,6 +10,7 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/logging"
+	"github.com/haloydev/haloy/internal/proxywire"
 	"github.com/haloydev/haloy/internal/storage"
 	"golang.org/x/time/rate"
 )
@@ -28,6 +29,13 @@ type APIServer struct {
 	imagePrune             func(context.Context, apitypes.ImagePruneRequest) (apitypes.ImagePruneResponse, error)
 	registryAuthProvider   func(config.Image) (*config.RegistryAuth, error)
 	registryLoginCheck     func(context.Context, config.RegistryAuth) error
+	proxyStatus            func(context.Context) (*proxywire.Status, error)
+}
+
+// SetProxyStatusFunc wires the haloy-proxy status lookup used by the version
+// endpoint. It is optional; when unset or failing, proxy fields are omitted.
+func (s *APIServer) SetProxyStatusFunc(fn func(context.Context) (*proxywire.Status, error)) {
+	s.proxyStatus = fn
 }
 
 func NewServer(apiToken string, db *storage.DB, logBroker logging.StreamPublisher, logLevel slog.Level) *APIServer {
@@ -92,10 +100,4 @@ func (s *APIServer) ListenAndServe(addr string) error {
 		IdleTimeout:       60 * time.Second, // Keep-alive connections
 	}
 	return srv.ListenAndServe()
-}
-
-// Handler returns the HTTP handler for this API server.
-// This is used by the proxy to route API requests internally.
-func (s *APIServer) Handler() http.Handler {
-	return s.router
 }

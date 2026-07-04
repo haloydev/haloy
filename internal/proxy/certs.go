@@ -210,6 +210,13 @@ func (cm *CertManager) ReloadCertificates() error {
 	return cm.loadAllCertificates()
 }
 
+// CertCount returns the number of certificates currently cached.
+func (cm *CertManager) CertCount() int {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return len(cm.certs)
+}
+
 // loadAllCertificates loads all .pem files from the certificate directory.
 func (cm *CertManager) loadAllCertificates() error {
 	entries, err := os.ReadDir(cm.certDir)

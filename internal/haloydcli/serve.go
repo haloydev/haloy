@@ -14,13 +14,16 @@ func serveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the haloyd daemon",
-		Long: `Start the haloyd daemon which runs the proxy and API server.
+		Long: `Start the haloyd daemon, the haloy control plane.
 
 This command is typically run by systemd. It will:
-  - Listen on port 80 and 443 for HTTP/HTTPS traffic
-  - Route traffic to containers based on domain
-  - Handle TLS termination and certificate management
-  - Provide the API for the haloy CLI`,
+  - Manage container deployments and health checks
+  - Handle certificate provisioning via Let's Encrypt
+  - Push routing configuration to the haloy-proxy daemon
+  - Provide the API for the haloy CLI
+
+Traffic on ports 80/443 is served by the separate haloy-proxy daemon,
+which keeps serving while haloyd restarts or upgrades.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			debugEnv := os.Getenv(constants.EnvVarDebug) == "true"
 			haloyd.Run(debug || debugEnv)

@@ -7,8 +7,9 @@ import (
 
 // RouteBuilder helps build proxy routes from deployment information.
 type RouteBuilder struct {
-	routes    map[string]*Route
-	apiDomain string
+	routes     map[string]*Route
+	apiDomain  string
+	apiBackend Backend
 }
 
 // NewRouteBuilder creates a new route builder.
@@ -21,6 +22,12 @@ func NewRouteBuilder() *RouteBuilder {
 // SetAPIDomain sets the API domain for the configuration.
 func (rb *RouteBuilder) SetAPIDomain(domain string) {
 	rb.apiDomain = strings.ToLower(domain)
+}
+
+// SetAPIBackend sets the control plane's API listener address, which the
+// proxy forwards API-domain and localhost API traffic to.
+func (rb *RouteBuilder) SetAPIBackend(ip, port string) {
+	rb.apiBackend = Backend{IP: ip, Port: port}
 }
 
 // AddRoute adds a route for an application.
@@ -66,8 +73,9 @@ func (rb *RouteBuilder) Build() (*Config, error) {
 	}
 
 	return &Config{
-		routes:    rb.routes,
-		hosts:     hosts,
-		apiDomain: rb.apiDomain,
+		routes:     rb.routes,
+		hosts:      hosts,
+		apiDomain:  rb.apiDomain,
+		apiBackend: rb.apiBackend,
 	}, nil
 }

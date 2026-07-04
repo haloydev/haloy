@@ -60,8 +60,10 @@ type ImageUploadResponse struct {
 }
 
 type VersionResponse struct {
-	Version      string   `json:"haloyd"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	Version         string   `json:"haloyd"`
+	ProxyVersion    string   `json:"haloy_proxy,omitempty"`
+	ProxyConfigHash string   `json:"haloy_proxy_config_hash,omitempty"`
+	Capabilities    []string `json:"capabilities,omitempty"`
 }
 
 type RegistryLoginRequest struct {

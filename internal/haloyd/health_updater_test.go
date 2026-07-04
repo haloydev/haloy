@@ -1,15 +1,16 @@
 package haloyd
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
 	"log/slog"
-	"net/http"
 	"testing"
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/proxy"
+	"github.com/haloydev/haloy/internal/proxywire"
 )
 
 type noopCertLoader struct{}
@@ -18,10 +19,29 @@ func (noopCertLoader) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, er
 	return nil, nil
 }
 
+// inProcessPusher applies snapshots directly to an embedded proxy, standing
+// in for the proxyclient in tests.
+type inProcessPusher struct {
+	proxy *proxy.Proxy
+}
+
+func newInProcessPusher(p *proxy.Proxy) *inProcessPusher {
+	return &inProcessPusher{proxy: p}
+}
+
+func (p *inProcessPusher) Push(_ context.Context, snap *proxywire.Snapshot) error {
+	cfg, err := proxy.ConfigFromSnapshot(snap)
+	if err != nil {
+		return err
+	}
+	p.proxy.UpdateConfig(cfg)
+	return nil
+}
+
 func TestHealthUpdaterKeepsRoutesWithoutHealthyBackends(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	proxyServer := proxy.New(logger, noopCertLoader{}, http.NewServeMux())
+	proxyServer := proxy.New(logger, noopCertLoader{})
 	deploymentManager := NewDeploymentManager(nil, nil)
 
 	labels := &config.ContainerLabels{
@@ -44,7 +64,7 @@ func TestHealthUpdaterKeepsRoutesWithoutHealthyBackends(t *testing.T) {
 
 	deploymentManager.UpdateDeployments(healthy)
 
-	updater := NewHealthConfigUpdater(deploymentManager, proxyServer, "api.example.com", logger)
+	updater := NewHealthConfigUpdater(deploymentManager, newInProcessPusher(proxyServer), "api.example.com", logger)
 	updater.OnHealthChange(nil)
 
 	config := proxyServer.GetConfig()
@@ -65,7 +85,7 @@ func TestHealthUpdaterKeepsRoutesWithoutHealthyBackends(t *testing.T) {
 func TestHealthUpdaterKeepsRouteAfterDeploymentRemoved(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	proxyServer := proxy.New(logger, noopCertLoader{}, http.NewServeMux())
+	proxyServer := proxy.New(logger, noopCertLoader{})
 	deploymentManager := NewDeploymentManager(nil, nil)
 
 	labels := &config.ContainerLabels{
@@ -96,7 +116,7 @@ func TestHealthUpdaterKeepsRouteAfterDeploymentRemoved(t *testing.T) {
 		t.Fatal("expected app to be in FailedDeployments after removal")
 	}
 
-	updater := NewHealthConfigUpdater(deploymentManager, proxyServer, "api.example.com", logger)
+	updater := NewHealthConfigUpdater(deploymentManager, newInProcessPusher(proxyServer), "api.example.com", logger)
 	updater.OnHealthChange(nil)
 
 	cfg := proxyServer.GetConfig()

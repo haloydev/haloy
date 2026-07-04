@@ -280,8 +280,8 @@ main() {
         warn "Docker group not found - haloy may not be able to access Docker"
     fi
 
-    # --- Step 4: Download binary ---
-    step "Downloading haloyd"
+    # --- Step 4: Download binaries ---
+    step "Downloading haloyd and haloy-proxy"
 
     # Determine version
     if [ -z "$VERSION" ]; then
@@ -315,7 +315,20 @@ main() {
     chmod +x "$INSTALL_PATH"
     success "Installed to $INSTALL_PATH"
 
-    # Set capabilities for non-systemd systems (allows binding to ports 80/443 as non-root)
+    PROXY_BINARY_NAME="haloy-proxy-linux-${ARCH}"
+    PROXY_DOWNLOAD_URL="https://github.com/haloydev/haloy/releases/download/${VERSION}/${PROXY_BINARY_NAME}"
+    PROXY_INSTALL_PATH="/usr/local/bin/haloy-proxy"
+
+    fetch_to_file "$PROXY_DOWNLOAD_URL" "$PROXY_INSTALL_PATH" || \
+        error_exit "Failed to download haloy-proxy" \
+            "Check if version $VERSION exists" \
+            "URL: $PROXY_DOWNLOAD_URL"
+
+    chmod +x "$PROXY_INSTALL_PATH"
+    success "Installed to $PROXY_INSTALL_PATH"
+
+    # Set capabilities for non-systemd systems (allows the proxy to bind
+    # ports 80/443 as non-root; haloyd only binds loopback ports)
     if [ "$INIT_SYSTEM" != "systemd" ]; then
         # Install libcap if setcap is not available
         if ! command -v setcap >/dev/null 2>&1; then
@@ -331,11 +344,11 @@ main() {
         fi
 
         if command -v setcap >/dev/null 2>&1; then
-            setcap cap_net_bind_service=+ep "$INSTALL_PATH" 2>/dev/null || \
+            setcap cap_net_bind_service=+ep "$PROXY_INSTALL_PATH" 2>/dev/null || \
                 warn "Failed to set capabilities - service may need to run as root"
-            success "Set CAP_NET_BIND_SERVICE capability"
+            success "Set CAP_NET_BIND_SERVICE capability on haloy-proxy"
         else
-            warn "setcap not found - install libcap and run: setcap cap_net_bind_service=+ep $INSTALL_PATH"
+            warn "setcap not found - install libcap and run: setcap cap_net_bind_service=+ep $PROXY_INSTALL_PATH"
         fi
     fi
 
@@ -385,35 +398,44 @@ main() {
             ;;
     esac
 
-    # --- Step 8: Start service ---
-    step "Starting service"
+    # --- Step 8: Start services ---
+    step "Starting services"
 
     if [ "$SKIP_START" = "true" ]; then
         warn "Skipping service start (SKIP_START=true)"
     else
+        # haloy-proxy starts first so it owns ports 80/443 before haloyd
+        # begins pushing routes to it.
         case "$INIT_SYSTEM" in
             systemd)
                 systemctl daemon-reload
+                systemctl enable haloy-proxy >/dev/null 2>&1
+                systemctl start haloy-proxy
                 systemctl enable haloyd >/dev/null 2>&1
                 systemctl start haloyd
-                success "Service started and enabled"
+                success "Services started and enabled (haloy-proxy, haloyd)"
                 ;;
             openrc)
+                rc-update add haloy-proxy default >/dev/null 2>&1
+                rc-service haloy-proxy start
                 rc-update add haloyd default >/dev/null 2>&1
                 rc-service haloyd start
-                success "Service started and enabled"
+                success "Services started and enabled (haloy-proxy, haloyd)"
                 ;;
             sysvinit)
                 if command -v update-rc.d >/dev/null 2>&1; then
+                    update-rc.d haloy-proxy defaults >/dev/null 2>&1
                     update-rc.d haloyd defaults >/dev/null 2>&1
                 elif command -v chkconfig >/dev/null 2>&1; then
+                    chkconfig --add haloy-proxy >/dev/null 2>&1
                     chkconfig --add haloyd >/dev/null 2>&1
                 fi
+                /etc/init.d/haloy-proxy start
                 /etc/init.d/haloyd start
-                success "Service started"
+                success "Services started (haloy-proxy, haloyd)"
                 ;;
             *)
-                warn "Start haloyd manually with: haloyd serve"
+                warn "Start manually: haloy-proxy serve (ports 80/443), then haloyd serve"
                 ;;
         esac
     fi
@@ -425,12 +447,51 @@ main() {
 # --- Service file installers ---
 
 install_systemd_service() {
+    # haloy-proxy owns ports 80/443 (hence the bind capability) and keeps
+    # serving traffic while haloyd restarts or upgrades. It does not depend
+    # on docker: routes come from the snapshot file and the haloyd socket.
+    cat > /etc/systemd/system/haloy-proxy.service << 'EOF'
+[Unit]
+Description=Haloy Proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=haloy
+Group=haloy
+ExecStart=/usr/local/bin/haloy-proxy serve
+Restart=always
+RestartSec=5
+Environment=HALOY_DATA_DIR=/var/lib/haloy
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/haloy
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # haloyd is the control plane; it binds only loopback ports so it needs
+    # no capabilities. Wants/After (not Requires) haloy-proxy: restarting
+    # one must never restart the other.
     cat > /etc/systemd/system/haloyd.service << 'EOF'
 [Unit]
 Description=Haloy Daemon
-After=network-online.target docker.service
+After=network-online.target docker.service haloy-proxy.service
 Requires=docker.service
-Wants=network-online.target
+Wants=network-online.target haloy-proxy.service
 
 [Service]
 Type=simple
@@ -449,8 +510,6 @@ ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/haloy
 ReadOnlyPaths=/etc/haloy
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_BIND_SERVICE
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
@@ -460,10 +519,37 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
-    success "Installed systemd service"
+    success "Installed systemd services (haloy-proxy, haloyd)"
 }
 
 install_openrc_service() {
+    cat > /etc/init.d/haloy-proxy << 'EOF'
+#!/sbin/openrc-run
+
+name="haloy-proxy"
+description="Haloy Proxy"
+command="/usr/local/bin/haloy-proxy"
+command_args="serve"
+command_background="yes"
+command_user="haloy:haloy"
+pidfile="/run/haloy-proxy/haloy-proxy.pid"
+output_log="/var/log/haloy-proxy.log"
+error_log="/var/log/haloy-proxy.log"
+
+export HALOY_DATA_DIR="/var/lib/haloy"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    checkpath --directory --owner haloy:haloy --mode 0755 /run/haloy-proxy
+    checkpath --file --owner haloy:haloy --mode 0644 /var/log/haloy-proxy.log
+}
+EOF
+    chmod +x /etc/init.d/haloy-proxy
+
     cat > /etc/init.d/haloyd << 'EOF'
 #!/sbin/openrc-run
 
@@ -482,7 +568,8 @@ export HALOY_CONFIG_DIR="/etc/haloy"
 
 depend() {
     need net docker
-    after firewall
+    use haloy-proxy
+    after firewall haloy-proxy
 }
 
 start_pre() {
@@ -491,30 +578,46 @@ start_pre() {
 }
 EOF
     chmod +x /etc/init.d/haloyd
-    success "Installed OpenRC service"
+    success "Installed OpenRC services (haloy-proxy, haloyd)"
 }
 
 install_sysvinit_service() {
-    cat > /etc/init.d/haloyd << 'EOF'
+    write_sysvinit_script "haloy-proxy" "Haloy Proxy" "\$network \$remote_fs" ""
+    write_sysvinit_script "haloyd" "Haloy Daemon" "\$network \$remote_fs docker haloy-proxy" "export HALOY_CONFIG_DIR=\"/etc/haloy\""
+    success "Installed SysVinit services (haloy-proxy, haloyd)"
+}
+
+# write_sysvinit_script NAME DESCRIPTION REQUIRED_START EXTRA_ENV
+write_sysvinit_script() {
+    SVC_NAME="$1"
+    SVC_DESC="$2"
+    SVC_REQUIRED_START="$3"
+    SVC_EXTRA_ENV="$4"
+
+    cat > "/etc/init.d/${SVC_NAME}" << EOF
 #!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          haloyd
-# Required-Start:    $network $remote_fs docker
-# Required-Stop:     $network $remote_fs
+# Provides:          ${SVC_NAME}
+# Required-Start:    ${SVC_REQUIRED_START}
+# Required-Stop:     \$network \$remote_fs
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Haloy Daemon
+# Short-Description: ${SVC_DESC}
 ### END INIT INFO
 
-NAME="haloyd"
-DAEMON="/usr/local/bin/haloyd"
+NAME="${SVC_NAME}"
+DAEMON="/usr/local/bin/${SVC_NAME}"
 DAEMON_ARGS="serve"
-PIDFILE="/var/run/haloyd.pid"
-LOGFILE="/var/log/haloyd.log"
+PIDFILE="/var/run/${SVC_NAME}.pid"
+LOGFILE="/var/log/${SVC_NAME}.log"
 USER="haloy"
 
 export HALOY_DATA_DIR="/var/lib/haloy"
-export HALOY_CONFIG_DIR="/etc/haloy"
+${SVC_EXTRA_ENV}
+EOF
+
+    # Runtime portion: quoted heredoc so nothing expands at install time.
+    cat >> "/etc/init.d/${SVC_NAME}" << 'EOF'
 
 start() {
     echo "Starting $NAME..."
@@ -554,8 +657,7 @@ case "$1" in
     *)       echo "Usage: $0 {start|stop|restart|status}" ;;
 esac
 EOF
-    chmod +x /etc/init.d/haloyd
-    success "Installed SysVinit service"
+    chmod +x "/etc/init.d/${SVC_NAME}"
 }
 
 # --- Success message ---
@@ -627,18 +729,21 @@ print_success() {
         echo "  ${BOLD}Useful Commands:${RESET}"
         case "$INIT_SYSTEM" in
             systemd)
-                echo "    Check status:   systemctl status haloyd"
+                echo "    Check status:   systemctl status haloyd haloy-proxy"
                 echo "    View logs:      journalctl -u haloyd -f"
+                echo "    Proxy logs:     journalctl -u haloy-proxy -f"
                 echo "    Restart:        systemctl restart haloyd"
                 ;;
             openrc)
-                echo "    Check status:   rc-service haloyd status"
+                echo "    Check status:   rc-service haloyd status && rc-service haloy-proxy status"
                 echo "    View logs:      tail -f /var/log/haloyd.log"
+                echo "    Proxy logs:     tail -f /var/log/haloy-proxy.log"
                 echo "    Restart:        rc-service haloyd restart"
                 ;;
             *)
-                echo "    Check status:   /etc/init.d/haloyd status"
+                echo "    Check status:   /etc/init.d/haloyd status && /etc/init.d/haloy-proxy status"
                 echo "    View logs:      tail -f /var/log/haloyd.log"
+                echo "    Proxy logs:     tail -f /var/log/haloy-proxy.log"
                 echo "    Restart:        /etc/init.d/haloyd restart"
                 ;;
         esac

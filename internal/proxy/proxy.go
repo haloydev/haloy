@@ -56,6 +56,9 @@ type Config struct {
 	hosts map[string]*Route
 	// apiDomain is the domain for the haloy API (lowercase).
 	apiDomain string
+	// apiBackend is the control plane's API listener; the zero value means no
+	// control plane is reachable and API traffic is answered with 503.
+	apiBackend Backend
 }
 
 // FindRoute returns the route for the given host (canonical or alias), or nil.
@@ -66,6 +69,12 @@ func (c *Config) FindRoute(host string) *Route {
 // APIDomain returns the domain for the haloy API (lowercase).
 func (c *Config) APIDomain() string {
 	return c.apiDomain
+}
+
+// APIBackend returns the control plane's API listener address and whether one
+// is configured.
+func (c *Config) APIBackend() (Backend, bool) {
+	return c.apiBackend, c.apiBackend != Backend{}
 }
 
 // RouteCount returns the number of routes (canonical domains).
@@ -99,7 +108,6 @@ func (c *Config) ResolveCanonical(domain string) (string, bool) {
 type Proxy struct {
 	config     atomic.Pointer[Config]
 	certLoader CertLoader
-	apiHandler http.Handler
 	logger     *slog.Logger
 
 	httpServer  *http.Server
@@ -127,11 +135,10 @@ type CertLoader interface {
 }
 
 // New creates a new Proxy instance.
-func New(logger *slog.Logger, certLoader CertLoader, apiHandler http.Handler) *Proxy {
+func New(logger *slog.Logger, certLoader CertLoader) *Proxy {
 	p := &Proxy{
 		logger:     logger,
 		certLoader: certLoader,
-		apiHandler: apiHandler,
 		fatalCh:    make(chan error, 2),
 		transport: &http.Transport{
 			DialContext: (&net.Dialer{
@@ -347,7 +354,7 @@ func (p *Proxy) httpHandler() http.Handler {
 		// The Host header is client-controlled, so also require the connection
 		// to actually come from loopback.
 		if helpers.IsLocalhost(host) && isLoopbackAddr(r.RemoteAddr) {
-			p.apiHandler.ServeHTTP(w, r)
+			p.proxyToAPIBackend(w, r, time.Now())
 			return
 		}
 
@@ -391,9 +398,9 @@ func (p *Proxy) httpsHandler() http.Handler {
 
 		config := p.config.Load()
 
-		// Check if this is the API domain - route internally
+		// Check if this is the API domain - forward to the control plane
 		if config.APIDomain() != "" && host == config.APIDomain() {
-			p.apiHandler.ServeHTTP(w, r)
+			p.proxyToAPIBackend(w, r, startTime)
 			return
 		}
 
@@ -491,6 +498,49 @@ func (p *Proxy) proxyToBackend(w http.ResponseWriter, r *http.Request, route *Ro
 			"backend", backendAddr,
 			"error", retryErr)
 	}
+}
+
+// proxyToAPIBackend forwards API traffic to the control plane's loopback
+// listener. There is exactly one backend, so no retry; if the control plane
+// is down (e.g. mid-upgrade) the client gets 503 and can retry.
+func (p *Proxy) proxyToAPIBackend(w http.ResponseWriter, r *http.Request, startTime time.Time) {
+	backend, ok := p.config.Load().APIBackend()
+	if !ok {
+		p.logRequest(r, http.StatusServiceUnavailable, time.Since(startTime))
+		p.serveErrorPage(w, http.StatusServiceUnavailable, "Control plane unavailable")
+		return
+	}
+
+	targetURL := &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(backend.IP, backend.Port),
+	}
+
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(targetURL)
+			pr.SetXForwarded()
+			pr.Out.Header.Del("X-Real-IP")
+			pr.Out.Host = r.Host
+		},
+		Transport:     p.transport,
+		FlushInterval: -1, // API streams deploy logs via SSE
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			p.logger.Error("API proxy error",
+				"host", r.Host,
+				"path", r.URL.Path,
+				"backend", targetURL.Host,
+				"error", err)
+			p.logRequest(r, http.StatusServiceUnavailable, time.Since(startTime))
+			p.serveErrorPage(w, http.StatusServiceUnavailable, "Control plane unavailable")
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			p.logRequest(r, resp.StatusCode, time.Since(startTime))
+			return nil
+		},
+	}
+
+	proxy.ServeHTTP(w, r)
 }
 
 // isDialError reports whether err came from dialing the backend, meaning no

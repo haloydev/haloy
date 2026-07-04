@@ -21,6 +21,11 @@ const (
 
 	CertificatesHTTPProviderPort = "8080"
 
+	// haloyd's loopback API listener; the proxy forwards API-domain and
+	// localhost API traffic here.
+	HaloydAPIHost = "127.0.0.1"
+	HaloydAPIPort = "9922"
+
 	// Environment variables
 	EnvVarAPIToken  = "HALOY_API_TOKEN"
 	EnvVarReplicaID = "HALOY_REPLICA_ID" // available in all containers.
@@ -41,6 +46,13 @@ const (
 	CertStorageDir = "cert-storage"
 	LayersDir      = "layers"
 	TempDir        = "tmp"
+	// ProxyDir holds the routing snapshot written by haloyd and the
+	// haloy-proxy control socket.
+	ProxyDir = "proxy"
+
+	// Files inside ProxyDir
+	ProxySnapshotFileName = "snapshot.json"
+	ProxySocketFileName   = "haloy-proxy.sock"
 
 	// File names
 	HaloydConfigFileName   = "haloyd.yaml"

@@ -14,8 +14,11 @@ task build
 Key directories:
 
 - `cmd/haloy` - CLI entrypoint
-- `cmd/haloyd` - Server daemon entrypoint
+- `cmd/haloyd` - Server daemon entrypoint (control plane: deployments, certificates, API)
+- `cmd/haloy-proxy` - Proxy daemon entrypoint (data plane: ports 80/443; keeps serving while haloyd restarts)
 - `internal/` - Shared packages
+
+haloyd pushes routing snapshots to haloy-proxy over a unix socket (`internal/proxywire` defines the wire format) and persists them to disk so the proxy can boot on its own. See `dev/verify-proxy-split.md` for how to verify the split end to end on a server.
 
 ## Development Workflow
 

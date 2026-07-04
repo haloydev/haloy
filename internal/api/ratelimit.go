@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -78,9 +79,30 @@ func getClientIP(remoteAddr string) string {
 	return remoteAddr
 }
 
+// clientIP returns the IP to rate limit on. API requests arrive via the haloy
+// proxy on loopback with the real client in X-Forwarded-For; the last entry
+// is the one appended by the proxy, so it cannot be spoofed by the client.
+// Non-loopback connections are keyed on their remote address directly.
+func clientIP(r *http.Request) string {
+	ip := getClientIP(r.RemoteAddr)
+	parsed := net.ParseIP(ip)
+	if parsed == nil || !parsed.IsLoopback() {
+		return ip
+	}
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return ip
+	}
+	hops := strings.Split(xff, ",")
+	if last := strings.TrimSpace(hops[len(hops)-1]); last != "" {
+		return last
+	}
+	return ip
+}
+
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := getClientIP(r.RemoteAddr)
+		ip := clientIP(r)
 		limiter := rl.getVisitor(ip)
 		if !limiter.Allow() {
 			http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)

@@ -123,18 +123,20 @@ jobs:
             CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloy
           done
 
-          # haloyd daemon - server-side binary (runs natively via systemd on Linux servers)
-          HALOYD_PLATFORMS=("linux/amd64" "linux/arm64")
+          # Server-side binaries (run natively via systemd on Linux servers):
+          # haloyd (control plane) and haloy-proxy (data plane)
+          SERVER_PLATFORMS=("linux/amd64" "linux/arm64")
 
-          for platform in "${HALOYD_PLATFORMS[@]}"; do
+          for platform in "${SERVER_PLATFORMS[@]}"; do
             IFS="/" read -r -a parts <<< "$platform"
             GOOS="${parts[0]}"
             GOARCH="${parts[1]}"
 
-            OUTPUT_NAME="haloyd-${GOOS}-${GOARCH}"
-
             echo "Building haloyd for $GOOS/$GOARCH..."
-            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/$OUTPUT_NAME" ./cmd/haloyd
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/haloyd-${GOOS}-${GOARCH}" ./cmd/haloyd
+
+            echo "Building haloy-proxy for $GOOS/$GOARCH..."
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'github.com/haloydev/haloy/internal/constants.Version=${{ env.VERSION }}'" -o "dist/haloy-proxy-${GOOS}-${GOARCH}" ./cmd/haloy-proxy
           done
 
           # Create checksums for all built artifacts
@@ -173,6 +175,8 @@ jobs:
             dist/haloy-windows-arm64.exe
             dist/haloyd-linux-amd64
             dist/haloyd-linux-arm64
+            dist/haloy-proxy-linux-amd64
+            dist/haloy-proxy-linux-arm64
             dist/checksums.txt
           draft: false
           prerelease: ${{ contains(needs.build-and-publish.outputs.version, 'alpha') || contains(needs.build-and-publish.outputs.version, 'beta') || contains(needs.build-and-publish.outputs.version, 'rc') }}

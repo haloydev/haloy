@@ -14,7 +14,7 @@ import (
 )
 
 func newTestProxy() *Proxy {
-	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
+	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestProxyToBackend_ForwardedHeaders(t *testing.T) {

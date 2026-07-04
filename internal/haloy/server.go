@@ -262,6 +262,9 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 					return err
 				}
 				ui.Info("haloyd version: %s", version.Version)
+				if version.ProxyVersion != "" {
+					ui.Info("haloy-proxy version: %s", version.ProxyVersion)
+				}
 				return nil
 			}
 
@@ -286,6 +289,9 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 						ui.Warn("haloy version %s does not match haloyd (server) version %s", constants.Version, version.Version)
 					}
 					ui.Info("haloyd version: %s", version.Version)
+					if version.ProxyVersion != "" {
+						ui.Info("haloy-proxy version: %s", version.ProxyVersion)
+					}
 					return nil
 				})
 			}

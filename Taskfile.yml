@@ -59,6 +59,7 @@ tasks:
     cmds:
       - task: build-haloy
       - task: build-haloyd
+      - task: build-haloy-proxy
 
   build-haloy:
     desc: Build the haloy CLI
@@ -75,3 +76,11 @@ tasks:
     cmds:
       - mkdir -p bin
       - go build -trimpath -ldflags "{{.GO_LDFLAGS}}" -o bin/haloyd ./cmd/haloyd
+
+  build-haloy-proxy:
+    desc: Build the haloy-proxy daemon
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - mkdir -p bin
+      - go build -trimpath -ldflags "{{.GO_LDFLAGS}}" -o bin/haloy-proxy ./cmd/haloy-proxy

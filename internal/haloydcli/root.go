@@ -15,7 +15,7 @@ func NewRootCmd() *cobra.Command {
 It manages:
   - Container deployments and health checking
   - TLS certificate provisioning via Let's Encrypt
-  - Reverse proxy routing to containers
+  - Routing configuration for the haloy-proxy daemon
   - API for the haloy CLI`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			config.LoadHaloydEnvFiles()

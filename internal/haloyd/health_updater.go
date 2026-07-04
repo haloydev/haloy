@@ -1,17 +1,17 @@
 package haloyd
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/haloydev/haloy/internal/healthcheck"
-	"github.com/haloydev/haloy/internal/proxy"
 )
 
 // HealthConfigUpdater bridges the health monitor to the proxy configuration.
 // When health state changes, it rebuilds the proxy config with only healthy backends.
 type HealthConfigUpdater struct {
 	deploymentManager *DeploymentManager
-	proxy             *proxy.Proxy
+	proxyPusher       ProxyPusher
 	apiDomain         string
 	logger            *slog.Logger
 }
@@ -19,13 +19,13 @@ type HealthConfigUpdater struct {
 // NewHealthConfigUpdater creates a new health config updater.
 func NewHealthConfigUpdater(
 	deploymentManager *DeploymentManager,
-	proxy *proxy.Proxy,
+	proxyPusher ProxyPusher,
 	apiDomain string,
 	logger *slog.Logger,
 ) *HealthConfigUpdater {
 	return &HealthConfigUpdater{
 		deploymentManager: deploymentManager,
-		proxy:             proxy,
+		proxyPusher:       proxyPusher,
 		apiDomain:         apiDomain,
 		logger:            logger,
 	}
@@ -56,17 +56,16 @@ func (u *HealthConfigUpdater) OnHealthChange(healthyTargets []healthcheck.Target
 		}
 	}
 
-	proxyConfig, err := buildProxyConfig(deployments, u.deploymentManager.FailedDeployments(), u.apiDomain,
+	snapshot := buildSnapshot(deployments, u.deploymentManager.FailedDeployments(), u.apiDomain,
 		func(inst DeploymentInstance) bool {
 			_, isHealthy := healthyIDs[inst.ContainerID]
 			return isHealthy
 		})
-	if err != nil {
-		u.logger.Error("Failed to build proxy config from health check", "error", err)
+
+	if err := u.proxyPusher.Push(context.Background(), snapshot); err != nil {
+		u.logger.Error("Failed to push proxy config from health check", "error", err)
 		return
 	}
-
-	u.proxy.UpdateConfig(proxyConfig)
 	u.logger.Info("Proxy configuration updated from health monitor",
 		"apps", len(deployments),
 		"healthy_targets", len(healthyTargets))

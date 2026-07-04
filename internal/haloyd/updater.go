@@ -2,6 +2,7 @@ package haloyd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -11,14 +12,14 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/helpers"
-	"github.com/haloydev/haloy/internal/proxy"
+	"github.com/haloydev/haloy/internal/proxyclient"
 )
 
 type Updater struct {
 	cli               *client.Client
 	deploymentManager *DeploymentManager
 	certManager       *CertificatesManager
-	proxy             *proxy.Proxy
+	proxyPusher       ProxyPusher
 	apiDomain         string
 }
 
@@ -26,7 +27,7 @@ type UpdaterConfig struct {
 	Cli               *client.Client
 	DeploymentManager *DeploymentManager
 	CertManager       *CertificatesManager
-	Proxy             *proxy.Proxy
+	ProxyPusher       ProxyPusher
 	APIDomain         string
 }
 
@@ -35,7 +36,7 @@ func NewUpdater(config UpdaterConfig) *Updater {
 		cli:               config.Cli,
 		deploymentManager: config.DeploymentManager,
 		certManager:       config.CertManager,
-		proxy:             config.Proxy,
+		proxyPusher:       config.ProxyPusher,
 		apiDomain:         config.APIDomain,
 	}
 }
@@ -144,11 +145,16 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	deployments := u.deploymentManager.Deployments()
 	proxyConfigUpdated := false
 	updateProxyConfig := func() error {
-		proxyConfig, err := buildProxyConfig(deployments, u.deploymentManager.FailedDeployments(), u.apiDomain, nil)
-		if err != nil {
-			return fmt.Errorf("failed to build proxy config: %w", err)
+		snapshot := buildSnapshot(deployments, u.deploymentManager.FailedDeployments(), u.apiDomain, nil)
+		if err := u.proxyPusher.Push(ctx, snapshot); err != nil {
+			if !errors.Is(err, proxyclient.ErrUnreachable) {
+				return fmt.Errorf("failed to push proxy config: %w", err)
+			}
+			// The snapshot is durably recorded; the proxy client's reconcile
+			// loop delivers it once the proxy is reachable again, so an
+			// unreachable proxy must not fail a deployment.
+			logger.Warn("Proxy unreachable during config push; config will be delivered when it is back", "error", err)
 		}
-		u.proxy.UpdateConfig(proxyConfig)
 		proxyConfigUpdated = true
 		return nil
 	}
@@ -159,14 +165,6 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	if reason == TriggerReasonInitial {
 		if err := updateProxyConfig(); err != nil {
 			return result, err
-		}
-	}
-
-	// On initial startup, wait for the proxy to be ready before requesting certificates.
-	// This ensures the proxy is accepting connections to route ACME challenges from Let's Encrypt.
-	if reason == TriggerReasonInitial {
-		if err := waitForACMERouting(ctx, logger); err != nil {
-			logger.Warn("ACME routing check failed, continuing anyway", "error", err)
 		}
 	}
 
@@ -302,12 +300,4 @@ func (r *UpdateResult) GetAppFailures(appName string) []FailedContainer {
 		}
 	}
 	return failures
-}
-
-// waitForACMERouting verifies that ACME challenge routing is ready.
-// Since the proxy is embedded in haloyd, ACME challenges are routed directly
-// to the lego HTTP-01 server on port 8080 and are immediately available.
-func waitForACMERouting(_ context.Context, logger *slog.Logger) error {
-	logger.Debug("ACME routing ready (embedded proxy)")
-	return nil
 }

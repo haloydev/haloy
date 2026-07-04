@@ -256,7 +256,7 @@ func TestExtractHost(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := New(logger, nil, nil)
+	p := New(logger, nil)
 
 	if p == nil {
 		t.Fatal("New() returned nil")
@@ -287,7 +287,7 @@ func (r *routeTableRecorder) SetRouteTable(config *Config) {
 func TestUpdateConfig(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	recorder := &routeTableRecorder{}
-	p := New(logger, recorder, nil)
+	p := New(logger, recorder)
 
 	rb := NewRouteBuilder()
 	rb.SetAPIDomain("api.example.com")
@@ -319,13 +319,32 @@ func TestUpdateConfig(t *testing.T) {
 }
 
 func TestHTTPHandler_LocalhostAPIRequiresLoopback(t *testing.T) {
-	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	apiBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		io.WriteString(w, "api")
-	})
+	}))
+	defer apiBackend.Close()
+
+	backendURL, err := url.Parse(apiBackend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backendHost, backendPort, err := net.SplitHostPort(backendURL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := New(logger, nil, apiHandler)
+	p := New(logger, nil)
+
+	rb := NewRouteBuilder()
+	rb.SetAPIBackend(backendHost, backendPort)
+	cfg, err := rb.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.UpdateConfig(cfg)
+
 	handler := p.httpHandler()
 
 	// A remote client spoofing Host: localhost must not reach the API.
@@ -353,6 +372,67 @@ func TestHTTPHandler_LocalhostAPIRequiresLoopback(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Errorf("IPv6 loopback request: status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestHTTPSHandler_APIDomainForwardsToBackend(t *testing.T) {
+	var gotForwardedFor string
+	apiBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotForwardedFor = r.Header.Get("X-Forwarded-For")
+		io.WriteString(w, "api")
+	}))
+	defer apiBackend.Close()
+
+	backendURL, err := url.Parse(apiBackend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backendHost, backendPort, err := net.SplitHostPort(backendURL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := newTestProxy()
+	rb := NewRouteBuilder()
+	rb.SetAPIDomain("api.example.com")
+	rb.SetAPIBackend(backendHost, backendPort)
+	cfg, err := rb.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.UpdateConfig(cfg)
+
+	handler := p.httpsHandler()
+
+	r := httptest.NewRequest(http.MethodGet, "https://api.example.com/v1/version", nil)
+	r.RemoteAddr = "203.0.113.9:44321"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK || w.Body.String() != "api" {
+		t.Fatalf("status = %d body = %q, want API backend response", w.Code, w.Body.String())
+	}
+	if gotForwardedFor != "203.0.113.9" {
+		t.Errorf("X-Forwarded-For = %q, want %q (rate limiting needs the real client IP)", gotForwardedFor, "203.0.113.9")
+	}
+}
+
+func TestHTTPSHandler_APIDomainWithoutBackendIs503(t *testing.T) {
+	p := newTestProxy()
+	rb := NewRouteBuilder()
+	rb.SetAPIDomain("api.example.com")
+	cfg, err := rb.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.UpdateConfig(cfg)
+
+	r := httptest.NewRequest(http.MethodGet, "https://api.example.com/v1/version", nil)
+	w := httptest.NewRecorder()
+	p.httpsHandler().ServeHTTP(w, r)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d when no control plane backend is configured", w.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -413,7 +493,7 @@ func TestStart_BindErrorIsReturned(t *testing.T) {
 	}
 	defer occupied.Close()
 
-	p := New(slog.New(slog.NewTextHandler(io.Discard, nil)), stubCertLoader{}, nil)
+	p := New(slog.New(slog.NewTextHandler(io.Discard, nil)), stubCertLoader{})
 	if err := p.Start(occupied.Addr().String(), "127.0.0.1:0"); err == nil {
 		p.Shutdown(t.Context())
 		t.Fatal("Start() on an occupied port should return an error")
@@ -421,7 +501,7 @@ func TestStart_BindErrorIsReturned(t *testing.T) {
 }
 
 func TestStartAndShutdown(t *testing.T) {
-	p := New(slog.New(slog.NewTextHandler(io.Discard, nil)), stubCertLoader{}, nil)
+	p := New(slog.New(slog.NewTextHandler(io.Discard, nil)), stubCertLoader{})
 	if err := p.Start("127.0.0.1:0", "127.0.0.1:0"); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
