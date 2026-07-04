@@ -693,26 +693,52 @@ Please add DNS records:
 - Test with: dig A %s`, domain, domain, domain)
 	}
 
-	// Check if domain points to this server's IP
-	domainIP, err := helpers.GetARecord(domain)
+	// Check if domain points to this server. Resolve via public DNS-over-HTTPS
+	// so /etc/hosts entries and local resolver caches don't skew the result.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	domainIPs, err := helpers.ResolveDomainDoH(ctx, domain)
 	if err != nil {
-		return fmt.Errorf("domain %s has no A record (IPv4): %w", domain, err)
+		// DoH unavailable; fall back to the system resolver result, ignoring
+		// loopback/link-local addresses that come from /etc/hosts.
+		domainIPs = helpers.FilterGlobalUnicastIPs(ips)
+		if len(domainIPs) == 0 {
+			logger.Warn("Domain only resolves to a local address on this server, likely from an /etc/hosts entry. Verify the public DNS A record points to this server.",
+				"domain", domain)
+			return nil
+		}
 	}
-
-	serverIP, err := helpers.GetExternalIP()
-	if err != nil {
-		// Can't determine server IP, skip this check
+	if len(domainIPs) == 0 {
+		// No A records in public DNS (e.g. IPv6-only domain); nothing to compare.
 		return nil
 	}
 
-	if !domainIP.Equal(serverIP) {
-		logger.Warn("Domain resolves to a different IP than this server, which is expected if using a CDN or proxy (e.g. Cloudflare). If not, update your DNS A record.",
+	serverIPs, _ := helpers.GetLocalIPs()
+	if externalIP, err := helpers.GetExternalIP(); err == nil {
+		serverIPs = append(serverIPs, externalIP)
+	}
+	if len(serverIPs) == 0 {
+		// Can't determine any server IP, skip this check
+		return nil
+	}
+
+	if !helpers.AnyIPMatch(domainIPs, serverIPs) {
+		logger.Warn(fmt.Sprintf("Domain %s resolves to %s but this server's addresses are %s. This is expected if using a CDN or proxy (e.g. Cloudflare). If not, update your DNS A record.",
+			domain, formatIPList(domainIPs), formatIPList(serverIPs)),
 			"domain", domain,
-			"domain_ip", domainIP.String(),
-			"server_ip", serverIP.String())
+			"domain_ips", formatIPList(domainIPs),
+			"server_ips", formatIPList(serverIPs))
 	}
 
 	return nil
+}
+
+func formatIPList(ips []net.IP) string {
+	strs := make([]string, len(ips))
+	for i, ip := range ips {
+		strs[i] = ip.String()
+	}
+	return strings.Join(strs, ", ")
 }
 
 func (cm *CertificatesManager) buildDomainErrorMessage(domain string, originalErr error) string {
