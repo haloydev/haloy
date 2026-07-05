@@ -16,20 +16,21 @@ import (
 )
 
 type APIServer struct {
-	router                 *http.ServeMux
-	db                     *storage.DB
-	logBroker              logging.StreamPublisher
-	logLevel               slog.Level
-	apiToken               string
-	rateLimiter            *RateLimiter
-	layerRateLimiter       *RateLimiter
-	uploadDiskSpaceCheck   func(context.Context, int64) error
-	assembleDiskSpaceCheck func(context.Context, apitypes.ImageAssembleRequest) error
-	imageDiskSpaceCheck    func(context.Context, apitypes.ImageDiskSpaceCheckRequest) (diskSpaceCheckResult, error)
-	imagePrune             func(context.Context, apitypes.ImagePruneRequest) (apitypes.ImagePruneResponse, error)
-	registryAuthProvider   func(config.Image) (*config.RegistryAuth, error)
-	registryLoginCheck     func(context.Context, config.RegistryAuth) error
-	proxyStatus            func(context.Context) (*proxywire.Status, error)
+	router                    *http.ServeMux
+	db                        *storage.DB
+	logBroker                 logging.StreamPublisher
+	logLevel                  slog.Level
+	apiToken                  string
+	rateLimiter               *RateLimiter
+	layerRateLimiter          *RateLimiter
+	uploadDiskSpaceCheck      func(context.Context, int64) error
+	layerUploadDiskSpaceCheck func(context.Context, int64) error
+	assembleDiskSpaceCheck    func(context.Context, apitypes.ImageAssembleRequest) error
+	imageDiskSpaceCheck       func(context.Context, apitypes.ImageDiskSpaceCheckRequest) (diskSpaceCheckResult, error)
+	imagePrune                func(context.Context, apitypes.ImagePruneRequest) (apitypes.ImagePruneResponse, error)
+	registryAuthProvider      func(config.Image) (*config.RegistryAuth, error)
+	registryLoginCheck        func(context.Context, config.RegistryAuth) error
+	proxyStatus               func(context.Context) (*proxywire.Status, error)
 }
 
 // SetProxyStatusFunc wires the haloy-proxy status lookup used by the version

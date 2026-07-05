@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strings"
@@ -23,29 +24,36 @@ func (s *APIServer) handleImageUpload() http.HandlerFunc {
 			return
 		}
 
-		// Parse multipart form (32MB max memory)
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
+		// Stream the multipart body directly to the temp file instead of letting
+		// ParseMultipartForm spool a second copy to the OS temp dir first.
+		reader, err := r.MultipartReader()
+		if err != nil {
 			http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 			return
 		}
 
-		file, header, err := r.FormFile("image")
-		if err != nil {
-			http.Error(w, "Missing 'image' file in form data", http.StatusBadRequest)
-			return
+		var part *multipart.Part
+		for {
+			p, err := reader.NextPart()
+			if err == io.EOF {
+				http.Error(w, "Missing 'image' file in form data", http.StatusBadRequest)
+				return
+			}
+			if err != nil {
+				http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
+				return
+			}
+			if p.FormName() == "image" {
+				part = p
+				break
+			}
 		}
-		defer file.Close()
+		defer part.Close()
 
 		// Validate file extension
-		if !strings.HasSuffix(header.Filename, ".tar") {
+		filename := part.FileName()
+		if !strings.HasSuffix(filename, ".tar") {
 			http.Error(w, "File must be a .tar archive", http.StatusBadRequest)
-			return
-		}
-
-		if err := s.ensureDiskSpaceOrPruneLayers(r.Context(), func() error {
-			return s.ensureUploadDiskSpace(r.Context(), header.Size)
-		}); err != nil {
-			writeImageHandlerError(w, "Failed disk space preflight", err)
 			return
 		}
 
@@ -67,13 +75,13 @@ func (s *APIServer) handleImageUpload() http.HandlerFunc {
 		defer tempFile.Close()
 
 		// Copy uploaded data to temp file
-		_, err = io.Copy(tempFile, file)
+		_, err = io.Copy(tempFile, part)
 		if err != nil {
 			http.Error(w, "Failed to save uploaded file", http.StatusInternalServerError)
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(r.Context(), defaultContextTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), imageLoadTimeout)
 		defer cancel()
 
 		cli, err := docker.NewClient(ctx)
@@ -90,7 +98,7 @@ func (s *APIServer) handleImageUpload() http.HandlerFunc {
 
 		response := apitypes.ImageUploadResponse{
 			Success: true,
-			Message: fmt.Sprintf("Image loaded successfully from %s", header.Filename),
+			Message: fmt.Sprintf("Image loaded successfully from %s", filename),
 		}
 
 		if err := encodeJSON(w, http.StatusAccepted, response); err != nil {

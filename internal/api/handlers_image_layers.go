@@ -2,21 +2,22 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/haloydev/haloy/internal/apitypes"
 	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/layerstore"
+	"github.com/haloydev/haloy/internal/logging"
 )
 
 // handleLayerCheck checks which layers already exist on the server
 func (s *APIServer) handleLayerCheck() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req apitypes.LayerCheckRequest
-		if err := decodeJSON(r.Body, &req); err != nil {
+		if err := decodeJSON(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes), &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -24,6 +25,13 @@ func (s *APIServer) handleLayerCheck() http.HandlerFunc {
 		if len(req.Digests) == 0 {
 			http.Error(w, "digests array cannot be empty", http.StatusBadRequest)
 			return
+		}
+
+		for _, digest := range req.Digests {
+			if err := layerstore.ValidateDigest(digest); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 
 		store, err := layerstore.New(s.db)
@@ -36,6 +44,14 @@ func (s *APIServer) handleLayerCheck() http.HandlerFunc {
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to check layers: %v", err), http.StatusInternalServerError)
 			return
+		}
+
+		// Refresh last_used_at so layers reported as cached are not pruned
+		// between this check and the assemble request.
+		if len(exists) > 0 {
+			if err := store.TouchLayers(exists); err != nil {
+				logging.NewLogger(s.logLevel, s.logBroker).Warn("Failed to touch cached layers", "error", err)
+			}
 		}
 
 		resp := apitypes.LayerCheckResponse{
@@ -59,8 +75,15 @@ func (s *APIServer) handleLayerUpload() http.HandlerFunc {
 			return
 		}
 
-		if !strings.HasPrefix(digest, "sha256:") {
-			http.Error(w, "Invalid digest format: must start with sha256:", http.StatusBadRequest)
+		if err := layerstore.ValidateDigest(digest); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := s.ensureDiskSpaceOrPruneLayers(r.Context(), func() error {
+			return s.ensureLayerUploadDiskSpace(r.Context(), r.ContentLength)
+		}); err != nil {
+			writeImageHandlerError(w, "Failed disk space preflight", err)
 			return
 		}
 
@@ -70,9 +93,18 @@ func (s *APIServer) handleLayerUpload() http.HandlerFunc {
 			return
 		}
 
-		size, err := store.StoreLayer(digest, r.Body)
+		body := http.MaxBytesReader(w, r.Body, maxLayerUploadBytes)
+		size, err := store.StoreLayer(digest, body)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to store layer: %v", err), http.StatusInternalServerError)
+			var maxBytesErr *http.MaxBytesError
+			switch {
+			case errors.Is(err, layerstore.ErrDigestMismatch):
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			case errors.As(err, &maxBytesErr):
+				http.Error(w, fmt.Sprintf("Layer exceeds maximum size of %d bytes", maxBytesErr.Limit), http.StatusRequestEntityTooLarge)
+			default:
+				http.Error(w, fmt.Sprintf("Failed to store layer: %v", err), http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -92,7 +124,7 @@ func (s *APIServer) handleLayerUpload() http.HandlerFunc {
 func (s *APIServer) handleImageAssemble() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req apitypes.ImageAssembleRequest
-		if err := decodeJSON(r.Body, &req); err != nil {
+		if err := decodeJSON(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes), &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -129,7 +161,7 @@ func (s *APIServer) handleImageAssemble() http.HandlerFunc {
 		defer os.Remove(tarPath)
 
 		// Load the assembled tar into Docker
-		ctx, cancel := context.WithTimeout(r.Context(), defaultContextTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), imageLoadTimeout)
 		defer cancel()
 
 		cli, err := docker.NewClient(ctx)

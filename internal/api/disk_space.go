@@ -130,6 +130,14 @@ func (s *APIServer) ensureUploadDiskSpace(ctx context.Context, uploadSize int64)
 	return ensureDiskSpaceForUpload(ctx, osDiskSpaceProbe{}, uploadSize)
 }
 
+func (s *APIServer) ensureLayerUploadDiskSpace(ctx context.Context, uploadSize int64) error {
+	if s.layerUploadDiskSpaceCheck != nil {
+		return s.layerUploadDiskSpaceCheck(ctx, uploadSize)
+	}
+
+	return ensureDiskSpaceForLayerUpload(ctx, osDiskSpaceProbe{}, uploadSize)
+}
+
 func (s *APIServer) ensureAssembleDiskSpace(ctx context.Context, req apitypes.ImageAssembleRequest) error {
 	if s.assembleDiskSpaceCheck != nil {
 		return s.assembleDiskSpaceCheck(ctx, req)
@@ -159,6 +167,19 @@ func ensureDiskSpaceForUpload(ctx context.Context, probe diskSpaceProbe, uploadS
 
 func ensureDiskSpaceForUploadWithDocker(ctx context.Context, cli dockerInfoProvider, probe diskSpaceProbe, uploadSize uint64) error {
 	result, err := checkDiskSpaceForUploadWithDocker(ctx, cli, probe, uploadSize)
+	if err != nil {
+		return err
+	}
+
+	return result.Err()
+}
+
+func ensureDiskSpaceForLayerUpload(ctx context.Context, probe diskSpaceProbe, uploadSize int64) error {
+	if uploadSize <= 0 {
+		return nil
+	}
+
+	result, err := checkDiskSpaceForLayeredUpload(ctx, probe, uint64(uploadSize), 0)
 	if err != nil {
 		return err
 	}
