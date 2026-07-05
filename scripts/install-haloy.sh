@@ -81,8 +81,15 @@ INSTALL_PATH="$DIR/haloy"
 mkdir -p "$DIR"
 
 echo "Downloading Haloy ${GITHUB_LATEST_VERSION} for ${PLATFORM}/${ARCH}..."
-fetch_to_file "$DOWNLOAD_URL" "$INSTALL_PATH"
-chmod +x "$INSTALL_PATH"
+# Download to a temporary file and rename into place. Overwriting an existing
+# binary in place can make macOS kill the next execution of it because the
+# kernel caches the code signature per inode; a rename creates a new inode.
+TMP_PATH="$INSTALL_PATH.tmp.$$"
+trap 'rm -f "$TMP_PATH"' EXIT
+fetch_to_file "$DOWNLOAD_URL" "$TMP_PATH"
+chmod +x "$TMP_PATH"
+mv "$TMP_PATH" "$INSTALL_PATH"
+trap - EXIT
 
 echo ""
 echo "Haloy client has been installed to '$INSTALL_PATH'"
@@ -108,6 +115,23 @@ esac
 # --- Install shell completions ---
 SHELL_NAME="$(basename "$SHELL" 2>/dev/null || true)"
 
+# Generate completions to a temporary file and only replace the existing
+# completion file on success, so a failed generation can't truncate it.
+write_completions() {
+    COMP_SHELL="$1"
+    COMP_FILE="$2"
+    TMP_COMP="$COMP_FILE.tmp.$$"
+    if "$INSTALL_PATH" completion "$COMP_SHELL" > "$TMP_COMP"; then
+        mv "$TMP_COMP" "$COMP_FILE"
+        echo "${COMP_SHELL} completions installed to $COMP_FILE"
+    else
+        rm -f "$TMP_COMP"
+        echo "Warning: failed to generate ${COMP_SHELL} completions." >&2
+        echo "Run 'haloy completion --help' to install them manually." >&2
+        return 1
+    fi
+}
+
 install_bash_completions() {
     if [ "$(id -u)" = "0" ]; then
         COMP_DIR="/etc/bash_completion.d"
@@ -115,25 +139,23 @@ install_bash_completions() {
         COMP_DIR="$HOME/.local/share/bash-completion/completions"
     fi
     mkdir -p "$COMP_DIR"
-    "$INSTALL_PATH" completion bash > "$COMP_DIR/haloy" 2>/dev/null
-    echo "Bash completions installed to $COMP_DIR/haloy"
+    write_completions bash "$COMP_DIR/haloy" || true
 }
 
 install_zsh_completions() {
     COMP_DIR="$HOME/.local/share/zsh/site-functions"
     mkdir -p "$COMP_DIR"
-    "$INSTALL_PATH" completion zsh > "$COMP_DIR/_haloy" 2>/dev/null
-    echo "Zsh completions installed to $COMP_DIR/_haloy"
-    echo "Note: You may need to add the following to your ~/.zshrc if completions don't work:"
-    echo "    fpath=(~/.local/share/zsh/site-functions \$fpath)"
-    echo "    autoload -U compinit && compinit"
+    if write_completions zsh "$COMP_DIR/_haloy"; then
+        echo "Note: You may need to add the following to your ~/.zshrc if completions don't work:"
+        echo "    fpath=(~/.local/share/zsh/site-functions \$fpath)"
+        echo "    autoload -U compinit && compinit"
+    fi
 }
 
 install_fish_completions() {
     COMP_DIR="$HOME/.config/fish/completions"
     mkdir -p "$COMP_DIR"
-    "$INSTALL_PATH" completion fish > "$COMP_DIR/haloy.fish" 2>/dev/null
-    echo "Fish completions installed to $COMP_DIR/haloy.fish"
+    write_completions fish "$COMP_DIR/haloy.fish" || true
 }
 
 echo ""
