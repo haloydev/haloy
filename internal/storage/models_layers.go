@@ -2,13 +2,18 @@ package storage
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
-// Layer represents a cached image layer in the database
+// Layer represents a cached image layer in the database.
+// Digest is the sha256 of the stored blob; DiffID is the sha256 of the
+// uncompressed layer content as referenced by Docker image configs. They
+// differ when docker save emits compressed blobs (containerd image store).
 type Layer struct {
 	Digest     string    `db:"digest" json:"digest"`
 	Size       int64     `db:"size" json:"size"`
+	DiffID     string    `db:"diff_id" json:"diffId"`
 	CreatedAt  time.Time `db:"created_at" json:"createdAt"`
 	LastUsedAt time.Time `db:"last_used_at" json:"lastUsedAt"`
 }
@@ -18,6 +23,7 @@ func createLayersTable(db *DB) error {
 CREATE TABLE IF NOT EXISTS layers (
     digest TEXT PRIMARY KEY,
     size INTEGER NOT NULL,
+    diff_id TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_used_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -28,15 +34,43 @@ CREATE INDEX IF NOT EXISTS idx_layers_last_used ON layers(last_used_at);
 	if err != nil {
 		return fmt.Errorf("failed to create layers table: %w", err)
 	}
+
+	return addLayerDiffIDColumn(db)
+}
+
+// addLayerDiffIDColumn adds the diff_id column to layers tables created before it existed.
+func addLayerDiffIDColumn(db *DB) error {
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('layers') WHERE name = 'diff_id'`).Scan(&count); err != nil {
+		return fmt.Errorf("failed to inspect layers table: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	if _, err := db.Exec(`ALTER TABLE layers ADD COLUMN diff_id TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("failed to add diff_id column: %w", err)
+	}
 	return nil
 }
 
 // SaveLayer saves or updates a layer record
 func (db *DB) SaveLayer(layer Layer) error {
-	query := `INSERT OR REPLACE INTO layers (digest, size, created_at, last_used_at)
-              VALUES (?, ?, ?, ?)`
-	_, err := db.Exec(query, layer.Digest, layer.Size, layer.CreatedAt, layer.LastUsedAt)
+	query := `INSERT OR REPLACE INTO layers (digest, size, diff_id, created_at, last_used_at)
+              VALUES (?, ?, ?, ?, ?)`
+	_, err := db.Exec(query, layer.Digest, layer.Size, layer.DiffID, layer.CreatedAt, layer.LastUsedAt)
 	return err
+}
+
+// SetLayerDiffIDs records the diff ID for each digest so prune can match
+// layers against the diff IDs reported by docker image inspect.
+func (db *DB) SetLayerDiffIDs(diffIDs map[string]string) error {
+	for digest, diffID := range diffIDs {
+		if _, err := db.Exec(`UPDATE layers SET diff_id = ? WHERE digest = ?`, diffID, digest); err != nil {
+			return fmt.Errorf("failed to set diff_id for %s: %w", digest, err)
+		}
+	}
+	return nil
 }
 
 // HasLayer checks if a layer exists by digest
@@ -52,12 +86,36 @@ func (db *DB) HasLayer(digest string) (bool, error) {
 
 // HasLayers checks multiple digests and returns which exist and which are missing
 func (db *DB) HasLayers(digests []string) (missing, exists []string, err error) {
-	for _, digest := range digests {
-		has, err := db.HasLayer(digest)
-		if err != nil {
-			return nil, nil, err
+	if len(digests) == 0 {
+		return nil, nil, nil
+	}
+
+	placeholders := strings.Repeat("?,", len(digests)-1) + "?"
+	args := make([]any, len(digests))
+	for i, digest := range digests {
+		args[i] = digest
+	}
+
+	rows, err := db.Query(`SELECT digest FROM layers WHERE digest IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check layers: %w", err)
+	}
+	defer rows.Close()
+
+	found := make(map[string]struct{}, len(digests))
+	for rows.Next() {
+		var digest string
+		if err := rows.Scan(&digest); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan layer digest: %w", err)
 		}
-		if has {
+		found[digest] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to check layers: %w", err)
+	}
+
+	for _, digest := range digests {
+		if _, ok := found[digest]; ok {
 			exists = append(exists, digest)
 		} else {
 			missing = append(missing, digest)
@@ -84,7 +142,7 @@ func (db *DB) TouchLayers(digests []string) error {
 }
 
 func (db *DB) ListAllLayers() ([]Layer, error) {
-	query := `SELECT digest, size, created_at, last_used_at FROM layers`
+	query := `SELECT digest, size, diff_id, created_at, last_used_at FROM layers`
 	rows, err := db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query layers: %w", err)
@@ -94,7 +152,7 @@ func (db *DB) ListAllLayers() ([]Layer, error) {
 	var layers []Layer
 	for rows.Next() {
 		var l Layer
-		if err := rows.Scan(&l.Digest, &l.Size, &l.CreatedAt, &l.LastUsedAt); err != nil {
+		if err := rows.Scan(&l.Digest, &l.Size, &l.DiffID, &l.CreatedAt, &l.LastUsedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan layer: %w", err)
 		}
 		layers = append(layers, l)

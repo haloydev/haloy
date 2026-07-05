@@ -63,6 +63,9 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 		if err != nil {
 			return "", fmt.Errorf("failed to parse layer path %s: %w", layerPath, err)
 		}
+		if err := ValidateDigest(digest); err != nil {
+			return "", fmt.Errorf("invalid layer path %s: %w", layerPath, err)
+		}
 
 		storedLayerPath, err := s.GetLayerPath(digest)
 		if err != nil {
@@ -73,18 +76,23 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 			return "", fmt.Errorf("failed to copy layer %s: %w", digest, err)
 		}
 
-		layerDir := filepath.Dir(layerPath)
-		versionPath := filepath.Join(layerDir, "VERSION")
-		if err := writeToTar(tw, versionPath, []byte("1.0")); err != nil {
-			return "", fmt.Errorf("failed to write VERSION for layer %s: %w", digest, err)
-		}
+		// Legacy-format layer directories need VERSION and json companion files.
+		// OCI-style blobs/ paths don't; emitting them there would create duplicate
+		// junk entries in the shared blobs/sha256 directory.
+		if !strings.HasPrefix(layerPath, "blobs/") {
+			layerDir := filepath.Dir(layerPath)
+			versionPath := filepath.Join(layerDir, "VERSION")
+			if err := writeToTar(tw, versionPath, []byte("1.0")); err != nil {
+				return "", fmt.Errorf("failed to write VERSION for layer %s: %w", digest, err)
+			}
 
-		// Write minimal json file for this layer directory
-		// This is expected by docker load for legacy format compatibility
-		layerJSONPath := filepath.Join(layerDir, "json")
-		layerJSON := fmt.Sprintf(`{"id":"%s"}`, strings.TrimSuffix(filepath.Base(layerDir), "/"))
-		if err := writeToTar(tw, layerJSONPath, []byte(layerJSON)); err != nil {
-			return "", fmt.Errorf("failed to write json for layer %s: %w", digest, err)
+			// Write minimal json file for this layer directory
+			// This is expected by docker load for legacy format compatibility
+			layerJSONPath := filepath.Join(layerDir, "json")
+			layerJSON := fmt.Sprintf(`{"id":"%s"}`, strings.TrimSuffix(filepath.Base(layerDir), "/"))
+			if err := writeToTar(tw, layerJSONPath, []byte(layerJSON)); err != nil {
+				return "", fmt.Errorf("failed to write json for layer %s: %w", digest, err)
+			}
 		}
 	}
 
@@ -99,6 +107,15 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 		fmt.Printf("Warning: failed to touch layers: %v\n", err)
 	}
 
+	// Record diff IDs so prune can match stored blobs against live images even
+	// when blob digests differ from diff IDs (compressed docker save output).
+	if diffIDs := diffIDsByDigest(req.Config, req.Manifest.Layers); len(diffIDs) > 0 {
+		if err := s.db.SetLayerDiffIDs(diffIDs); err != nil {
+			// Non-fatal, just log
+			fmt.Printf("Warning: failed to record layer diff IDs: %v\n", err)
+		}
+	}
+
 	if err := tw.Close(); err != nil {
 		return "", fmt.Errorf("failed to close tar writer: %w", err)
 	}
@@ -109,6 +126,33 @@ func (s *LayerStore) AssembleImageTar(req apitypes.ImageAssembleRequest) (string
 
 	success = true
 	return tempPath, nil
+}
+
+// diffIDsByDigest maps each layer's blob digest to its diff ID using the image
+// config's rootfs.diff_ids, which is positionally aligned with manifest layers.
+// Returns nil when the config cannot be parsed or the counts do not line up.
+func diffIDsByDigest(configJSON []byte, layerPaths []string) map[string]string {
+	var config struct {
+		RootFS struct {
+			DiffIDs []string `json:"diff_ids"`
+		} `json:"rootfs"`
+	}
+	if err := json.Unmarshal(configJSON, &config); err != nil {
+		return nil
+	}
+	if len(config.RootFS.DiffIDs) != len(layerPaths) {
+		return nil
+	}
+
+	diffIDs := make(map[string]string, len(layerPaths))
+	for i, layerPath := range layerPaths {
+		digest, err := extractDigestFromLayerPath(layerPath)
+		if err != nil {
+			continue
+		}
+		diffIDs[digest] = config.RootFS.DiffIDs[i]
+	}
+	return diffIDs
 }
 
 // extractDigestFromLayerPath extracts the sha256 digest from a layer path

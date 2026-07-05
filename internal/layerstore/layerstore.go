@@ -3,10 +3,12 @@ package layerstore
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +16,20 @@ import (
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/storage"
 )
+
+// ErrDigestMismatch is returned when uploaded layer content does not hash to the claimed digest.
+var ErrDigestMismatch = errors.New("layer digest mismatch")
+
+var digestPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+
+// ValidateDigest checks that a digest is a well-formed sha256 content digest.
+// The hex part is used as a filesystem path segment, so anything else must be rejected.
+func ValidateDigest(digest string) error {
+	if !digestPattern.MatchString(digest) {
+		return fmt.Errorf("invalid digest %q: expected sha256:<64 lowercase hex chars>", digest)
+	}
+	return nil
+}
 
 // LayerStore manages content-addressable layer storage on the filesystem
 type LayerStore struct {
@@ -47,9 +63,8 @@ func (s *LayerStore) HasLayers(digests []string) (missing, exists []string, err 
 // StoreLayer saves a layer from a reader and verifies its digest
 // The digest should be in the format "sha256:hexstring"
 func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) {
-	// Validate digest format
-	if !strings.HasPrefix(digest, "sha256:") {
-		return 0, fmt.Errorf("invalid digest format: must start with sha256:")
+	if err := ValidateDigest(digest); err != nil {
+		return 0, err
 	}
 
 	expectedHash := strings.TrimPrefix(digest, "sha256:")
@@ -85,7 +100,7 @@ func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) 
 
 	actualHash := hex.EncodeToString(hasher.Sum(nil))
 	if actualHash != expectedHash {
-		return 0, fmt.Errorf("digest mismatch: expected %s, got %s", expectedHash, actualHash)
+		return 0, fmt.Errorf("%w: expected %s, got %s", ErrDigestMismatch, expectedHash, actualHash)
 	}
 
 	if err := os.Rename(tempPath, layerPath); err != nil {
@@ -109,8 +124,8 @@ func (s *LayerStore) StoreLayer(digest string, reader io.Reader) (int64, error) 
 
 // GetLayerPath returns the filesystem path for a layer
 func (s *LayerStore) GetLayerPath(digest string) (string, error) {
-	if !strings.HasPrefix(digest, "sha256:") {
-		return "", fmt.Errorf("invalid digest format: must start with sha256:")
+	if err := ValidateDigest(digest); err != nil {
+		return "", err
 	}
 
 	hash := strings.TrimPrefix(digest, "sha256:")
@@ -130,8 +145,8 @@ func (s *LayerStore) TouchLayers(digests []string) error {
 
 // DeleteLayer removes a layer from storage and database
 func (s *LayerStore) DeleteLayer(digest string) error {
-	if !strings.HasPrefix(digest, "sha256:") {
-		return fmt.Errorf("invalid digest format: must start with sha256:")
+	if err := ValidateDigest(digest); err != nil {
+		return err
 	}
 
 	hash := strings.TrimPrefix(digest, "sha256:")

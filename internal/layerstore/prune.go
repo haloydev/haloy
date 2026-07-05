@@ -59,7 +59,13 @@ func PruneUnusedLayers(ctx context.Context, db *storage.DB, logger *slog.Logger)
 	var pruned int
 	var freed int64
 	for _, layer := range allLayers {
+		// Stored digests match diff IDs directly for uncompressed blobs; for
+		// compressed blobs (containerd image store) the recorded diff_id links
+		// the blob to the diff IDs reported by image inspect.
 		if _, needed := neededDigests[layer.Digest]; needed {
+			continue
+		}
+		if _, needed := neededDigests[layer.DiffID]; needed {
 			continue
 		}
 		if layer.LastUsedAt.After(cutoff) {
