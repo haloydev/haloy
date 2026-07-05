@@ -154,6 +154,49 @@ func TestExtractDigestFromPath(t *testing.T) {
 	}
 }
 
+func TestHasContentAddressedLayers(t *testing.T) {
+	tests := []struct {
+		name   string
+		layers []string
+		want   bool
+	}{
+		{
+			name:   "OCI blobs format",
+			layers: []string{"blobs/sha256/abc123", "blobs/sha256/def456"},
+			want:   true,
+		},
+		{
+			name:   "older buildkit format",
+			layers: []string{"blobs/sha256/abc123/layer.tar"},
+			want:   true,
+		},
+		{
+			name:   "sha256-prefixed directories",
+			layers: []string{"sha256:abc123/layer.tar"},
+			want:   true,
+		},
+		{
+			name:   "legacy chain ID directories",
+			layers: []string{"abc123def456/layer.tar"},
+			want:   false,
+		},
+		{
+			name:   "mixed formats with one legacy layer",
+			layers: []string{"blobs/sha256/abc123", "def456/layer.tar"},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := apitypes.ImageManifestEntry{Layers: tt.layers}
+			if got := hasContentAddressedLayers(manifest); got != tt.want {
+				t.Fatalf("hasContentAddressedLayers(%v) = %v, want %v", tt.layers, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildImage_BuildArgsArePassedWithoutLiteralQuotes(t *testing.T) {
 	origRunner := runCLICommandInDir
 	t.Cleanup(func() { runCLICommandInDir = origRunner })

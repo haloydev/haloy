@@ -184,7 +184,8 @@ func (c *APIClient) Post(ctx context.Context, path string, request, response any
 	return nil
 }
 
-// PostFile uploads a file using multipart form data
+// PostFile uploads a file using multipart form data.
+// The multipart body is streamed from disk so large files are never buffered in memory.
 func (c *APIClient) PostFile(ctx context.Context, path, fieldName, filePath string) error {
 	if err := c.HealthCheck(ctx); err != nil {
 		return fmt.Errorf("server not available at %s: %w", c.baseURL, err)
@@ -196,26 +197,33 @@ func (c *APIClient) PostFile(ctx context.Context, path, fieldName, filePath stri
 	}
 	defer file.Close()
 
-	// Create multipart form
-	var requestBody bytes.Buffer
-	writer := multipart.NewWriter(&requestBody)
+	pipeReader, pipeWriter := io.Pipe()
+	writer := multipart.NewWriter(pipeWriter)
 
-	part, err := writer.CreateFormFile(fieldName, filepath.Base(filePath))
-	if err != nil {
-		return fmt.Errorf("failed to create form file: %w", err)
-	}
+	go func() {
+		part, err := writer.CreateFormFile(fieldName, filepath.Base(filePath))
+		if err != nil {
+			pipeWriter.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
+			return
+		}
 
-	if _, err := io.Copy(part, file); err != nil {
-		return fmt.Errorf("failed to copy file data: %w", err)
-	}
+		if _, err := io.Copy(part, file); err != nil {
+			pipeWriter.CloseWithError(fmt.Errorf("failed to copy file data: %w", err))
+			return
+		}
 
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("failed to close multipart writer: %w", err)
-	}
+		if err := writer.Close(); err != nil {
+			pipeWriter.CloseWithError(fmt.Errorf("failed to close multipart writer: %w", err))
+			return
+		}
+
+		pipeWriter.Close()
+	}()
 
 	url := fmt.Sprintf("%s/v1/%s", c.baseURL, path)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, &requestBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, pipeReader)
 	if err != nil {
+		pipeReader.Close()
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 

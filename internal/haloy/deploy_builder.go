@@ -4,12 +4,14 @@ import (
 	"archive/tar"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/haloydev/haloy/internal/apiclient"
@@ -224,6 +226,13 @@ func uploadImageLayered(ctx context.Context, api *apiclient.APIClient, imageRef,
 		return fmt.Errorf("failed to parse image tar: %w", err)
 	}
 
+	// Legacy docker save layouts name layer directories by chain ID, not content
+	// digest, so server-side digest verification can never succeed. Bail out
+	// before uploading anything; the caller falls back to a full tar upload.
+	if !hasContentAddressedLayers(manifest) {
+		return fmt.Errorf("image tar uses a legacy docker save layout without content digests")
+	}
+
 	// Extract layer digests for checking
 	digests := make([]string, 0, len(layers))
 	for digest := range layers {
@@ -422,6 +431,17 @@ const (
 	layerUploadInitialBackoff = 2 * time.Second
 )
 
+// layerUploadStatusError is an upload rejected by the server with an HTTP status.
+type layerUploadStatusError struct {
+	digest     string
+	statusCode int
+	body       string
+}
+
+func (e *layerUploadStatusError) Error() string {
+	return fmt.Sprintf("failed to upload layer %s: server returned %d: %s", e.digest, e.statusCode, e.body)
+}
+
 func uploadLayerWithRetry(ctx context.Context, api *apiclient.APIClient, tarPath string, info layerInfo, digest string, progress *ui.ProgressBar) error {
 	var lastErr error
 	backoff := layerUploadInitialBackoff
@@ -444,6 +464,13 @@ func uploadLayerWithRetry(ctx context.Context, api *apiclient.APIClient, tarPath
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+
+		// 4xx responses (bad digest, oversized layer) are deterministic; retrying
+		// re-uploads the whole layer for the same rejection.
+		var statusErr *layerUploadStatusError
+		if errors.As(lastErr, &statusErr) && statusErr.statusCode >= 400 && statusErr.statusCode < 500 {
+			return lastErr
+		}
 	}
 
 	return lastErr
@@ -460,10 +487,16 @@ func uploadSingleLayer(ctx context.Context, api *apiclient.APIClient, tarPath st
 		progress: progress,
 	}
 
+	// Roll back this attempt's progress on failure so a retry doesn't double-count.
+	fail := func(err error) error {
+		progress.Add(-trackedReader.count.Load())
+		return err
+	}
+
 	req, err := api.NewRequest(ctx, "POST", "images/layers", trackedReader)
 	if err != nil {
 		layerReader.Close()
-		return fmt.Errorf("failed to create request for layer %s: %w", digest, err)
+		return fail(fmt.Errorf("failed to create request for layer %s: %w", digest, err))
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-Layer-Digest", digest)
@@ -471,13 +504,17 @@ func uploadSingleLayer(ctx context.Context, api *apiclient.APIClient, tarPath st
 	resp, err := api.Do(req)
 	layerReader.Close()
 	if err != nil {
-		return fmt.Errorf("failed to upload layer %s: %w", digest, err)
+		return fail(fmt.Errorf("failed to upload layer %s: %w", digest, err))
 	}
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return fmt.Errorf("failed to upload layer %s: server returned %d: %s", digest, resp.StatusCode, string(body))
+		return fail(&layerUploadStatusError{
+			digest:     digest,
+			statusCode: resp.StatusCode,
+			body:       string(body),
+		})
 	}
 	resp.Body.Close()
 	return nil
@@ -585,6 +622,24 @@ func parseImageTar(tarPath string) (apitypes.ImageManifestEntry, []byte, map[str
 	return manifest, configData, layers, nil
 }
 
+// hasContentAddressedLayers reports whether every manifest layer path encodes a
+// content digest (buildkit OCI blobs or sha256:-prefixed directories). Legacy
+// docker save layouts use chain IDs as directory names, which are not content
+// digests and cannot pass server-side verification.
+func hasContentAddressedLayers(manifest apitypes.ImageManifestEntry) bool {
+	for _, layerPath := range manifest.Layers {
+		dir := path.Dir(layerPath)
+		switch {
+		case dir == "blobs/sha256":
+		case strings.HasPrefix(dir, "blobs/sha256/"):
+		case strings.HasPrefix(dir, "sha256:"):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // extractDigestFromPath extracts the sha256 digest from a layer path
 func extractDigestFromPath(layerPath string) string {
 	dir := path.Dir(layerPath)
@@ -646,15 +701,18 @@ func (r *layerReader) Close() error {
 	return r.closer.Close()
 }
 
-// progressReader wraps a reader and reports bytes read to a progress bar
+// progressReader wraps a reader and reports bytes read to a progress bar.
+// count tracks bytes reported so a failed attempt can be rolled back.
 type progressReader struct {
 	reader   io.Reader
 	progress *ui.ProgressBar
+	count    atomic.Int64
 }
 
 func (r *progressReader) Read(p []byte) (int, error) {
 	n, err := r.reader.Read(p)
 	if n > 0 {
+		r.count.Add(int64(n))
 		r.progress.Add(int64(n))
 	}
 	return n, err
