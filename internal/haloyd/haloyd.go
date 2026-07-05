@@ -336,7 +336,7 @@ func Run(debug bool) {
 				logger.Info("Pruned unused layers", "count", pruned, "bytes_freed", freed)
 			}
 			go func() {
-				deploymentCtx, cancelDeployment := context.WithCancel(ctx)
+				deploymentCtx, cancelDeployment := context.WithTimeout(ctx, updateTimeout)
 				defer cancelDeployment()
 
 				if _, err := updater.Update(deploymentCtx, logger, TriggerPeriodicRefresh, nil); err != nil {

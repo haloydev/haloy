@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/events"
@@ -21,6 +22,10 @@ type Updater struct {
 	certManager       *CertificatesManager
 	proxyPusher       ProxyPusher
 	apiDomain         string
+	// mu serializes Update calls. Concurrent updates would race on the
+	// deployments map: the slower one would overwrite newer state with its
+	// stale discovery snapshot and push a stale proxy config.
+	mu sync.Mutex
 }
 
 type UpdaterConfig struct {
@@ -99,6 +104,9 @@ type UpdateResult struct {
 }
 
 func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason TriggerReason, app *TriggeredByApp) (UpdateResult, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
 	result := UpdateResult{}
 
 	discovered, discoveryFailed, err := u.deploymentManager.DiscoverContainers(ctx, logger)
