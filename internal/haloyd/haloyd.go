@@ -30,9 +30,10 @@ import (
 )
 
 const (
-	maintenanceInterval = 12 * time.Hour   // Interval for periodic maintenance tasks
-	eventDebounceDelay  = 5 * time.Second  // Delay for debouncing container events
-	updateTimeout       = 15 * time.Minute // Max time for a single update operation
+	maintenanceInterval  = 12 * time.Hour   // Interval for periodic maintenance tasks
+	eventDebounceDelay   = 5 * time.Second  // Delay for debouncing container events
+	eventDebounceMaxWait = 30 * time.Second // Max debounce postponement while events keep arriving
+	updateTimeout        = 15 * time.Minute // Max time for a single update operation
 )
 
 type ContainerEvent struct {
@@ -173,9 +174,8 @@ func Run(debug bool) {
 	go listenForDockerEvents(ctx, cli, eventsChan, errorsChan, logger)
 
 	debouncedEventsChan := make(chan debouncedAppEvent)
-	defer close(debouncedEventsChan)
 
-	appDebouncer := newAppDebouncer(eventDebounceDelay, debouncedEventsChan, logger)
+	appDebouncer := newAppDebouncer(eventDebounceDelay, eventDebounceMaxWait, debouncedEventsChan, logger)
 	defer appDebouncer.stop()
 
 	// Run initial update (Docker events will queue in buffered channel)

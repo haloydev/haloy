@@ -20,18 +20,25 @@ type debouncedAppEvent struct {
 type appDebouncer struct {
 	mu             sync.Mutex
 	timers         map[string]*time.Timer
+	deadlines      map[string]time.Time
 	delay          time.Duration
+	maxWait        time.Duration
 	capturedEvents map[string][]ContainerEvent
 	output         chan<- debouncedAppEvent
+	done           chan struct{}
+	stopOnce       sync.Once
 	logger         *slog.Logger
 }
 
-func newAppDebouncer(delay time.Duration, output chan<- debouncedAppEvent, logger *slog.Logger) *appDebouncer {
+func newAppDebouncer(delay, maxWait time.Duration, output chan<- debouncedAppEvent, logger *slog.Logger) *appDebouncer {
 	return &appDebouncer{
 		timers:         make(map[string]*time.Timer),
+		deadlines:      make(map[string]time.Time),
 		delay:          delay,
+		maxWait:        maxWait,
 		capturedEvents: make(map[string][]ContainerEvent),
 		output:         output,
+		done:           make(chan struct{}),
 		logger:         logger,
 	}
 }
@@ -44,23 +51,34 @@ func (d *appDebouncer) captureEvent(appName string, event ContainerEvent) {
 
 	d.capturedEvents[appName] = append(d.capturedEvents[appName], event)
 
+	// A steady stream of events (e.g. a crash-looping container) keeps resetting
+	// the timer, so cap the total wait at maxWait from the first captured event.
+	deadline, ok := d.deadlines[appName]
+	if !ok {
+		deadline = time.Now().Add(d.maxWait)
+		d.deadlines[appName] = deadline
+	}
+	wait := d.delay
+	if remaining := time.Until(deadline); remaining < wait {
+		wait = max(remaining, 0)
+	}
+
 	// Reset timer
 	if timer, ok := d.timers[appName]; ok {
 		timer.Stop()
 	}
 
-	// Create new timer
-	d.timers[appName] = time.AfterFunc(d.delay, func() {
+	d.timers[appName] = time.AfterFunc(wait, func() {
 		d.signalDone(appName)
 	})
 }
 
 func (d *appDebouncer) signalDone(appName string) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	capturedEvents := d.capturedEvents[appName]
 	if len(capturedEvents) == 0 {
+		d.mu.Unlock()
 		return
 	}
 
@@ -85,14 +103,27 @@ func (d *appDebouncer) signalDone(appName string) {
 		CapturedStartEvent: capturedStartEvent,
 	}
 
-	d.output <- debouncedEvent
-
 	// Cleanup
 	delete(d.timers, appName)
+	delete(d.deadlines, appName)
 	delete(d.capturedEvents, appName)
+
+	// Send after releasing the lock: a blocked send while holding the lock
+	// would deadlock the main loop if it is calling captureEvent at the same
+	// time, since the main loop is also the only receiver of output.
+	d.mu.Unlock()
+
+	select {
+	case d.output <- debouncedEvent:
+	case <-d.done:
+	}
 }
 
 func (d *appDebouncer) stop() {
+	d.stopOnce.Do(func() {
+		close(d.done)
+	})
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -100,5 +131,6 @@ func (d *appDebouncer) stop() {
 		timer.Stop()
 	}
 	d.timers = make(map[string]*time.Timer)
+	d.deadlines = make(map[string]time.Time)
 	d.capturedEvents = make(map[string][]ContainerEvent)
 }
