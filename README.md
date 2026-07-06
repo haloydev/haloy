@@ -49,7 +49,13 @@ curl -fsSL https://sh.haloy.dev/install-haloy.sh | sh
 brew install haloydev/tap/haloy
 ```
 
-**npm/pnpm/bun**
+**Go:**
+
+```bash
+go install github.com/haloydev/haloy/cmd/haloy@latest
+```
+
+**npm/pnpm/bun:**
 ```bash
 npm i -g haloy
 
