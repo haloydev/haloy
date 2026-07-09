@@ -74,21 +74,16 @@ func BuildImage(ctx context.Context, imageRef string, image *config.Image, confi
 		buildConfig = &config.BuildConfig{}
 	}
 
-	// Work directory is the config file's directory.
-	// All paths (context, dockerfile) are relative to this directory.
+	// Resolve context and dockerfile to absolute paths and verify they exist
+	// before invoking docker, so a bad path fails with a clear error.
+	paths, err := resolveBuildPaths(configPath, buildConfig)
+	if err != nil {
+		return err
+	}
+
 	workDir := getBuilderWorkDir(configPath)
 
-	// Context defaults to "." (config directory) if not specified
-	buildContext := "."
-	if buildConfig.Context != "" {
-		buildContext = buildConfig.Context
-	}
-
-	args := []string{"build"}
-
-	if buildConfig.Dockerfile != "" {
-		args = append(args, "-f", buildConfig.Dockerfile)
-	}
+	args := []string{"build", "-f", paths.Dockerfile}
 
 	if buildConfig.Platform == "" {
 		buildConfig.Platform = "linux/amd64" // most widely used platform and a common pitfall
@@ -108,7 +103,7 @@ func BuildImage(ctx context.Context, imageRef string, image *config.Image, confi
 	args = append(args, "-t", imageRef)
 
 	// Add build context as the last argument
-	args = append(args, buildContext)
+	args = append(args, paths.ContextDir)
 
 	if err := runCLICommandInDir(ctx, workDir, "docker", args...); err != nil {
 		return fmt.Errorf("failed to build image %s: %w", imageRef, err)
@@ -119,7 +114,7 @@ func BuildImage(ctx context.Context, imageRef string, image *config.Image, confi
 }
 
 // getBuilderWorkDir returns the directory containing the config file.
-// All build paths (context, dockerfile) are relative to this directory.
+// The build context is resolved relative to this directory.
 func getBuilderWorkDir(configPath string) string {
 	if configPath == "" || configPath == "." {
 		return "."

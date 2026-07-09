@@ -209,6 +209,11 @@ func TestBuildImage_BuildArgsArePassedWithoutLiteralQuotes(t *testing.T) {
 		return nil
 	}
 
+	configDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatalf("failed to create Dockerfile: %v", err)
+	}
+
 	image := &config.Image{
 		Repository: "myapp",
 		Tag:        "latest",
@@ -221,7 +226,7 @@ func TestBuildImage_BuildArgsArePassedWithoutLiteralQuotes(t *testing.T) {
 		},
 	}
 
-	if err := BuildImage(context.Background(), image.ImageRef(), image, ""); err != nil {
+	if err := BuildImage(context.Background(), image.ImageRef(), image, configDir); err != nil {
 		t.Fatalf("BuildImage returned error: %v", err)
 	}
 
