@@ -60,10 +60,15 @@ type ImageUploadResponse struct {
 }
 
 type VersionResponse struct {
-	Version         string   `json:"haloyd"`
-	ProxyVersion    string   `json:"haloy_proxy,omitempty"`
-	ProxyConfigHash string   `json:"haloy_proxy_config_hash,omitempty"`
-	Capabilities    []string `json:"capabilities,omitempty"`
+	Version                    string   `json:"haloyd"`
+	ProxyVersion               string   `json:"haloy_proxy,omitempty"`
+	ProxyGeneration            int      `json:"haloy_proxy_generation,omitempty"`
+	RequiredProxyGeneration    int      `json:"haloy_proxy_required_generation,omitempty"`
+	ProxySchemaVersion         int      `json:"haloy_proxy_schema_version,omitempty"`
+	RequiredProxySchemaVersion int      `json:"haloy_proxy_required_schema_version,omitempty"`
+	ProxyCompatible            *bool    `json:"haloy_proxy_compatible,omitempty"`
+	ProxyConfigHash            string   `json:"haloy_proxy_config_hash,omitempty"`
+	Capabilities               []string `json:"capabilities,omitempty"`
 }
 
 type RegistryLoginRequest struct {

@@ -10,13 +10,14 @@ set -e
 #   haloy-proxy - data plane (ports 80/443), keeps serving while haloyd restarts
 #
 # USAGE:
-#   upgrade-server.sh                    Upgrade haloyd. Traffic is not
-#                                        interrupted: haloy-proxy keeps serving.
-#                                        If haloy-proxy is not installed yet
-#                                        (pre-split install), it is installed
-#                                        first (brief traffic blip while ports
-#                                        move from old haloyd to haloy-proxy).
-#   upgrade-server.sh --component=proxy  Upgrade haloy-proxy (brief restart).
+#   upgrade-server.sh                    Upgrade the Haloy server. A compatible
+#                                        haloy-proxy keeps serving without a
+#                                        restart. If the target haloyd requires
+#                                        a newer proxy generation or schema, the
+#                                        proxy is upgraded first (brief restart).
+#                                        Pre-split installs are migrated first.
+#   upgrade-server.sh --component=proxy  Force the latest haloy-proxy build
+#                                        (brief restart).
 
 GITHUB_REPO="${GITHUB_REPO:-haloydev/haloy}"
 SERVICE_NAME="${HALOYD_SERVICE_NAME:-haloyd}"
@@ -201,6 +202,47 @@ download_and_verify() {
     echo "Downloaded version: $dv_version" >&2
 
     echo "$dv_tmp"
+}
+
+# json_integer JSON FIELD
+# Extracts a non-negative integer from the small, single-line metadata payloads
+# emitted by the version commands. Keeping this parser local avoids requiring
+# jq on production servers.
+json_integer() {
+    echo "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p"
+}
+
+# read_haloyd_requirements BINARY_PATH
+# Sets REQUIRED_PROXY_GENERATION and REQUIRED_PROXY_SCHEMA_VERSION.
+read_haloyd_requirements() {
+    rh_output=$("$1" version --json 2>/dev/null || true)
+    REQUIRED_PROXY_GENERATION=$(json_integer "$rh_output" "required_proxy_generation")
+    REQUIRED_PROXY_SCHEMA_VERSION=$(json_integer "$rh_output" "required_proxy_schema_version")
+
+    if [ -z "$REQUIRED_PROXY_GENERATION" ] || [ -z "$REQUIRED_PROXY_SCHEMA_VERSION" ]; then
+        error_exit "Could not read proxy compatibility metadata from $1."
+    fi
+}
+
+# read_proxy_metadata BINARY_PATH
+# Sets PROXY_META_GENERATION and PROXY_META_SCHEMA_VERSION. Proxy builds from
+# before structured metadata are the generation-1/schema-1 compatibility
+# baseline introduced by the initial split release.
+read_proxy_metadata() {
+    rp_output=$("$1" version --json 2>/dev/null || true)
+    case "$rp_output" in
+        \{*)
+            PROXY_META_GENERATION=$(json_integer "$rp_output" "proxy_generation")
+            PROXY_META_SCHEMA_VERSION=$(json_integer "$rp_output" "proxy_schema_version")
+            if [ -z "$PROXY_META_GENERATION" ] || [ -z "$PROXY_META_SCHEMA_VERSION" ]; then
+                error_exit "Could not read proxy compatibility metadata from $1."
+            fi
+            ;;
+        *)
+            PROXY_META_GENERATION=1
+            PROXY_META_SCHEMA_VERSION=1
+            ;;
+    esac
 }
 
 write_proxy_systemd_unit() {
@@ -536,6 +578,98 @@ rollback() {
     echo "Rollback completed. Please check service status manually."
 }
 
+# upgrade_proxy_binary FORCE
+# Installs the proxy asset from LATEST_VERSION. FORCE=true is used when
+# compatibility metadata requires a rollout even if the proxy build happens
+# to report the release version already.
+upgrade_proxy_binary() {
+    up_force="$1"
+    TARGET_SERVICE="$PROXY_SERVICE_NAME"
+    TARGET_PATH="$PROXY_PATH"
+    CURRENT_MODE=$(file_mode "$PROXY_PATH") || error_exit "Failed to read permissions for $PROXY_PATH"
+
+    up_current_version=$("$PROXY_PATH" version 2>/dev/null | head -n 1 || echo "unknown")
+    echo "Current haloy-proxy version: $up_current_version"
+
+    if [ "$up_force" != "true" ] && [ "$(normalize_version "$up_current_version")" = "$NORM_LATEST" ]; then
+        echo "haloy-proxy is already running the latest build."
+        return 0
+    fi
+
+    BACKUP_FILE="${PROXY_PATH}.backup"
+    if [ -e "$BACKUP_FILE" ]; then
+        error_exit "Backup file already exists: $BACKUP_FILE. Remove it after confirming no upgrade is in progress."
+    fi
+
+    if [ -z "$PROXY_TMP" ]; then
+        PROXY_TMP=$(download_and_verify haloy-proxy "$CURRENT_MODE")
+    fi
+    read_proxy_metadata "$PROXY_TMP"
+    up_download_generation="$PROXY_META_GENERATION"
+    up_download_schema="$PROXY_META_SCHEMA_VERSION"
+
+    if [ -n "${REQUIRED_PROXY_GENERATION:-}" ] && [ "$up_download_generation" -lt "$REQUIRED_PROXY_GENERATION" ]; then
+        error_exit "Downloaded proxy generation $up_download_generation does not satisfy required generation $REQUIRED_PROXY_GENERATION."
+    fi
+    if [ -n "${REQUIRED_PROXY_SCHEMA_VERSION:-}" ] && [ "$up_download_schema" -lt "$REQUIRED_PROXY_SCHEMA_VERSION" ]; then
+        error_exit "Downloaded proxy schema $up_download_schema does not satisfy required schema $REQUIRED_PROXY_SCHEMA_VERSION."
+    fi
+
+    echo ""
+    echo "Stopping haloy-proxy service (traffic pauses briefly)..."
+    if ! service_stop "$PROXY_SERVICE_NAME"; then
+        error_exit "Failed to stop haloy-proxy service."
+    fi
+    SERVICE_STOPPED=true
+
+    echo "Backing up current binary to ${BACKUP_FILE}"
+    if ! cp -p "$PROXY_PATH" "$BACKUP_FILE"; then
+        rollback
+        exit 1
+    fi
+
+    echo "Installing new binary..."
+    if ! mv -f "$PROXY_TMP" "$PROXY_PATH"; then
+        rollback
+        exit 1
+    fi
+    PROXY_TMP=""
+
+    if ! chmod "$CURRENT_MODE" "$PROXY_PATH"; then
+        rollback
+        exit 1
+    fi
+    if ! set_bind_capability "$PROXY_PATH"; then
+        rollback
+        exit 1
+    fi
+
+    echo "Starting haloy-proxy service..."
+    if ! service_start "$PROXY_SERVICE_NAME"; then
+        rollback
+        exit 1
+    fi
+
+    if [ "$SLEEP_SECONDS" != "0" ]; then
+        echo "Waiting for haloy-proxy to start..."
+        sleep "$SLEEP_SECONDS"
+    fi
+
+    up_new_version=$("$PROXY_PATH" version 2>/dev/null | head -n 1 || echo "unknown")
+    echo "haloy-proxy version: $up_new_version"
+    read_proxy_metadata "$PROXY_PATH"
+    if [ "$(normalize_version "$up_new_version")" != "$NORM_LATEST" ] ||
+       ! service_is_active "$PROXY_SERVICE_NAME"; then
+        rollback
+        exit 1
+    fi
+
+    rm -f "$BACKUP_FILE"
+    BACKUP_FILE=""
+    SERVICE_STOPPED=false
+    echo "haloy-proxy upgrade completed successfully."
+}
+
 cleanup() {
     if [ -n "$HALOYD_TMP" ]; then
         rm -f "$HALOYD_TMP"
@@ -630,17 +764,43 @@ haloyd)
     CURRENT_VERSION=$(haloyd version 2>/dev/null | head -n 1 || echo "unknown")
     echo "Current haloyd version: $CURRENT_VERSION"
 
-    if [ "$(normalize_version "$CURRENT_VERSION")" = "$NORM_LATEST" ]; then
-        echo "Already running the latest version!"
+    HALOYD_NEEDS_UPGRADE=false
+    if [ "$(normalize_version "$CURRENT_VERSION")" != "$NORM_LATEST" ]; then
+        HALOYD_NEEDS_UPGRADE=true
+        HALOYD_TMP=$(download_and_verify haloyd "$CURRENT_MODE")
+        REQUIREMENTS_BINARY="$HALOYD_TMP"
+    else
+        REQUIREMENTS_BINARY="$HALOYD_PATH"
+    fi
+
+    read_haloyd_requirements "$REQUIREMENTS_BINARY"
+    read_proxy_metadata "$PROXY_PATH"
+    echo "Proxy compatibility: generation ${PROXY_META_GENERATION}/${REQUIRED_PROXY_GENERATION}, schema ${PROXY_META_SCHEMA_VERSION}/${REQUIRED_PROXY_SCHEMA_VERSION}"
+
+    if [ "$PROXY_META_GENERATION" -lt "$REQUIRED_PROXY_GENERATION" ] ||
+       [ "$PROXY_META_SCHEMA_VERSION" -lt "$REQUIRED_PROXY_SCHEMA_VERSION" ]; then
+        echo "haloy-proxy is below the target server requirements; upgrading it first."
+        upgrade_proxy_binary true
+    else
+        echo "haloy-proxy is compatible; leaving it running."
+    fi
+
+    if [ "$HALOYD_NEEDS_UPGRADE" != "true" ]; then
+        echo "haloyd is already running the latest version."
+        echo "Haloy server upgrade completed successfully!"
         exit 0
     fi
+
+    # A proxy upgrade changes the rollback globals; restore the haloyd target
+    # before beginning the independently rollback-safe control-plane upgrade.
+    TARGET_SERVICE="$SERVICE_NAME"
+    TARGET_PATH="$HALOYD_PATH"
+    CURRENT_MODE=$(file_mode "$HALOYD_PATH") || error_exit "Failed to read permissions for $HALOYD_PATH"
 
     BACKUP_FILE="${HALOYD_PATH}.backup"
     if [ -e "$BACKUP_FILE" ]; then
         error_exit "Backup file already exists: $BACKUP_FILE. Remove it after confirming no upgrade is in progress."
     fi
-
-    HALOYD_TMP=$(download_and_verify haloyd "$CURRENT_MODE")
 
     echo ""
     echo "Stopping haloyd service (haloy-proxy keeps serving traffic)..."
@@ -676,61 +836,10 @@ haloyd)
     ;;
 
 proxy)
-    TARGET_SERVICE="$PROXY_SERVICE_NAME"
-    TARGET_PATH="$PROXY_PATH"
-    CURRENT_MODE=$(file_mode "$PROXY_PATH") || error_exit "Failed to read permissions for $PROXY_PATH"
-
-    CURRENT_VERSION=$("$PROXY_PATH" version 2>/dev/null | head -n 1 || echo "unknown")
-    echo "Current haloy-proxy version: $CURRENT_VERSION"
-
-    if [ "$(normalize_version "$CURRENT_VERSION")" = "$NORM_LATEST" ]; then
-        echo "Already running the latest version!"
-        exit 0
-    fi
-
-    BACKUP_FILE="${PROXY_PATH}.backup"
-    if [ -e "$BACKUP_FILE" ]; then
-        error_exit "Backup file already exists: $BACKUP_FILE. Remove it after confirming no upgrade is in progress."
-    fi
-
-    PROXY_TMP=$(download_and_verify haloy-proxy "$CURRENT_MODE")
-
+    upgrade_proxy_binary false
     echo ""
-    echo "Stopping haloy-proxy service (traffic pauses briefly)..."
-    if ! service_stop "$PROXY_SERVICE_NAME"; then
-        error_exit "Failed to stop haloy-proxy service."
-    fi
-    SERVICE_STOPPED=true
-
-    echo "Backing up current binary to ${BACKUP_FILE}"
-    if ! cp -p "$PROXY_PATH" "$BACKUP_FILE"; then
-        rollback
-        exit 1
-    fi
-
-    echo "Installing new binary..."
-    if ! mv -f "$PROXY_TMP" "$PROXY_PATH"; then
-        rollback
-        exit 1
-    fi
-    PROXY_TMP=""
-
-    if ! chmod "$CURRENT_MODE" "$PROXY_PATH"; then
-        rollback
-        exit 1
-    fi
-
-    if ! set_bind_capability "$PROXY_PATH"; then
-        rollback
-        exit 1
-    fi
-
-    echo ""
-    echo "Starting haloy-proxy service..."
-    if ! service_start "$PROXY_SERVICE_NAME"; then
-        rollback
-        exit 1
-    fi
+    echo "Haloy server upgrade completed successfully!"
+    exit 0
     ;;
 
 migrate)

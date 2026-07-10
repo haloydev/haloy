@@ -67,6 +67,9 @@ curl -s --unix-socket /var/lib/haloy/proxy/haloy-proxy.sock http://proxy/v1/stat
 
 ## Upgrading components
 
-- `upgrade-server.sh` upgrades haloyd only; traffic is untouched.
-- `upgrade-server.sh --component=proxy` upgrades haloy-proxy (brief restart; rare, the proxy is intentionally small and stable).
-- Schema compatibility: the proxy rejects snapshots with a newer `schema_version` (HTTP 409) and keeps its last config. When a schema bump ships, upgrade haloy-proxy before haloyd.
+- `upgrade-server.sh` upgrades haloyd and inspects the target build's proxy requirements first. A compatible proxy stays running, so traffic is untouched.
+- If the target requires a newer proxy generation or snapshot schema, the script upgrades and verifies haloy-proxy first (brief restart), then upgrades haloyd.
+- `upgrade-server.sh --component=proxy` forces the latest haloy-proxy build for an optional fix or manual recovery.
+- `proxywire.ProxyGeneration` is a monotonic rollout marker. Increment it when a proxy bug or security fix must be installed without a schema change. Ordinary haloyd-only releases leave it unchanged.
+- Schema compatibility remains independent: the proxy rejects snapshots with a newer `schema_version` (HTTP 409) and keeps its last config. The upgrade script compares schema support even if the generation was not changed.
+- `haloy server version` reports the Haloy product version and proxy compatibility. Use `--components` to inspect component build versions, generation, and schema metadata.

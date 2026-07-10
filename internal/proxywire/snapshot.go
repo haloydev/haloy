@@ -21,8 +21,35 @@ import (
 	"time"
 )
 
-// SchemaVersion is the highest snapshot schema version this build understands.
-const SchemaVersion = 1
+const (
+	// SchemaVersion is the highest snapshot schema version this build understands.
+	SchemaVersion = 1
+
+	// ProxyGeneration is the minimum proxy rollout generation required by this
+	// build of haloyd. Bump it when a proxy change must be deployed even though
+	// the snapshot schema is unchanged (for example, an important bug or
+	// security fix). Ordinary haloyd releases leave it unchanged so a compatible
+	// proxy can keep serving traffic without a restart.
+	ProxyGeneration = 1
+
+	// LegacyProxyGeneration is assigned to split-proxy builds released before
+	// generation metadata was added.
+	LegacyProxyGeneration = 1
+)
+
+// NormalizeProxyGeneration maps missing generation metadata from legacy
+// proxies to the initial generation.
+func NormalizeProxyGeneration(generation int) int {
+	if generation == 0 {
+		return LegacyProxyGeneration
+	}
+	return generation
+}
+
+// IsProxyCompatible reports whether a proxy can satisfy this haloyd build.
+func IsProxyCompatible(generation, schemaVersion int) bool {
+	return NormalizeProxyGeneration(generation) >= ProxyGeneration && schemaVersion >= SchemaVersion
+}
 
 // ErrSchemaTooNew indicates a snapshot with a schema version newer than this
 // build supports. The receiver should keep its current config and ask the
@@ -102,6 +129,8 @@ func (s *Snapshot) Hash() string {
 type Status struct {
 	// Version is the haloy-proxy build version.
 	Version string `json:"version"`
+	// Generation controls required proxy rollouts that do not change the wire schema.
+	Generation int `json:"generation"`
 	// SchemaVersion is the highest snapshot schema the proxy supports.
 	SchemaVersion int `json:"schema_version"`
 	// ConfigHash is the Hash() of the currently applied snapshot.

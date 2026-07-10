@@ -248,11 +248,12 @@ func ServerListCmd() *cobra.Command {
 
 func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	var serverFlag string
+	var components bool
 
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Check server version",
-		Long:  "Check the haloyd version running on a specific server",
+		Long:  "Check the Haloy product version and proxy compatibility on a specific server",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -261,10 +262,7 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				ui.Info("haloyd version: %s", version.Version)
-				if version.ProxyVersion != "" {
-					ui.Info("haloy-proxy version: %s", version.ProxyVersion)
-				}
+				printServerVersion(version, "", components)
 				return nil
 			}
 
@@ -288,10 +286,7 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 					if version.Version != constants.Version {
 						ui.Warn("haloy version %s does not match haloyd (server) version %s", constants.Version, version.Version)
 					}
-					ui.Info("haloyd version: %s", version.Version)
-					if version.ProxyVersion != "" {
-						ui.Info("haloy-proxy version: %s", version.ProxyVersion)
-					}
+					printServerVersion(version, prefix, components)
 					return nil
 				})
 			}
@@ -303,10 +298,42 @@ func ServerVersionCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 	cmd.Flags().StringVarP(&serverFlag, "server", "s", "", "Server URL (overrides config file)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Get version for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Get version for all targets")
+	cmd.Flags().BoolVar(&components, "components", false, "Show component build and compatibility metadata")
 
 	cmd.RegisterFlagCompletionFunc("targets", completeTargetNames)
 
 	return cmd
+}
+
+func printServerVersion(version *apitypes.VersionResponse, prefix string, components bool) {
+	pui := &ui.PrefixedUI{Prefix: prefix}
+	pui.Info("Haloy server version: %s", version.Version)
+
+	switch {
+	case version.ProxyCompatible == nil && version.ProxyVersion == "":
+		pui.Warn("haloy-proxy: unavailable")
+	case version.ProxyCompatible == nil:
+		pui.Info("haloy-proxy: connected (compatibility metadata unavailable)")
+	case *version.ProxyCompatible:
+		pui.Info("haloy-proxy: compatible")
+	default:
+		pui.Warn("haloy-proxy: incompatible; run the server upgrade script")
+	}
+
+	if !components {
+		return
+	}
+
+	pui.Info("haloyd build version: %s", version.Version)
+	if version.ProxyVersion != "" {
+		pui.Info("haloy-proxy build version: %s", version.ProxyVersion)
+	}
+	if version.ProxyGeneration != 0 || version.RequiredProxyGeneration != 0 {
+		pui.Info("haloy-proxy generation: %d (required: %d)", version.ProxyGeneration, version.RequiredProxyGeneration)
+	}
+	if version.ProxySchemaVersion != 0 || version.RequiredProxySchemaVersion != 0 {
+		pui.Info("haloy-proxy schema: %d (required: %d)", version.ProxySchemaVersion, version.RequiredProxySchemaVersion)
+	}
 }
 
 func getServerVersion(ctx context.Context, targetConfig *config.TargetConfig, targetServer, prefix string) (*apitypes.VersionResponse, error) {

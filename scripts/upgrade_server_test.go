@@ -2,6 +2,7 @@ package scripts
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -97,6 +98,14 @@ if [ -n "$out" ]; then
         printf '%s\n' \
             '#!/bin/sh' \
             'if [ "$1" = "version" ]; then' \
+            '    if [ "$2" = "--json" ]; then' \
+            '        if [ "${HALOY_MALFORMED_METADATA:-}" = "1" ]; then echo "{}"; exit 0; fi' \
+            '        case "$0" in' \
+            '            *haloy-proxy*) printf '\''{"version":"%s","proxy_generation":%s,"proxy_schema_version":%s}\\n'\'' "${HALOY_DOWNLOAD_VERSION:-v1.1.0}" "${HALOY_DOWNLOAD_PROXY_GENERATION:-1}" "${HALOY_DOWNLOAD_PROXY_SCHEMA:-1}" ;;' \
+            '            *) printf '\''{"version":"%s","required_proxy_generation":%s,"required_proxy_schema_version":%s}\\n'\'' "${HALOY_DOWNLOAD_VERSION:-v1.1.0}" "${HALOY_REQUIRED_PROXY_GENERATION:-1}" "${HALOY_REQUIRED_PROXY_SCHEMA:-1}" ;;' \
+            '        esac' \
+            '        exit 0' \
+            '    fi' \
             "    echo ${HALOY_DOWNLOAD_VERSION:-v1.1.0}" \
             '    exit 0' \
             'fi' \
@@ -174,6 +183,20 @@ func writeHaloydBinary(t *testing.T, path string, version string, mode os.FileMo
 	t.Helper()
 	body := "#!/bin/sh\nif [ \"$1\" = \"version\" ]; then\n    echo " + version + "\n    exit 0\nfi\nexit 1\n"
 	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeMetadataBinary(t *testing.T, path, version string, generation, schema int, proxy bool) {
+	t.Helper()
+	metadata := ""
+	if proxy {
+		metadata = fmt.Sprintf(`{"version":%q,"proxy_generation":%d,"proxy_schema_version":%d}`, version, generation, schema)
+	} else {
+		metadata = fmt.Sprintf(`{"version":%q,"required_proxy_generation":%d,"required_proxy_schema_version":%d}`, version, generation, schema)
+	}
+	body := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"version\" ]; then\n    if [ \"$2\" = \"--json\" ]; then\n        echo '%s'\n    else\n        echo %s\n    fi\n    exit 0\nfi\nexit 1\n", metadata, version)
+	if err := os.WriteFile(path, []byte(body), 0o750); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -359,6 +382,106 @@ func TestUpgradeServerDoesNotTouchProxyOnHaloydUpgrade(t *testing.T) {
 	}
 	if got := readFile(t, f.proxyPath); !strings.Contains(got, "v1.0.0") {
 		t.Fatalf("haloy-proxy binary must be untouched, got:\n%s", got)
+	}
+	if !strings.Contains(output, "haloy-proxy is compatible; leaving it running") {
+		t.Fatalf("expected compatibility decision in output, got:\n%s", output)
+	}
+}
+
+func TestUpgradeServerUpgradesProxyFirstWhenGenerationIsRequired(t *testing.T) {
+	f := newUpgradeFixture(t)
+
+	output, err := runUpgradeScript(
+		t, f,
+		"HALOY_REQUIRED_PROXY_GENERATION=2",
+		"HALOY_DOWNLOAD_PROXY_GENERATION=2",
+	)
+	if err != nil {
+		t.Fatalf("expected compatibility upgrade to succeed, got %v:\n%s", err, output)
+	}
+
+	if got := readFile(t, f.proxyPath); !strings.Contains(got, "v1.1.0") {
+		t.Fatalf("expected upgraded proxy, got:\n%s", got)
+	}
+	if got := readFile(t, f.haloydPath); !strings.Contains(got, "v1.1.0") {
+		t.Fatalf("expected upgraded haloyd, got:\n%s", got)
+	}
+
+	log := readFile(t, f.logPath)
+	startProxy := strings.Index(log, "systemctl start haloy-proxy")
+	stopHaloyd := strings.Index(log, "systemctl stop haloyd")
+	if startProxy < 0 || stopHaloyd < 0 || startProxy > stopHaloyd {
+		t.Fatalf("expected proxy upgrade before haloyd stop, got log:\n%s", log)
+	}
+}
+
+func TestUpgradeServerUpgradesProxyWhenSchemaIsRequired(t *testing.T) {
+	f := newUpgradeFixture(t)
+
+	output, err := runUpgradeScript(
+		t, f,
+		"HALOY_REQUIRED_PROXY_SCHEMA=2",
+		"HALOY_DOWNLOAD_PROXY_SCHEMA=2",
+	)
+	if err != nil {
+		t.Fatalf("expected schema-driven proxy upgrade to succeed, got %v:\n%s", err, output)
+	}
+	if !strings.Contains(output, "haloy-proxy is below the target server requirements") {
+		t.Fatalf("expected proxy compatibility upgrade, got:\n%s", output)
+	}
+}
+
+func TestUpgradeServerRepairsProxyWhenHaloydIsAlreadyCurrent(t *testing.T) {
+	f := newUpgradeFixture(t)
+	writeMetadataBinary(t, f.haloydPath, "v1.1.0", 2, 1, false)
+
+	output, err := runUpgradeScript(
+		t, f,
+		"HALOY_DOWNLOAD_PROXY_GENERATION=2",
+		"HALOY_OLD_VERSION=v1.1.0",
+	)
+	if err != nil {
+		t.Fatalf("expected proxy repair to succeed, got %v:\n%s", err, output)
+	}
+	log := readFile(t, f.logPath)
+	if !strings.Contains(log, "systemctl stop haloy-proxy") {
+		t.Fatalf("expected proxy restart, got log:\n%s", log)
+	}
+	if strings.Contains(log, "systemctl stop haloyd") {
+		t.Fatalf("current haloyd must not restart, got log:\n%s", log)
+	}
+}
+
+func TestUpgradeServerDoesNotDowngradeNewerCompatibleProxy(t *testing.T) {
+	f := newUpgradeFixture(t)
+	writeMetadataBinary(t, f.proxyPath, "v1.0.0", 3, 2, true)
+
+	output, err := runUpgradeScript(
+		t, f,
+		"HALOY_REQUIRED_PROXY_GENERATION=2",
+		"HALOY_REQUIRED_PROXY_SCHEMA=2",
+	)
+	if err != nil {
+		t.Fatalf("expected upgrade to succeed, got %v:\n%s", err, output)
+	}
+	log := readFile(t, f.logPath)
+	if strings.Contains(log, "stop haloy-proxy") {
+		t.Fatalf("newer compatible proxy must not restart, got log:\n%s", log)
+	}
+}
+
+func TestUpgradeServerRejectsMalformedCompatibilityMetadataBeforeStoppingServices(t *testing.T) {
+	f := newUpgradeFixture(t)
+
+	output, err := runUpgradeScript(t, f, "HALOY_MALFORMED_METADATA=1")
+	if err == nil {
+		t.Fatal("expected malformed metadata to fail")
+	}
+	if !strings.Contains(output, "Could not read proxy compatibility metadata") {
+		t.Fatalf("expected metadata error, got:\n%s", output)
+	}
+	if _, err := os.Stat(f.logPath); !os.IsNotExist(err) {
+		t.Fatalf("services must not be touched, log stat err=%v", err)
 	}
 }
 

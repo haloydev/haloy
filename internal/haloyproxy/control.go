@@ -150,6 +150,7 @@ func (c *controlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	status := proxywire.Status{
 		Version:       constants.Version,
+		Generation:    proxywire.ProxyGeneration,
 		SchemaVersion: proxywire.SchemaVersion,
 		ConfigHash:    c.configHash,
 		Routes:        c.routeCount,

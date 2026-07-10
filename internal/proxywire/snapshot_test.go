@@ -120,6 +120,27 @@ func TestCheckSchemaVersion(t *testing.T) {
 	}
 }
 
+func TestNormalizeProxyGeneration(t *testing.T) {
+	if got := NormalizeProxyGeneration(0); got != LegacyProxyGeneration {
+		t.Fatalf("NormalizeProxyGeneration(0) = %d, want %d", got, LegacyProxyGeneration)
+	}
+	if got := NormalizeProxyGeneration(7); got != 7 {
+		t.Fatalf("NormalizeProxyGeneration(7) = %d, want 7", got)
+	}
+}
+
+func TestIsProxyCompatible(t *testing.T) {
+	if !IsProxyCompatible(ProxyGeneration, SchemaVersion) {
+		t.Fatal("current proxy metadata should be compatible")
+	}
+	if !IsProxyCompatible(0, SchemaVersion) {
+		t.Fatal("legacy generation should normalize to the initial generation")
+	}
+	if IsProxyCompatible(ProxyGeneration, SchemaVersion-1) {
+		t.Fatal("older proxy schema should be incompatible")
+	}
+}
+
 func TestSnapshotFileRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "snapshot.json")
 	original := testSnapshot()
