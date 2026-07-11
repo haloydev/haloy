@@ -28,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.26.5'
+          go-version-file: go.mod
 
       - name: Install Task
         uses: go-task/setup-task@v2
@@ -58,7 +58,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.26.5'
+          go-version-file: go.mod
 
       - name: Determine Version
         id: get_version
