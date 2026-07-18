@@ -639,7 +639,7 @@ type LogLine struct {
 	Line        string `json:"line"`
 }
 
-func StreamContainerLogs(ctx context.Context, cli *client.Client, containerID string, tail int) (<-chan LogLine, error) {
+func StreamContainerLogs(ctx context.Context, cli *client.Client, containerID string, tail int, follow bool) (<-chan LogLine, error) {
 	if tail <= 0 {
 		tail = 100
 	}
@@ -647,7 +647,7 @@ func StreamContainerLogs(ctx context.Context, cli *client.Client, containerID st
 	options := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     true,
+		Follow:     follow,
 		Tail:       fmt.Sprintf("%d", tail),
 		Timestamps: false,
 	}

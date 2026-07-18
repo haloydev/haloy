@@ -28,6 +28,7 @@ func (s *APIServer) handleAppLogs() http.HandlerFunc {
 		}
 		containerIDParam := r.URL.Query().Get("containerId")
 		allContainers := r.URL.Query().Get("allContainers") == "true"
+		follow := r.URL.Query().Get("follow") != "false"
 
 		ctx := r.Context()
 
@@ -46,7 +47,7 @@ func (s *APIServer) handleAppLogs() http.HandlerFunc {
 
 		var channels []<-chan docker.LogLine
 		for _, id := range targetIDs {
-			ch, err := docker.StreamContainerLogs(ctx, cli, id, tail)
+			ch, err := docker.StreamContainerLogs(ctx, cli, id, tail, follow)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("failed to stream logs for container: %v", err), http.StatusInternalServerError)
 				return
