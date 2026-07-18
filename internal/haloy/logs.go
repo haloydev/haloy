@@ -97,7 +97,7 @@ Examples:
 	cmd.Flags().StringVarP(&flags.configPath, "config", "c", "", "Path to config file or directory (default: .)")
 	cmd.Flags().StringSliceVarP(&flags.targets, "targets", "t", nil, "Stream logs for specific targets (comma-separated)")
 	cmd.Flags().BoolVarP(&flags.all, "all", "a", false, "Stream logs for all targets")
-	cmd.Flags().IntVar(&tail, "tail", 100, "Number of historical log lines to show (default: 100)")
+	cmd.Flags().IntVar(&tail, "tail", 100, "Number of historical log lines to show")
 	cmd.Flags().StringVar(&containerID, "container", "", "Stream logs from a specific container ID")
 	cmd.Flags().BoolVar(&allContainers, "all-containers", false, "Stream logs from all containers")
 	cmd.Flags().BoolVar(&noFollow, "no-follow", false, "Print existing logs and exit without following")
