@@ -208,3 +208,86 @@ func TestRemovedDeploymentNotTrackedAsFailedWhenReplacementUsesAlias(t *testing.
 		t.Fatalf("expected removed old-app not to be tracked as failed when new-app owns an overlapping alias, got %d", len(dm.FailedDeployments()))
 	}
 }
+
+// A container behind another app's proxy owns no domain of its own. It still
+// has to be tracked, or Update() never sees the app change and never reaches
+// the step that stops the previous deployment's containers.
+func TestDomainlessDeploymentIsTrackedButNotRouted(t *testing.T) {
+	dm := NewDeploymentManager(nil, nil)
+
+	instance := func(deploymentID, containerID, ip string) []HealthyContainer {
+		return []HealthyContainer{
+			{
+				ContainerID: containerID,
+				Labels: &config.ContainerLabels{
+					AppName:      "gated-app",
+					DeploymentID: deploymentID,
+					Port:         config.Port(constants.DefaultContainerPort),
+				},
+				IP:   ip,
+				Port: "4000",
+			},
+		}
+	}
+
+	if !dm.UpdateDeployments(instance("deploy-1", "c1", "10.0.0.1")) {
+		t.Fatal("first domainless deployment should register as a change")
+	}
+	if _, ok := dm.Deployments()["gated-app"]; !ok {
+		t.Fatal("expected gated-app to be tracked")
+	}
+
+	if !dm.UpdateDeployments(instance("deploy-2", "c2", "10.0.0.2")) {
+		t.Fatal("rolling to a new deployment ID should register as a change")
+	}
+
+	snapshot := buildSnapshot(dm.Deployments(), dm.FailedDeployments(), "", nil)
+	if len(snapshot.Routes) != 0 {
+		t.Fatalf("domainless deployment should produce no routes, got %d", len(snapshot.Routes))
+	}
+
+	// Losing every container leaves nothing to keep a 502 route for.
+	dm.UpdateDeployments(nil)
+	if len(dm.FailedDeployments()) != 0 {
+		t.Fatalf("expected no failed deployments, got %d", len(dm.FailedDeployments()))
+	}
+}
+
+// The health monitor only exists to pull unhealthy backends out of the proxy.
+// A domainless app has none there, and probing it would mean sending HTTP at a
+// database that never agreed to answer.
+func TestHealthCheckTargetsSkipDomainlessDeployments(t *testing.T) {
+	dm := NewDeploymentManager(nil, nil)
+
+	dm.UpdateDeployments([]HealthyContainer{
+		{
+			ContainerID: "db",
+			Labels: &config.ContainerLabels{
+				AppName:      "postgres",
+				DeploymentID: "deploy-1",
+				Port:         config.Port("5432"),
+			},
+			IP:   "10.0.0.1",
+			Port: "5432",
+		},
+		{
+			ContainerID: "web",
+			Labels: &config.ContainerLabels{
+				AppName:      "web",
+				DeploymentID: "deploy-1",
+				Port:         config.Port(constants.DefaultContainerPort),
+				Domains:      []config.Domain{{Canonical: "web.example.com"}},
+			},
+			IP:   "10.0.0.2",
+			Port: "8080",
+		},
+	})
+
+	targets := dm.GetHealthCheckTargets()
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 health check target, got %d", len(targets))
+	}
+	if targets[0].AppName != "web" {
+		t.Fatalf("expected only the routed app to be monitored, got %s", targets[0].AppName)
+	}
+}
