@@ -167,6 +167,10 @@ const (
 // a burst ends and must be redialed on the next one. Idle sockets to loopback
 // and Docker bridge backends are nearly free, and IdleConnTimeout still reaps
 // them.
+//
+// DisableCompression keeps the proxy transparent: without it the transport
+// adds Accept-Encoding: gzip for clients that sent none and decompresses the
+// response itself.
 func newBackendTransport(responseHeaderTimeout time.Duration) *http.Transport {
 	return &http.Transport{
 		DialContext: (&net.Dialer{
@@ -175,6 +179,7 @@ func newBackendTransport(responseHeaderTimeout time.Duration) *http.Transport {
 		}).DialContext,
 		MaxIdleConns:          256,
 		MaxIdleConnsPerHost:   32,
+		DisableCompression:    true,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: responseHeaderTimeout,

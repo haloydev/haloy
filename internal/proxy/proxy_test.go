@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"compress/gzip"
 	"crypto/tls"
 	"io"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -481,6 +483,52 @@ func TestProxyToBackend_DialFailover(t *testing.T) {
 		if w.Code != http.StatusOK || w.Body.String() != "ok" {
 			t.Errorf("request %d: status = %d body = %q, want request to fail over to the live backend", i, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestProxyToBackend_DoesNotNegotiateCompression(t *testing.T) {
+	received := make(chan string, 1)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r.Header.Get("Accept-Encoding")
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			gz := gzip.NewWriter(w)
+			io.WriteString(gz, "hello")
+			gz.Close()
+			return
+		}
+		io.WriteString(w, "hello")
+	}))
+	defer backend.Close()
+
+	backendURL, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backendHost, backendPort, err := net.SplitHostPort(backendURL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := newTestProxy()
+	route := &Route{
+		Canonical: "example.com",
+		Backends:  []Backend{{IP: backendHost, Port: backendPort}},
+	}
+
+	// httptest.NewRequest sends no Accept-Encoding, unlike Go's default client.
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+	w := httptest.NewRecorder()
+	p.proxyToBackend(w, r, route, time.Now())
+
+	if got := <-received; got != "" {
+		t.Errorf("backend saw Accept-Encoding %q, want none", got)
+	}
+	if got := w.Header().Get("Content-Encoding"); got != "" {
+		t.Errorf("Content-Encoding = %q, want none", got)
+	}
+	if got := w.Body.String(); got != "hello" {
+		t.Errorf("body = %q, want %q", got, "hello")
 	}
 }
 
