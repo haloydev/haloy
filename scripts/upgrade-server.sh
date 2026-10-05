@@ -783,6 +783,12 @@ haloyd)
         upgrade_proxy_binary true
     else
         echo "haloy-proxy is compatible; leaving it running."
+        PROXY_CURRENT_VERSION=$("$PROXY_PATH" version 2>/dev/null | head -n 1 || echo "unknown")
+        if [ "$(normalize_version "$PROXY_CURRENT_VERSION")" != "$NORM_LATEST" ]; then
+            echo "Note: haloy-proxy is running $PROXY_CURRENT_VERSION (release is $LATEST_VERSION)."
+            echo "      It is compatible, but it will not pick up proxy changes from newer releases."
+            echo "      To upgrade it (brief traffic pause): upgrade-server.sh --component=proxy"
+        fi
     fi
 
     if [ "$HALOYD_NEEDS_UPGRADE" != "true" ]; then

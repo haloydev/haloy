@@ -11,7 +11,10 @@ import (
 	"github.com/haloydev/haloy/internal/proxywire"
 )
 
-func TestHandleVersionReportsLegacyProxyAsCompatible(t *testing.T) {
+// A proxy without generation metadata normalizes to the legacy generation;
+// whether that satisfies the current build depends on the required
+// generation, so the expectation is derived rather than hardcoded.
+func TestHandleVersionNormalizesLegacyProxyGeneration(t *testing.T) {
 	s := &APIServer{}
 	s.SetProxyStatusFunc(func(_ context.Context) (*proxywire.Status, error) {
 		return &proxywire.Status{
@@ -30,8 +33,9 @@ func TestHandleVersionReportsLegacyProxyAsCompatible(t *testing.T) {
 	if response.ProxyGeneration != proxywire.LegacyProxyGeneration {
 		t.Fatalf("proxy generation = %d, want %d", response.ProxyGeneration, proxywire.LegacyProxyGeneration)
 	}
-	if response.ProxyCompatible == nil || !*response.ProxyCompatible {
-		t.Fatalf("legacy proxy compatibility = %v, want true", response.ProxyCompatible)
+	wantCompatible := proxywire.LegacyProxyGeneration >= proxywire.ProxyGeneration
+	if response.ProxyCompatible == nil || *response.ProxyCompatible != wantCompatible {
+		t.Fatalf("legacy proxy compatibility = %v, want %v", response.ProxyCompatible, wantCompatible)
 	}
 	if response.RequiredProxyGeneration != proxywire.ProxyGeneration {
 		t.Fatalf("required proxy generation = %d, want %d", response.RequiredProxyGeneration, proxywire.ProxyGeneration)

@@ -30,7 +30,12 @@ const (
 	// the snapshot schema is unchanged (for example, an important bug or
 	// security fix). Ordinary haloyd releases leave it unchanged so a compatible
 	// proxy can keep serving traffic without a restart.
-	ProxyGeneration = 1
+	//
+	// History:
+	//   1: initial split-proxy release.
+	//   2: dedicated control-plane transport, pooled copy buffers, larger idle
+	//      backend connection pool, and no proxy-side gzip negotiation.
+	ProxyGeneration = 2
 
 	// LegacyProxyGeneration is assigned to split-proxy builds released before
 	// generation metadata was added.

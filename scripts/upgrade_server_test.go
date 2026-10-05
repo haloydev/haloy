@@ -388,6 +388,36 @@ func TestUpgradeServerDoesNotTouchProxyOnHaloydUpgrade(t *testing.T) {
 	}
 }
 
+func TestUpgradeServerNotesStaleCompatibleProxy(t *testing.T) {
+	f := newUpgradeFixture(t)
+
+	// Proxy is compatible (generation/schema satisfied) but two releases
+	// behind: the script must say so instead of silently leaving it.
+	output, err := runUpgradeScript(t, f)
+	if err != nil {
+		t.Fatalf("expected successful upgrade, got %v:\n%s", err, output)
+	}
+	if !strings.Contains(output, "haloy-proxy is running v1.0.0 (release is v1.1.0)") {
+		t.Fatalf("expected stale proxy note in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "--component=proxy") {
+		t.Fatalf("expected proxy upgrade hint in output, got:\n%s", output)
+	}
+}
+
+func TestUpgradeServerDoesNotNoteCurrentProxy(t *testing.T) {
+	f := newUpgradeFixture(t)
+	writeHaloydBinary(t, f.proxyPath, "v1.1.0", 0o750)
+
+	output, err := runUpgradeScript(t, f)
+	if err != nil {
+		t.Fatalf("expected successful upgrade, got %v:\n%s", err, output)
+	}
+	if strings.Contains(output, "haloy-proxy is running") {
+		t.Fatalf("current proxy must not produce a stale note, got:\n%s", output)
+	}
+}
+
 func TestUpgradeServerUpgradesProxyFirstWhenGenerationIsRequired(t *testing.T) {
 	f := newUpgradeFixture(t)
 

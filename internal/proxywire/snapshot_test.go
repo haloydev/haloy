@@ -133,8 +133,11 @@ func TestIsProxyCompatible(t *testing.T) {
 	if !IsProxyCompatible(ProxyGeneration, SchemaVersion) {
 		t.Fatal("current proxy metadata should be compatible")
 	}
-	if !IsProxyCompatible(0, SchemaVersion) {
-		t.Fatal("legacy generation should normalize to the initial generation")
+	if got, want := IsProxyCompatible(0, SchemaVersion), LegacyProxyGeneration >= ProxyGeneration; got != want {
+		t.Fatalf("legacy generation compatibility = %v, want %v", got, want)
+	}
+	if IsProxyCompatible(ProxyGeneration-1, SchemaVersion) {
+		t.Fatal("older proxy generation should be incompatible")
 	}
 	if IsProxyCompatible(ProxyGeneration, SchemaVersion-1) {
 		t.Fatal("older proxy schema should be incompatible")
