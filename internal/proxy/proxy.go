@@ -162,14 +162,19 @@ const (
 // newBackendTransport builds a pooled HTTP/1.1 transport for loopback and
 // container backends. Only the response header timeout differs between the
 // application and control-plane transports.
+//
+// The idle limits are generous because connections above them are closed when
+// a burst ends and must be redialed on the next one. Idle sockets to loopback
+// and Docker bridge backends are nearly free, and IdleConnTimeout still reaps
+// them.
 func newBackendTransport(responseHeaderTimeout time.Duration) *http.Transport {
 	return &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
+		MaxIdleConns:          256,
+		MaxIdleConnsPerHost:   32,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: responseHeaderTimeout,
