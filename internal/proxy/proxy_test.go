@@ -683,3 +683,49 @@ func TestHTTPSHandler_RedirectsAliasToCanonical(t *testing.T) {
 		}
 	})
 }
+
+// discardResponseWriter is a ResponseWriter that throws the body away, so
+// benchmarks measure the proxy rather than a recorder's growing buffer.
+type discardResponseWriter struct {
+	header http.Header
+}
+
+func (w *discardResponseWriter) Header() http.Header         { return w.header }
+func (w *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (w *discardResponseWriter) WriteHeader(int)             {}
+
+func BenchmarkProxyToBackend(b *testing.B) {
+	body := make([]byte, 64*1024)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(body)
+	}))
+	defer backend.Close()
+
+	backendURL, err := url.Parse(backend.URL)
+	if err != nil {
+		b.Fatal(err)
+	}
+	host, port, err := net.SplitHostPort(backendURL.Host)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	p := newTestProxy()
+	rb := NewRouteBuilder()
+	rb.AddRoute("example.com", nil, []Backend{{IP: host, Port: port}})
+	config, err := rb.Build()
+	if err != nil {
+		b.Fatal(err)
+	}
+	p.UpdateConfig(config)
+	handler := p.httpsHandler()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			r := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+			handler.ServeHTTP(&discardResponseWriter{header: http.Header{}}, r)
+		}
+	})
+}

@@ -125,6 +125,9 @@ type Proxy struct {
 	// response, so this transport must not use the application timeout.
 	apiTransport *http.Transport
 
+	// bufferPool shares response copy buffers across app and API proxies.
+	bufferPool *bufferPool
+
 	// For graceful shutdown
 	shutdownMu sync.Mutex
 	isShutdown bool
@@ -182,6 +185,7 @@ func New(logger *slog.Logger, certLoader CertLoader) *Proxy {
 		fatalCh:      make(chan error, 2),
 		transport:    newBackendTransport(appResponseHeaderTimeout),
 		apiTransport: newBackendTransport(apiResponseHeaderTimeout),
+		bufferPool:   newBufferPool(),
 		hijackConns:  make(map[net.Conn]struct{}),
 	}
 
@@ -504,6 +508,7 @@ func (p *Proxy) proxyToBackend(w http.ResponseWriter, r *http.Request, route *Ro
 				pr.Out.Host = r.Host
 			},
 			Transport:     p.transport,
+			BufferPool:    p.bufferPool,
 			FlushInterval: -1, // Flush immediately for streaming
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 				if attempt < maxAttempts && isDialError(err) && r.Context().Err() == nil {
@@ -559,6 +564,7 @@ func (p *Proxy) proxyToAPIBackend(w http.ResponseWriter, r *http.Request, startT
 			pr.Out.Host = r.Host
 		},
 		Transport:     p.apiTransport,
+		BufferPool:    p.bufferPool,
 		FlushInterval: -1, // API streams deploy logs via SSE
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			p.logger.Error("API proxy error",
