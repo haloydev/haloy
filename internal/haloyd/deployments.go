@@ -129,12 +129,17 @@ func (dm *DeploymentManager) DiscoverContainers(ctx context.Context, logger *slo
 			continue
 		}
 
-		// Check domains are configured
+		// A container without domains is still discovered. It gets no route —
+		// buildSnapshot only emits one per domain — but it does get health
+		// checked and tracked, which is what lets Update() see it change and
+		// reach the step that stops and removes the previous deployment's
+		// containers. Skipping it here left those behind for good: an app
+		// sitting behind another app's proxy (a bot gate, an auth front) never
+		// owns a domain of its own.
 		if len(labels.Domains) == 0 {
-			logger.Debug("Container has no domains configured, skipping",
+			logger.Debug("Container has no domains configured; tracked but not routed",
 				"container_id", helpers.SafeIDPrefix(containerInfo.ID),
 				"app", labels.AppName)
-			continue
 		}
 
 		// Determine port
@@ -241,6 +246,12 @@ func (dm *DeploymentManager) updateFailedDeployments(compareResult compareResult
 	activeDomains := deploymentDomainSet(activeDeployments)
 
 	for appName, deployment := range compareResult.RemovedDeployments {
+		// failedDeployments exists to keep a route alive so the proxy answers
+		// 502 rather than 404. A deployment without domains has no route to
+		// keep, so parking it here would only leave an entry nothing clears.
+		if !deploymentHasDomains(deployment) {
+			continue
+		}
 		if deploymentOverlapsDomains(deployment, activeDomains) {
 			if _, exists := dm.failedDeployments[appName]; exists {
 				delete(dm.failedDeployments, appName)
@@ -289,6 +300,14 @@ func (dm *DeploymentManager) GetHealthCheckTargets() []healthcheck.Target {
 
 	var targets []healthcheck.Target
 	for _, deployment := range dm.deployments {
+		// The monitor's whole job is to keep unhealthy backends out of the
+		// proxy. A deployment without domains has no backends there, so there
+		// is nothing to keep out — and probing it would mean sending HTTP at a
+		// database or a message bus that never agreed to answer.
+		if !deploymentHasDomains(deployment) {
+			continue
+		}
+
 		healthCheckPath := deployment.Labels.HealthCheckPath
 		if healthCheckPath == "" {
 			healthCheckPath = constants.DefaultHealthCheckPath

@@ -23,6 +23,20 @@ func addDeploymentDomains(domains map[string]struct{}, deployment Deployment) {
 	}
 }
 
+func deploymentHasDomains(deployment Deployment) bool {
+	if deployment.Labels == nil {
+		return false
+	}
+
+	for _, domain := range deployment.Labels.Domains {
+		if domain.Canonical != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
 func deploymentOverlapsDomains(deployment Deployment, domains map[string]struct{}) bool {
 	if deployment.Labels == nil {
 		return false
