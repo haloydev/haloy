@@ -50,3 +50,39 @@ func IsLocalhost(serverURL string) bool {
 
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
+
+// ValidateServerHost checks a normalized server address — the "host" or
+// "host:port" that NormalizeServerURL returns.
+//
+// This is deliberately looser than IsValidDomain. A haloy server is not a
+// site being served; it is an address the CLI dials, and the useful ones
+// include an IP address (a box with no name yet) and a port (a daemon
+// reached through an SSH tunnel on 127.0.0.1). IsValidDomain rejects both:
+// it reads "127.0.0.1:9922" as a domain whose TLD is "1:9922".
+func ValidateServerHost(hostPort string) error {
+	host := hostPort
+
+	if h, port, err := net.SplitHostPort(hostPort); err == nil {
+		host = h
+		if err := ValidatePort(port); err != nil {
+			return fmt.Errorf("invalid port '%s': %w", port, err)
+		}
+	}
+
+	// IPv6 arrives bracketed from url.Parse.
+	host = strings.Trim(host, "[]")
+
+	if host == "" {
+		return fmt.Errorf("server address has no host")
+	}
+
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+
+	if host == "localhost" {
+		return nil
+	}
+
+	return IsValidDomain(host)
+}

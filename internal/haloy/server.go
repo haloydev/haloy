@@ -76,8 +76,8 @@ func addServerURL(url, token string, force bool) error {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	if err := helpers.IsValidDomain(normalizedURL); err != nil {
-		return fmt.Errorf("invalid domain: %w", err)
+	if err := helpers.ValidateServerHost(normalizedURL); err != nil {
+		return fmt.Errorf("invalid server address: %w", err)
 	}
 
 	configDir, err := config.HaloyConfigDir()
