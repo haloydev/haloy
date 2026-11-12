@@ -369,6 +369,83 @@ func TestTargetConfig_Validate_Comprehensive(t *testing.T) {
 			format:      "yaml",
 			expectError: false,
 		},
+		{
+			name: "published ports with replace",
+			target: TargetConfig{
+				Name:               "noray",
+				Server:             "haloy.dev",
+				Image:              &Image{Repository: "noray-go", Tag: "latest"},
+				DeploymentStrategy: DeploymentStrategyReplace,
+				Ports:              []string{"8890:8890", "8809:8809/udp", "49152-49351:49152-49351/udp", "127.0.0.1:8891:8891"},
+			},
+			format:      "yaml",
+			expectError: false,
+		},
+		{
+			name: "published ports with domains and replace",
+			target: TargetConfig{
+				Name:               "game",
+				Server:             "haloy.dev",
+				Image:              &Image{Repository: "game", Tag: "latest"},
+				DeploymentStrategy: DeploymentStrategyReplace,
+				Domains:            []Domain{{Canonical: "example.com"}},
+				Ports:              []string{"27015:27015/udp"},
+			},
+			format:      "yaml",
+			expectError: false,
+		},
+		{
+			name: "invalid published port names the field",
+			target: TargetConfig{
+				Name:   "noray",
+				Server: "haloy.dev",
+				Image:  &Image{Repository: "noray-go", Tag: "latest"},
+				Ports:  []string{"8890"},
+			},
+			format:      "yaml",
+			expectError: true,
+			errMsg:      "invalid ports: port mapping '8890' has no host port",
+		},
+		{
+			name: "published ports with rolling",
+			target: TargetConfig{
+				Name:               "game",
+				Server:             "haloy.dev",
+				Image:              &Image{Repository: "game", Tag: "latest"},
+				DeploymentStrategy: DeploymentStrategyRolling,
+				Domains:            []Domain{{Canonical: "example.com"}},
+				Ports:              []string{"27015:27015/udp"},
+			},
+			format:      "yaml",
+			expectError: true,
+			errMsg:      "deployment_strategy 'rolling' cannot be used with ports",
+		},
+		{
+			name: "published ports with host network",
+			target: TargetConfig{
+				Name:    "noray",
+				Server:  "haloy.dev",
+				Image:   &Image{Repository: "noray-go", Tag: "latest"},
+				Network: "host",
+				Ports:   []string{"8890:8890"},
+			},
+			format:      "yaml",
+			expectError: true,
+			errMsg:      "network 'host'",
+		},
+		{
+			name: "published ports with replicas",
+			target: TargetConfig{
+				Name:     "noray",
+				Server:   "haloy.dev",
+				Image:    &Image{Repository: "noray-go", Tag: "latest"},
+				Replicas: new(2),
+				Ports:    []string{"8890:8890"},
+			},
+			format:      "yaml",
+			expectError: true,
+			errMsg:      "multiple replicas",
+		},
 	}
 
 	for _, tt := range tests {
