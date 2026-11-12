@@ -119,6 +119,12 @@ func (tc *TargetConfig) Validate(format string) error {
 		}
 	}
 
+	if len(tc.Ports) > 0 {
+		if err := tc.validatePorts(format); err != nil {
+			return err
+		}
+	}
+
 	if tc.HealthCheckPath != "" {
 		if tc.HealthCheckPath[0] != '/' {
 			return fmt.Errorf("%s must start with a slash", GetFieldNameForFormat(TargetConfig{}, "HealthCheckPath", format))
@@ -138,6 +144,32 @@ func (tc *TargetConfig) Validate(format string) error {
 		if *tc.MinReadySeconds > 600 {
 			return fmt.Errorf("%s must not exceed 600 (10 minutes)", GetFieldNameForFormat(TargetConfig{}, "MinReadySeconds", format))
 		}
+	}
+
+	return nil
+}
+
+// validatePorts checks the published ports and the settings they constrain.
+// A host port can be bound by only one container at a time, so a target that
+// publishes ports runs a single container and is replaced on deploy.
+func (tc *TargetConfig) validatePorts(format string) error {
+	portsField := GetFieldNameForFormat(TargetConfig{}, "Ports", format)
+
+	if _, err := ParsePortSpecs(tc.Ports); err != nil {
+		return fmt.Errorf("invalid %s: %w", portsField, err)
+	}
+
+	if tc.Network == "host" || tc.Network == "none" {
+		return fmt.Errorf("%s cannot be used with network '%s': Docker does not publish ports in that network mode", portsField, tc.Network)
+	}
+
+	if tc.Replicas != nil && *tc.Replicas > 1 {
+		return fmt.Errorf("%s does not support multiple replicas: every replica would bind the same host ports", portsField)
+	}
+
+	if tc.DeploymentStrategy == DeploymentStrategyRolling {
+		field := GetFieldNameForFormat(TargetConfig{}, "DeploymentStrategy", format)
+		return fmt.Errorf("%s 'rolling' cannot be used with %s: the new container cannot bind a host port the old one still holds. Set %s 'replace' on this target", field, portsField, field)
 	}
 
 	return nil

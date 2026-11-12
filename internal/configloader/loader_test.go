@@ -1399,3 +1399,129 @@ func TestExtractTargetsRejectsRollingWithoutDomains(t *testing.T) {
 		}
 	})
 }
+
+func TestPublishedPorts(t *testing.T) {
+	image := &config.Image{Repository: "noray-go", Tag: "latest"}
+	domains := []config.Domain{{Canonical: "app.example.com"}}
+
+	t.Run("loads from yaml and defaults to replace even with domains", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "haloy.yaml")
+		yaml := `
+name: noray
+server: test.haloy.dev
+image: "noray-go:latest"
+domains:
+  - domain: "noray.example.com"
+ports:
+  - "8890:8890"
+  - "8809:8809/udp"
+  - "49152-49351:49152-49351/udp"
+`
+		if err := os.WriteFile(configPath, []byte(yaml), 0o644); err != nil {
+			t.Fatalf("failed to write config file: %v", err)
+		}
+		dc, format, err := LoadRawDeployConfig(configPath)
+		if err != nil {
+			t.Fatalf("LoadRawDeployConfig() unexpected error = %v", err)
+		}
+		targets, err := ExtractTargets(dc, format)
+		if err != nil {
+			t.Fatalf("ExtractTargets() unexpected error = %v", err)
+		}
+		target := targets["noray"]
+		if len(target.Ports) != 3 {
+			t.Fatalf("Ports = %v, want 3 entries", target.Ports)
+		}
+		if target.DeploymentStrategy != config.DeploymentStrategyReplace {
+			t.Errorf("DeploymentStrategy = %q, want replace", target.DeploymentStrategy)
+		}
+	})
+
+	t.Run("targets inherit root ports", func(t *testing.T) {
+		deployConfig := config.DeployConfig{
+			TargetConfig: config.TargetConfig{Image: image, Ports: []string{"8890:8890"}},
+			Targets: map[string]*config.TargetConfig{
+				"eu": {Server: "eu.haloy.dev"},
+				"us": {Server: "us.haloy.dev", Ports: []string{"9890:8890"}},
+			},
+		}
+		targets, err := ExtractTargets(deployConfig, "yaml")
+		if err != nil {
+			t.Fatalf("ExtractTargets() unexpected error = %v", err)
+		}
+		if got := targets["eu"].Ports; len(got) != 1 || got[0] != "8890:8890" {
+			t.Errorf("eu Ports = %v, want inherited [8890:8890]", got)
+		}
+		if got := targets["us"].Ports; len(got) != 1 || got[0] != "9890:8890" {
+			t.Errorf("us Ports = %v, want own [9890:8890]", got)
+		}
+	})
+
+	t.Run("root rolling is rejected for a target with ports", func(t *testing.T) {
+		deployConfig := config.DeployConfig{
+			TargetConfig: config.TargetConfig{
+				Name: "game", Server: "test.haloy.dev", Image: image, Domains: domains,
+				DeploymentStrategy: config.DeploymentStrategyRolling,
+				Ports:              []string{"27015:27015/udp"},
+			},
+		}
+		_, err := ExtractTargets(deployConfig, "yaml")
+		if err == nil || !strings.Contains(err.Error(), "cannot be used with ports") {
+			t.Fatalf("ExtractTargets() error = %v, want rolling/ports error", err)
+		}
+	})
+
+	conflictTests := []struct {
+		name    string
+		targets map[string]*config.TargetConfig
+		wantErr string
+	}{
+		{
+			name: "same host port on the same server",
+			targets: map[string]*config.TargetConfig{
+				"a": {Server: "one.haloy.dev", Ports: []string{"49152-49351:49152-49351/udp"}},
+				"b": {Server: "one.haloy.dev", Ports: []string{"49300:9000/udp"}},
+			},
+			wantErr: "targets 'a' and 'b' both publish host port 49300/udp on server one.haloy.dev",
+		},
+		{
+			name: "same host port on different servers",
+			targets: map[string]*config.TargetConfig{
+				"a": {Server: "one.haloy.dev", Ports: []string{"8890:8890"}},
+				"b": {Server: "two.haloy.dev", Ports: []string{"8890:8890"}},
+			},
+		},
+		{
+			name: "same port number on different protocols",
+			targets: map[string]*config.TargetConfig{
+				"a": {Server: "one.haloy.dev", Ports: []string{"8890:8890"}},
+				"b": {Server: "one.haloy.dev", Ports: []string{"8890:8890/udp"}},
+			},
+		},
+		{
+			name: "same port on different host ips",
+			targets: map[string]*config.TargetConfig{
+				"a": {Server: "one.haloy.dev", Ports: []string{"127.0.0.1:8891:8891"}},
+				"b": {Server: "one.haloy.dev", Ports: []string{"10.0.0.2:8891:8891"}},
+			},
+		},
+	}
+	for _, tt := range conflictTests {
+		t.Run(tt.name, func(t *testing.T) {
+			deployConfig := config.DeployConfig{
+				TargetConfig: config.TargetConfig{Image: image},
+				Targets:      tt.targets,
+			}
+			_, err := ExtractTargets(deployConfig, "yaml")
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ExtractTargets() unexpected error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("ExtractTargets() error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}

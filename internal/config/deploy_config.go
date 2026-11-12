@@ -43,6 +43,7 @@ type TargetConfig struct {
 	Port               Port               `json:"port,omitempty" yaml:"port,omitempty" toml:"port,omitempty"`
 	Replicas           *int               `json:"replicas,omitempty" yaml:"replicas,omitempty" toml:"replicas,omitempty"`
 	Volumes            []string           `json:"volumes,omitempty" yaml:"volumes,omitempty" toml:"volumes,omitempty"`
+	Ports              []string           `json:"ports,omitempty" yaml:"ports,omitempty" toml:"ports,omitempty"`
 	Network            string             `json:"network,omitempty" yaml:"network,omitempty" toml:"network,omitempty"`
 	PreDeploy          []string           `json:"preDeploy,omitempty" yaml:"pre_deploy,omitempty" toml:"pre_deploy,omitempty"`
 	PostDeploy         []string           `json:"postDeploy,omitempty" yaml:"post_deploy,omitempty" toml:"post_deploy,omitempty"`

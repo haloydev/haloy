@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -238,6 +239,10 @@ func MergeToTarget(deployConfig config.DeployConfig, targetConfig config.TargetC
 		tc.Volumes = deployConfig.Volumes
 	}
 
+	if tc.Ports == nil {
+		tc.Ports = deployConfig.Ports
+	}
+
 	if tc.PreDeploy == nil {
 		tc.PreDeploy = deployConfig.PreDeploy
 	}
@@ -353,6 +358,12 @@ func normalizeTargetConfig(tc *config.TargetConfig) {
 		tc.DeploymentStrategy = config.DeploymentStrategyReplace
 	}
 
+	// A host port can be bound by only one container at a time, so the new
+	// container of a rolling deploy could not start while the old one runs.
+	if tc.DeploymentStrategy == "" && len(tc.Ports) > 0 {
+		tc.DeploymentStrategy = config.DeploymentStrategyReplace
+	}
+
 	if tc.DeploymentStrategy == "" {
 		tc.DeploymentStrategy = config.DeploymentStrategyRolling
 	}
@@ -446,6 +457,9 @@ func ExtractTargets(deployConfig config.DeployConfig, format string) (map[string
 			}
 			extractedTargetConfigs[targetName] = mergedTargetConfig
 		}
+		if err := checkPublishedPortConflicts(extractedTargetConfigs); err != nil {
+			return nil, err
+		}
 	} else {
 		mergedSingleTargetConfig, err := MergeToTarget(deployConfig, deployConfig.TargetConfig, deployConfig.Name, format)
 		if err != nil {
@@ -458,6 +472,35 @@ func ExtractTargets(deployConfig config.DeployConfig, format string) (map[string
 	}
 
 	return extractedTargetConfigs, nil
+}
+
+// checkPublishedPortConflicts rejects two targets on the same server that
+// publish the same host port: the second deploy would fail to start its
+// container after the first one already holds the port.
+func checkPublishedPortConflicts(targets map[string]config.TargetConfig) error {
+	type owner struct {
+		target string
+		port   config.PublishedPort
+	}
+	byServer := make(map[string][]owner)
+
+	targetNames := slices.Sorted(maps.Keys(targets))
+	for _, targetName := range targetNames {
+		target := targets[targetName]
+		ports, err := config.ParsePortSpecs(target.Ports)
+		if err != nil {
+			return fmt.Errorf("validation failed for target '%s': %w", targetName, err)
+		}
+		for _, p := range ports {
+			for _, existing := range byServer[target.Server] {
+				if p.Overlaps(existing.port) {
+					return fmt.Errorf("targets '%s' and '%s' both publish host port %s on server %s", existing.target, targetName, p.HostAddr(), target.Server)
+				}
+			}
+			byServer[target.Server] = append(byServer[target.Server], owner{target: targetName, port: p})
+		}
+	}
+	return nil
 }
 
 func LoadRawDeployConfig(configPath string) (config.DeployConfig, string, error) {
