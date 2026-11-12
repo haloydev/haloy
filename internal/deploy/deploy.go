@@ -34,6 +34,10 @@ func DeployApp(ctx context.Context, cli *client.Client, db *storage.DB, deployme
 		newImageRef = dstRef
 	}
 
+	if err := docker.CheckPublishedPortConflicts(ctx, cli, targetConfig); err != nil {
+		return err
+	}
+
 	if targetConfig.DeploymentStrategy == config.DeploymentStrategyReplace {
 		_, err := docker.StopContainers(ctx, cli, logger, targetConfig.Name, "")
 		if err != nil {

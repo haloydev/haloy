@@ -50,18 +50,24 @@ func RunContainer(ctx context.Context, cli *client.Client, deploymentID, imageRe
 	if targetConfig.Network != "" {
 		network = container.NetworkMode(targetConfig.Network)
 	}
+	exposedPorts, portMap, err := portBindings(targetConfig)
+	if err != nil {
+		return result, err
+	}
 	hostConfig := &container.HostConfig{
 		NetworkMode:   network,
 		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
 		Binds:         targetConfig.Volumes,
+		PortBindings:  portMap,
 	}
 
 	for i := range make([]struct{}, *targetConfig.Replicas) {
 		envVars := append(envVars, fmt.Sprintf("%s=%d", constants.EnvVarReplicaID, i+1))
 		containerConfig := &container.Config{
-			Image:  imageRef,
-			Labels: labels,
-			Env:    envVars,
+			Image:        imageRef,
+			Labels:       labels,
+			Env:          envVars,
+			ExposedPorts: exposedPorts,
 		}
 
 		var containerName string
