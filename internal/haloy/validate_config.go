@@ -49,6 +49,8 @@ func ValidateDeployConfigCmd(configPath *string) *cobra.Command {
 						collectedErrors = append(collectedErrors, fmt.Errorf("target '%s' validation failed: %w", targetName, err))
 					} else if err := validateBuildPaths(*configPath, mergedTargetConfig); err != nil {
 						collectedErrors = append(collectedErrors, fmt.Errorf("target '%s': %w", targetName, err))
+					} else {
+						warnPublicPorts(mergedTargetConfig, format)
 					}
 				}
 			} else {
@@ -60,6 +62,8 @@ func ValidateDeployConfigCmd(configPath *string) *cobra.Command {
 						collectedErrors = append(collectedErrors, err)
 					} else if err := validateBuildPaths(*configPath, mergedSingleTargetConfig); err != nil {
 						collectedErrors = append(collectedErrors, err)
+					} else {
+						warnPublicPorts(mergedSingleTargetConfig, format)
 					}
 				}
 			}

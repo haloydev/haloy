@@ -116,24 +116,26 @@ func (dm *DeploymentManager) DiscoverContainers(ctx context.Context, logger *slo
 			continue
 		}
 
+		// Check domains are configured. A container without domains gets no
+		// route, so its HTTP port is never used and needs no validation.
+		if len(labels.Domains) == 0 {
+			logger.Debug("Container has no domains configured, skipping",
+				"container_id", helpers.SafeIDPrefix(containerInfo.ID),
+				"app", labels.AppName)
+			continue
+		}
+
 		// Validate port configuration
 		labelPortString := labels.Port.String()
-		if !validateContainerPort(containerInfo.Config.ExposedPorts, labelPortString) {
-			exposedPortsStr := exposedPortsAsString(containerInfo.Config.ExposedPorts)
+		exposedPorts := declaredExposedPorts(containerInfo.Config.ExposedPorts, containerInfo.HostConfig.PortBindings)
+		if !validateContainerPort(exposedPorts, labelPortString) {
+			exposedPortsStr := exposedPortsAsString(exposedPorts)
 			failed = append(failed, FailedContainer{
 				ContainerID: containerInfo.ID,
 				Labels:      labels,
 				Reason:      "port mismatch",
 				Err:         fmt.Errorf("configured port %s does not match exposed ports %s", labelPortString, exposedPortsStr),
 			})
-			continue
-		}
-
-		// Check domains are configured
-		if len(labels.Domains) == 0 {
-			logger.Debug("Container has no domains configured, skipping",
-				"container_id", helpers.SafeIDPrefix(containerInfo.ID),
-				"app", labels.AppName)
 			continue
 		}
 
@@ -407,6 +409,23 @@ func instancesEqual(a, b []DeploymentInstance) bool {
 	}
 
 	return true
+}
+
+// declaredExposedPorts returns the exposed ports that do not come from the
+// container's published ports. Docker publishes only exposed ports, so the
+// target's published container ports are exposed too, but they say nothing
+// about which port serves HTTP.
+func declaredExposedPorts(exposedPorts nat.PortSet, portBindings nat.PortMap) nat.PortSet {
+	if len(portBindings) == 0 {
+		return exposedPorts
+	}
+	declared := make(nat.PortSet, len(exposedPorts))
+	for port := range exposedPorts {
+		if _, published := portBindings[port]; !published {
+			declared[port] = struct{}{}
+		}
+	}
+	return declared
 }
 
 // validateContainerPort checks if the port specified in labels matches any exposed port on the container
