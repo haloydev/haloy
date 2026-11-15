@@ -19,19 +19,59 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 )
 
-// tcpListen is the TCP_LISTEN state in /proc/net/tcp and /proc/net/tcp6.
-const tcpListen = 0x0A
+// TCP states in /proc/net/tcp and /proc/net/tcp6.
+const (
+	tcpTimeWait = 0x06
+	tcpClose    = 0x07
+	tcpListen   = 0x0A
+)
 
-// hostSocket is a socket on the server that holds a local port: a listening
-// TCP socket or an unconnected (server) UDP socket.
+// hostSocket is a socket on the server that holds a local port. On Linux,
+// Docker cannot bind a host port that any socket holds: connected client
+// sockets and TCP sockets in TIME_WAIT included, unless the socket set
+// SO_REUSEADDR, which /proc/net does not show.
 type hostSocket struct {
 	Protocol string // "tcp" or "udp"
 	IP       net.IP
 	Port     int
+	// Listening is set for a listening TCP socket.
+	Listening bool
+	// TimeWait is set for a closed TCP connection in TIME_WAIT.
+	TimeWait bool
+	// Remote is the peer address of a connected socket: a TCP connection or
+	// a connected UDP socket. It is empty otherwise.
+	Remote string
+}
+
+func (s hostSocket) local() string {
+	return net.JoinHostPort(s.IP.String(), strconv.Itoa(s.Port)) + "/" + s.Protocol
 }
 
 func (s hostSocket) String() string {
-	return net.JoinHostPort(s.IP.String(), strconv.Itoa(s.Port)) + "/" + s.Protocol
+	if s.Remote != "" {
+		return s.local() + "->" + s.Remote
+	}
+	return s.local()
+}
+
+// holder describes what holds the port, for error messages.
+func (s hostSocket) holder() string {
+	switch {
+	case s.Listening:
+		return "a process is listening on " + s.local()
+	case s.TimeWait:
+		return fmt.Sprintf("a recently closed connection, %s to %s, is in TIME_WAIT; the kernel releases the port within about a minute", s.local(), s.Remote)
+	case s.Remote != "":
+		return fmt.Sprintf("a connected socket uses it as its local port, %s to %s; this is usually an outgoing client connection that will close on its own", s.local(), s.Remote)
+	default:
+		return "a process has a socket bound to " + s.local()
+	}
+}
+
+// transient reports whether the socket is a connection rather than a
+// listening or bound socket a process keeps.
+func (s hostSocket) transient() bool {
+	return s.TimeWait || s.Remote != ""
 }
 
 var procNetFiles = []struct{ name, protocol string }{
@@ -77,10 +117,11 @@ func readHostSockets(procNetDir string, order binary.ByteOrder) ([]hostSocket, e
 	return sockets, errors.Join(errs...)
 }
 
-// parseProcNet parses one /proc/net/{tcp,tcp6,udp,udp6} table. TCP sockets
-// count only when listening. UDP has no listening state, so any socket bound
-// to a local port counts, except connected ones: those are clients on an
-// ephemeral port (DNS lookups, docker-proxy flows) that come and go.
+// parseProcNet parses one /proc/net/{tcp,tcp6,udp,udp6} table. Every socket
+// bound to a local port counts, including connected client sockets on an
+// ephemeral port and TCP connections in TIME_WAIT: on Linux they make Docker's
+// bind of that port fail just as a listener does, unless they set
+// SO_REUSEADDR, which the table does not show.
 func parseProcNet(r io.Reader, protocol string, order binary.ByteOrder) ([]hostSocket, error) {
 	var sockets []hostSocket
 	var firstErr error
@@ -110,10 +151,6 @@ func parseProcNet(r io.Reader, protocol string, order binary.ByteOrder) ([]hostS
 			fail(lineNum, "invalid state %q", fields[3])
 			continue
 		}
-		if protocol == "tcp" && state != tcpListen {
-			continue
-		}
-
 		ip, port, err := parseProcNetAddr(fields[1], order)
 		if err != nil {
 			fail(lineNum, "invalid local address %q: %v", fields[1], err)
@@ -123,18 +160,23 @@ func parseProcNet(r io.Reader, protocol string, order binary.ByteOrder) ([]hostS
 			continue
 		}
 
-		if protocol == "udp" {
-			remoteIP, remotePort, err := parseProcNetAddr(fields[2], order)
-			if err != nil {
-				fail(lineNum, "invalid remote address %q: %v", fields[2], err)
-				continue
-			}
-			if remotePort != 0 || !remoteIP.IsUnspecified() {
-				continue
-			}
+		remoteIP, remotePort, err := parseProcNetAddr(fields[2], order)
+		if err != nil {
+			fail(lineNum, "invalid remote address %q: %v", fields[2], err)
+			continue
 		}
 
-		sockets = append(sockets, hostSocket{Protocol: protocol, IP: ip, Port: port})
+		socket := hostSocket{Protocol: protocol, IP: ip, Port: port}
+		switch {
+		case protocol == "tcp" && state == tcpListen:
+			socket.Listening = true
+		case protocol == "tcp" && state == tcpClose:
+			// bound, not connected
+		case remotePort != 0 || !remoteIP.IsUnspecified():
+			socket.Remote = net.JoinHostPort(remoteIP.String(), strconv.Itoa(remotePort))
+			socket.TimeWait = protocol == "tcp" && state == tcpTimeWait
+		}
+		sockets = append(sockets, socket)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -173,9 +215,11 @@ func parseProcNetAddr(field string, order binary.ByteOrder) (net.IP, int, error)
 }
 
 // findHostSocketConflict returns an error for the first published port that
-// a socket on the server already holds. Sockets on ports the app's own
-// containers publish are skipped: docker-proxy holds those for the current
-// deployment, which a replace deploy stops before starting the new one.
+// a socket on the server already holds. When several sockets hold a port, a
+// listening or bound one is named before a connection. Sockets on ports
+// the app's own containers publish are skipped: docker-proxy holds those for
+// the current deployment, which a replace deploy stops before starting the
+// new one.
 func findHostSocketConflict(published []config.PublishedPort, sockets []hostSocket, running []container.Summary, appName string) error {
 	var own []container.Port
 	for _, c := range running {
@@ -185,19 +229,33 @@ func findHostSocketConflict(published []config.PublishedPort, sockets []hostSock
 	}
 
 	for _, p := range published {
-		for _, s := range sockets {
+		var held *hostSocket
+		for i, s := range sockets {
 			if p.Protocol != s.Protocol || p.HostPort != s.Port || !config.HostIPsOverlap(p.HostIP, s.IP.String()) {
 				continue
 			}
 			if publishedByOwnContainer(own, s) {
 				continue
 			}
-			return fmt.Errorf("host port %s from '%s' is already in use on the server (a process is listening on %s); stop it or publish a different host port", p.HostAddr(), p.Raw, s)
+			if held == nil || (held.transient() && !s.transient()) {
+				held = &sockets[i]
+			}
 		}
+		if held == nil {
+			continue
+		}
+		if held.transient() {
+			return fmt.Errorf("host port %s from '%s' is already in use on the server (%s); retry the deploy once the port is released, or publish a different host port", p.HostAddr(), p.Raw, held.holder())
+		}
+		return fmt.Errorf("host port %s from '%s' is already in use on the server (%s); stop it or publish a different host port", p.HostAddr(), p.Raw, held.holder())
 	}
 	return nil
 }
 
+// publishedByOwnContainer reports whether one of the app's own container
+// ports covers the socket. A port published on all interfaces covers every
+// socket on that port, connections docker-proxy accepted on a specific local
+// address included.
 func publishedByOwnContainer(own []container.Port, s hostSocket) bool {
 	for _, p := range own {
 		if p.Type != s.Protocol || int(p.PublicPort) != s.Port {
@@ -205,10 +263,7 @@ func publishedByOwnContainer(own []container.Port, s hostSocket) bool {
 		}
 		ip := net.ParseIP(p.IP)
 		if p.IP == "" || (ip != nil && ip.IsUnspecified()) {
-			if s.IP.IsUnspecified() {
-				return true
-			}
-			continue
+			return true
 		}
 		if ip != nil && ip.Equal(s.IP) {
 			return true

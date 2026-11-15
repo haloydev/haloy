@@ -24,18 +24,24 @@ func TestReadHostSockets(t *testing.T) {
 		got = append(got, s.String())
 	}
 	want := []string{
-		// tcp: listening sockets only, not the established ssh session
+		// tcp: listening sockets, the established ssh session and an
+		// outgoing client connection
 		"0.0.0.0:22/tcp",
 		"127.0.0.1:9922/tcp",
 		"127.0.0.1:5432/tcp",
 		"0.0.0.0:8890/tcp",
-		// tcp6: not the TIME_WAIT socket; an IPv4-mapped address reads as IPv4
+		"10.0.2.15:22/tcp->10.0.2.2:54321",
+		"10.0.2.15:49175/tcp->93.184.216.34:443",
+		// tcp6: an IPv4-mapped address reads as IPv4; the TIME_WAIT
+		// connection still holds its local port
 		"[::]:22/tcp",
 		"[::1]:5432/tcp",
 		"127.0.0.1:6379/tcp",
-		// udp: bound sockets, not the connected client on an ephemeral port
+		"[::1]:8080/tcp->[::1]:49570",
+		// udp: bound sockets and the connected client on an ephemeral port
 		"0.0.0.0:68/udp",
 		"127.0.0.53:53/udp",
+		"10.0.2.15:49201/udp->8.8.8.8:53",
 		"0.0.0.0:3478/udp",
 	}
 	if !slices.Equal(got, want) {
@@ -68,6 +74,21 @@ func TestFindHostSocketConflict(t *testing.T) {
 	socket := func(protocol, ip string, port int) hostSocket {
 		return hostSocket{Protocol: protocol, IP: net.ParseIP(ip), Port: port}
 	}
+	listener := func(ip string, port int) hostSocket {
+		s := socket("tcp", ip, port)
+		s.Listening = true
+		return s
+	}
+	connected := func(protocol, ip string, port int, remote string) hostSocket {
+		s := socket(protocol, ip, port)
+		s.Remote = remote
+		return s
+	}
+	timeWait := func(ip string, port int, remote string) hostSocket {
+		s := connected("tcp", ip, port, remote)
+		s.TimeWait = true
+		return s
+	}
 	appContainer := func(app string, ports ...container.Port) container.Summary {
 		return container.Summary{Labels: map[string]string{config.LabelAppName: app}, Ports: ports}
 	}
@@ -80,11 +101,11 @@ func TestFindHostSocketConflict(t *testing.T) {
 	}{
 		{
 			name:    "sockets on other ports",
-			sockets: []hostSocket{socket("tcp", "0.0.0.0", 22), socket("tcp", "127.0.0.1", 9922)},
+			sockets: []hostSocket{listener("0.0.0.0", 22), listener("127.0.0.1", 9922), connected("tcp", "10.0.2.15", 22, "10.0.2.2:54321")},
 		},
 		{
 			name:    "listener on all interfaces",
-			sockets: []hostSocket{socket("tcp", "0.0.0.0", 8890)},
+			sockets: []hostSocket{listener("0.0.0.0", 8890)},
 			wantErr: "host port 8890/tcp from '8890:8890' is already in use on the server (a process is listening on 0.0.0.0:8890/tcp)",
 		},
 		{
@@ -94,20 +115,43 @@ func TestFindHostSocketConflict(t *testing.T) {
 		{
 			name:    "udp socket inside the published range",
 			sockets: []hostSocket{socket("udp", "::", 49200)},
-			wantErr: "host port 49200/udp from '49152-49351:49152-49351/udp' is already in use",
+			wantErr: "host port 49200/udp from '49152-49351:49152-49351/udp' is already in use on the server (a process has a socket bound to [::]:49200/udp)",
+		},
+		{
+			name:    "connected udp client inside the published range",
+			sockets: []hostSocket{connected("udp", "10.0.2.15", 49175, "8.8.8.8:53")},
+			wantErr: "host port 49175/udp from '49152-49351:49152-49351/udp' is already in use on the server (a connected socket uses it as its local port, 10.0.2.15:49175/udp to 8.8.8.8:53",
+		},
+		{
+			name:    "established tcp client on the published port",
+			sockets: []hostSocket{connected("tcp", "10.0.2.15", 8890, "93.184.216.34:443")},
+			wantErr: "host port 8890/tcp from '8890:8890' is already in use on the server (a connected socket uses it as its local port, 10.0.2.15:8890/tcp to 93.184.216.34:443",
+		},
+		{
+			name:    "connection in TIME_WAIT on the published port",
+			sockets: []hostSocket{timeWait("127.0.0.1", 8890, "127.0.0.1:41000")},
+			wantErr: "(a recently closed connection, 127.0.0.1:8890/tcp to 127.0.0.1:41000, is in TIME_WAIT",
+		},
+		{
+			name:    "a listener is named before a connection on the same port",
+			sockets: []hostSocket{connected("tcp", "10.0.2.15", 8890, "10.0.2.2:50000"), listener("0.0.0.0", 8890)},
+			wantErr: "(a process is listening on 0.0.0.0:8890/tcp)",
 		},
 		{
 			name:    "listener on a different specific ip",
-			sockets: []hostSocket{socket("tcp", "127.0.0.1", 5432)},
+			sockets: []hostSocket{listener("127.0.0.1", 5432)},
 		},
 		{
 			name:    "listener on all interfaces overlaps a specific ip",
-			sockets: []hostSocket{socket("tcp", "::", 5432)},
+			sockets: []hostSocket{listener("::", 5432)},
 			wantErr: "host port 10.0.0.2:5432/tcp from '10.0.0.2:5432:5432' is already in use",
 		},
 		{
-			name:    "docker-proxy of the app's current container",
-			sockets: []hostSocket{socket("tcp", "0.0.0.0", 8890), socket("tcp", "::", 8890), socket("udp", "0.0.0.0", 49200)},
+			name: "docker-proxy of the app's current container",
+			sockets: []hostSocket{
+				listener("0.0.0.0", 8890), listener("::", 8890), socket("udp", "0.0.0.0", 49200),
+				connected("tcp", "10.0.2.15", 8890, "203.0.113.7:51000"),
+			},
 			running: []container.Summary{appContainer("noray",
 				container.Port{IP: "0.0.0.0", PrivatePort: 8890, PublicPort: 8890, Type: "tcp"},
 				container.Port{IP: "::", PrivatePort: 8890, PublicPort: 8890, Type: "tcp"},
@@ -116,7 +160,7 @@ func TestFindHostSocketConflict(t *testing.T) {
 		},
 		{
 			name:    "the app's container publishes the port on another ip",
-			sockets: []hostSocket{socket("tcp", "0.0.0.0", 8890)},
+			sockets: []hostSocket{listener("0.0.0.0", 8890)},
 			running: []container.Summary{appContainer("noray",
 				container.Port{IP: "127.0.0.1", PrivatePort: 8890, PublicPort: 8890, Type: "tcp"},
 			)},
@@ -124,7 +168,7 @@ func TestFindHostSocketConflict(t *testing.T) {
 		},
 		{
 			name:    "another app's container does not exempt the socket",
-			sockets: []hostSocket{socket("tcp", "0.0.0.0", 8890)},
+			sockets: []hostSocket{listener("0.0.0.0", 8890)},
 			running: []container.Summary{appContainer("web",
 				container.Port{IP: "0.0.0.0", PrivatePort: 8890, PublicPort: 8890, Type: "tcp"},
 			)},
