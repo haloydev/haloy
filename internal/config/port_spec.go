@@ -104,6 +104,41 @@ func ParsePortSpecs(specs []string) ([]PublishedPort, error) {
 	return all, nil
 }
 
+// PublicPortsWarning returns a warning about the target's port mappings that
+// bind every interface (no host IP, 0.0.0.0 or ::), or "" when there are none.
+// Docker writes its own firewall rules for published ports, so ufw and
+// firewalld rules do not apply to them. Mappings that do not parse are left to
+// validation.
+func (tc TargetConfig) PublicPortsWarning(format string) string {
+	var public []string
+	for _, spec := range tc.Ports {
+		ports, err := ParsePortSpec(spec)
+		if err != nil || len(ports) == 0 || !isUnspecifiedIP(ports[0].HostIP) {
+			continue
+		}
+		public = append(public, "'"+spec+"'")
+	}
+	if len(public) == 0 {
+		return ""
+	}
+
+	field := GetFieldNameForFormat(TargetConfig{}, "Ports", format)
+	example := "127.0.0.1:" + withoutHostIP(strings.Trim(public[0], "'"))
+	return fmt.Sprintf("%s %s bind all interfaces: Docker publishes them past ufw and firewalld rules, "+
+		"so they are open to the internet unless a firewall outside the server blocks them.\n"+
+		"  To keep a port private to the server, prefix it with '127.0.0.1:', e.g. '%s'.",
+		field, strings.Join(public, ", "), example)
+}
+
+// withoutHostIP drops the host IP from a [host_ip:]host_port:container_port spec.
+func withoutHostIP(spec string) string {
+	parts := strings.Split(strings.TrimSpace(spec), ":")
+	if len(parts) <= 2 {
+		return strings.TrimSpace(spec)
+	}
+	return strings.Join(parts[len(parts)-2:], ":")
+}
+
 // Overlaps reports whether p and other would bind the same host socket:
 // same protocol and host port, and host IPs that are equal or unspecified.
 func (p PublishedPort) Overlaps(other PublishedPort) bool {

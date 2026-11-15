@@ -146,3 +146,34 @@ func TestParsePortSpecs_RejectsOverlaps(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicPortsWarning(t *testing.T) {
+	t.Run("no warning when every port has a specific host ip", func(t *testing.T) {
+		tc := TargetConfig{Ports: []string{"127.0.0.1:5432:5432", "[::1]:6379:6379", "10.0.0.2:8890:8890"}}
+		if got := tc.PublicPortsWarning("yaml"); got != "" {
+			t.Fatalf("PublicPortsWarning() = %q, want no warning", got)
+		}
+	})
+
+	t.Run("lists every mapping on all interfaces and suggests a loopback example", func(t *testing.T) {
+		tc := TargetConfig{Ports: []string{
+			"0.0.0.0:8890:8890",
+			"127.0.0.1:5432:5432",
+			"49152-49351:49152-49351/udp",
+			"[::]:3478:3478/udp",
+		}}
+		got := tc.PublicPortsWarning("yaml")
+		for _, want := range []string{
+			"ports '0.0.0.0:8890:8890', '49152-49351:49152-49351/udp', '[::]:3478:3478/udp' bind all interfaces",
+			"ufw and firewalld",
+			"e.g. '127.0.0.1:8890:8890'",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("PublicPortsWarning() = %q, want it to contain %q", got, want)
+			}
+		}
+		if strings.Contains(got, "127.0.0.1:5432:5432") {
+			t.Errorf("PublicPortsWarning() = %q, want the loopback mapping left out", got)
+		}
+	})
+}
