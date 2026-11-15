@@ -34,7 +34,7 @@ func DeployApp(ctx context.Context, cli *client.Client, db *storage.DB, deployme
 		newImageRef = dstRef
 	}
 
-	if err := docker.CheckPublishedPortConflicts(ctx, cli, targetConfig); err != nil {
+	if err := docker.CheckPublishedPortConflicts(ctx, cli, logger, targetConfig); err != nil {
 		return err
 	}
 

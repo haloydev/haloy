@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 
 	"github.com/docker/docker/api/types/container"
@@ -51,9 +52,12 @@ func portBindings(targetConfig config.TargetConfig) (nat.PortSet, nat.PortMap, e
 }
 
 // CheckPublishedPortConflicts fails when a running container of another app
-// already publishes one of the target's host ports. It runs before a replace
-// deploy stops the current containers, so a conflict leaves them running.
-func CheckPublishedPortConflicts(ctx context.Context, cli *client.Client, targetConfig config.TargetConfig) error {
+// already publishes one of the target's host ports, or when a socket on the
+// server (a service outside Docker, a host-network container) already holds
+// one. It runs before a replace deploy stops the current containers, so a
+// conflict leaves them running. The socket check is best effort: when the
+// socket tables cannot be read it logs a warning and lets the deploy go on.
+func CheckPublishedPortConflicts(ctx context.Context, cli *client.Client, logger *slog.Logger, targetConfig config.TargetConfig) error {
 	if len(targetConfig.Ports) == 0 {
 		return nil
 	}
@@ -68,7 +72,20 @@ func CheckPublishedPortConflicts(ctx context.Context, cli *client.Client, target
 		return fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	return findPortConflict(published, running, targetConfig.Name)
+	if err := findPortConflict(published, running, targetConfig.Name); err != nil {
+		return err
+	}
+
+	if usesHostNetwork(running, targetConfig.Name) {
+		logger.Info("Skipping the host port check: the running container uses host networking, so its ports cannot be told apart from other processes'")
+		return nil
+	}
+
+	sockets, err := hostSockets()
+	if err != nil {
+		logger.Warn("Could not read every socket on the server; the host port check may miss a conflict", "error", err)
+	}
+	return findHostSocketConflict(published, sockets, running, targetConfig.Name)
 }
 
 // findPortConflict returns an error naming the first container, other than
