@@ -3,6 +3,7 @@ package haloyd
 import (
 	"testing"
 
+	"github.com/docker/go-connections/nat"
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 )
@@ -206,5 +207,57 @@ func TestRemovedDeploymentNotTrackedAsFailedWhenReplacementUsesAlias(t *testing.
 
 	if len(dm.FailedDeployments()) != 0 {
 		t.Fatalf("expected removed old-app not to be tracked as failed when new-app owns an overlapping alias, got %d", len(dm.FailedDeployments()))
+	}
+}
+
+func TestContainerPortValidationIgnoresPublishedPorts(t *testing.T) {
+	published := nat.PortMap{
+		"5432/tcp":  {{HostIP: "127.0.0.1", HostPort: "5432"}},
+		"49152/udp": {{HostPort: "49152"}},
+	}
+
+	tests := []struct {
+		name      string
+		exposed   nat.PortSet
+		bindings  nat.PortMap
+		labelPort string
+		want      bool
+	}{
+		{
+			name:      "image without EXPOSE whose published ports are exposed",
+			exposed:   nat.PortSet{"5432/tcp": {}, "49152/udp": {}},
+			bindings:  published,
+			labelPort: "3000",
+			want:      true,
+		},
+		{
+			name:      "image EXPOSE matches the http port",
+			exposed:   nat.PortSet{"3000/tcp": {}, "5432/tcp": {}, "49152/udp": {}},
+			bindings:  published,
+			labelPort: "3000",
+			want:      true,
+		},
+		{
+			name:      "image EXPOSE of another port still mismatches",
+			exposed:   nat.PortSet{"80/tcp": {}, "5432/tcp": {}, "49152/udp": {}},
+			bindings:  published,
+			labelPort: "3000",
+			want:      false,
+		},
+		{
+			name:      "no published ports",
+			exposed:   nat.PortSet{"80/tcp": {}},
+			labelPort: "3000",
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validateContainerPort(declaredExposedPorts(tt.exposed, tt.bindings), tt.labelPort)
+			if got != tt.want {
+				t.Fatalf("validateContainerPort() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

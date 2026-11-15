@@ -20,7 +20,7 @@ func TestPortBindings(t *testing.T) {
 		}
 	})
 
-	t.Run("binds every published port and keeps the http port exposed", func(t *testing.T) {
+	t.Run("binds and exposes every published port", func(t *testing.T) {
 		exposed, bindings, err := portBindings(config.TargetConfig{
 			Port:  "8080",
 			Ports: []string{"8890:8890", "9000:8809/udp", "127.0.0.1:8891:8891", "49152-49154:49152-49154/udp"},
@@ -51,9 +51,6 @@ func TestPortBindings(t *testing.T) {
 			if _, ok := exposed[port]; !ok {
 				t.Errorf("exposed ports %v missing %s", exposed, port)
 			}
-		}
-		if _, ok := exposed["8080/tcp"]; !ok {
-			t.Errorf("exposed ports %v missing the http port 8080/tcp", exposed)
 		}
 	})
 

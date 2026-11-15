@@ -13,8 +13,8 @@ import (
 )
 
 // portBindings builds the exposed ports and host bindings for a target's
-// published ports. When ports are published, the HTTP port is also exposed so
-// haloyd's port check still finds it on images that declare no EXPOSE.
+// published ports. Docker publishes only exposed ports, so every published
+// container port is exposed as well.
 func portBindings(targetConfig config.TargetConfig) (nat.PortSet, nat.PortMap, error) {
 	if len(targetConfig.Ports) == 0 {
 		return nil, nil, nil
@@ -25,16 +25,8 @@ func portBindings(targetConfig config.TargetConfig) (nat.PortSet, nat.PortMap, e
 		return nil, nil, err
 	}
 
-	exposed := make(nat.PortSet, len(published)+1)
+	exposed := make(nat.PortSet, len(published))
 	bindings := make(nat.PortMap, len(published))
-
-	if targetConfig.Port != "" {
-		httpPort, err := nat.NewPort("tcp", targetConfig.Port.String())
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid port %s: %w", targetConfig.Port, err)
-		}
-		exposed[httpPort] = struct{}{}
-	}
 
 	for _, p := range published {
 		containerPort, err := nat.NewPort(p.Protocol, strconv.Itoa(p.ContainerPort))
