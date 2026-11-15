@@ -86,16 +86,11 @@ func RunContainer(ctx context.Context, cli *client.Client, deploymentID, imageRe
 			return result, fmt.Errorf("failed to create container: %w", err)
 		}
 
-		defer func(containerID string) {
-			if err != nil && containerID != "" {
-				removeErr := cli.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
-				if removeErr != nil {
-					fmt.Printf("Failed to clean up container after error: %v\n", removeErr)
-				}
-			}
-		}(createResponse.ID)
-
 		if err := cli.ContainerStart(ctx, createResponse.ID, container.StartOptions{}); err != nil {
+			// Remove the container so it is not left in the created state.
+			if removeErr := cli.ContainerRemove(ctx, createResponse.ID, container.RemoveOptions{Force: true}); removeErr != nil {
+				return result, fmt.Errorf("failed to start container: %w (and failed to remove it: %v)", err, removeErr)
+			}
 			return result, fmt.Errorf("failed to start container: %w", err)
 		}
 
@@ -744,8 +739,10 @@ func GetContainerLogs(ctx context.Context, cli *client.Client, containerID strin
 	return outputBuf.String(), nil
 }
 
-// waitForContainerExited polls until the container reaches "exited" state or timeout.
-// Returns nil if container is exited, error if timeout or inspection fails.
+// waitForContainerExited polls until the container is no longer running or
+// timeout. A container that never started (created) or that Docker could not
+// remove (dead) counts as stopped. Returns an error on timeout or when
+// inspection fails.
 func waitForContainerExited(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -760,7 +757,7 @@ func waitForContainerExited(ctx context.Context, cli *client.Client, containerID
 	}
 	if containerInfo.State != nil {
 		lastStatus = containerInfo.State.Status
-		if lastStatus == "exited" {
+		if isStoppedStatus(lastStatus) {
 			return nil
 		}
 	}
@@ -781,12 +778,16 @@ func waitForContainerExited(ctx context.Context, cli *client.Client, containerID
 			}
 			if containerInfo.State != nil {
 				lastStatus = containerInfo.State.Status
-				if lastStatus == "exited" {
+				if isStoppedStatus(lastStatus) {
 					return nil
 				}
 			}
 		}
 	}
+}
+
+func isStoppedStatus(status string) bool {
+	return status == "exited" || status == "created" || status == "dead"
 }
 
 // verifyContainerRemoved polls until the container no longer exists or timeout.
