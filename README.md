@@ -109,6 +109,10 @@ haloy status
 
 That's it! Your application is now deployed and accessible at your configured domain.
 
+## ☁️ One-Click Deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/Haloy/)
+
 ## Learn More
 - [Configuration Reference](https://haloy.dev/docs/configuration-reference)
 - [Commands Reference](https://haloy.dev/docs/commands-reference)
