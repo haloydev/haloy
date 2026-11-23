@@ -212,10 +212,19 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		u.certManager.CleanupExpiredCertificates(logger, certDomains)
 	}
 
-	// If an app is provided:
-	// - stop old containers, remove and log the result.
-	// - log successful deployment for app.
-	if app != nil {
+	// If an app triggered the update and its deployment is the healthy current
+	// one, stop and remove the containers of its older deployments.
+	if app != nil && !shouldCleanupOldContainers(deployments, app) {
+		currentID := ""
+		if current, ok := deployments[app.appName]; ok && current.Labels != nil {
+			currentID = current.Labels.DeploymentID
+		}
+		logger.Debug("Updater: skipping old container cleanup, triggering deployment is not the healthy current one",
+			"app", app.appName,
+			"event_deployment_id", app.deploymentID,
+			"current_deployment_id", currentID)
+	}
+	if shouldCleanupOldContainers(deployments, app) {
 		stopCtx, cancelStop := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancelStop()
 		_, err := docker.StopContainers(stopCtx, u.cli, logger, app.appName, app.deploymentID)
@@ -229,6 +238,19 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	}
 
 	return result, nil
+}
+
+// shouldCleanupOldContainers reports whether the containers of other
+// deployments of the triggering app may be stopped and removed. That is only
+// safe when the triggering deployment is the app's healthy current one: a
+// batch made of an old container's stop events carries the old id, and a
+// failed new deployment must not take the healthy old one down with it.
+func shouldCleanupOldContainers(deployments map[string]Deployment, app *TriggeredByApp) bool {
+	if app == nil {
+		return false
+	}
+	current, ok := deployments[app.appName]
+	return ok && current.Labels != nil && current.Labels.DeploymentID == app.deploymentID
 }
 
 // logFailedContainers logs warnings about containers that failed during a specific phase.
