@@ -14,6 +14,7 @@ import (
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
 	"github.com/haloydev/haloy/internal/helpers"
+	"github.com/haloydev/haloy/internal/ui"
 	"github.com/oklog/ulid"
 )
 
@@ -21,6 +22,14 @@ func createDeploymentID() string {
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0)
 	id := ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
 	return strings.ToLower(id)
+}
+
+// warnPublicPorts warns when the target publishes ports on every interface,
+// which the server's ufw or firewalld rules do not cover.
+func warnPublicPorts(targetConfig config.TargetConfig, format string) {
+	if warning := targetConfig.PublicPortsWarning(format); warning != "" {
+		ui.Warn("target '%s': %s", targetConfig.TargetName, warning)
+	}
 }
 
 func checkServerAuth(ctx context.Context, server string, targetConfig *config.TargetConfig) error {

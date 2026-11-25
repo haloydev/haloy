@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/haloydev/haloy/internal/apiclient"
@@ -80,6 +82,10 @@ func DeployAppCmd(configPath *string, flags *appCmdFlags) *cobra.Command {
 				if len(rawTargets) == 0 {
 					return fmt.Errorf("no targets to deploy (all targets are protected)")
 				}
+			}
+
+			for _, targetName := range slices.Sorted(maps.Keys(rawTargets)) {
+				warnPublicPorts(rawTargets[targetName], rawDeployConfig.Format)
 			}
 
 			if err := checkServersAuth(ctx, resolvedTargets); err != nil {
