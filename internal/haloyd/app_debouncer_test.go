@@ -117,3 +117,28 @@ func TestAppDebouncerNoDeadlock(t *testing.T) {
 		t.Fatal("captureEvent blocked while a debounced send was pending")
 	}
 }
+
+func TestStartMustBelongToSelectedDeployment(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		events []ContainerEvent
+		want   bool
+	}{
+		{"stop only", []ContainerEvent{testEvent(events.ActionStop, "002")}, false},
+		{"older start", []ContainerEvent{testEvent(events.ActionStart, "001"), testEvent(events.ActionStop, "002")}, false},
+		{"same id later start", []ContainerEvent{testEvent(events.ActionStop, "002"), testEvent(events.ActionStart, "002")}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			output := make(chan debouncedAppEvent, 1)
+			d := newAppDebouncer(time.Hour, time.Hour, output, discardLogger())
+			defer d.stop()
+			for _, e := range tc.events {
+				d.capturedEvents["test-app"] = append(d.capturedEvents["test-app"], e)
+			}
+			d.signalDone("test-app")
+			if got := (<-output).StartedSelected; got != tc.want {
+				t.Errorf("StartedSelected = %v", got)
+			}
+		})
+	}
+}

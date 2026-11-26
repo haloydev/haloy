@@ -48,17 +48,17 @@ func (m *mockTargetProvider) SetTargets(targets []Target) {
 type mockConfigUpdater struct {
 	mu             sync.Mutex
 	calls          int
-	lastHealthy    []Target
+	lastUnhealthy  []Target
 	onHealthChange func([]Target)
 }
 
-func (m *mockConfigUpdater) OnHealthChange(healthyTargets []Target) {
+func (m *mockConfigUpdater) OnHealthChange(excluded []Target) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls++
-	m.lastHealthy = healthyTargets
+	m.lastUnhealthy = excluded
 	if m.onHealthChange != nil {
-		m.onHealthChange(healthyTargets)
+		m.onHealthChange(excluded)
 	}
 }
 
@@ -68,10 +68,10 @@ func (m *mockConfigUpdater) GetCalls() int {
 	return m.calls
 }
 
-func (m *mockConfigUpdater) GetLastHealthy() []Target {
+func (m *mockConfigUpdater) GetLastUnhealthy() []Target {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.lastHealthy
+	return m.lastUnhealthy
 }
 
 func newTestLogger() *slog.Logger {
@@ -213,11 +213,11 @@ func TestHealthMonitor_DetectsUnhealthy(t *testing.T) {
 	waitForCondition(t, 2*time.Second, func() bool {
 		select {
 		case targets := <-stateChanged:
-			return len(targets) == 0
+			return len(targets) == 1
 		default:
 			return false
 		}
-	}, "OnHealthChange was not called with 0 healthy targets after backend became unhealthy")
+	}, "OnHealthChange was not called with 1 unhealthy target after backend became unhealthy")
 
 	monitor.Stop()
 }
@@ -254,7 +254,7 @@ func TestHealthMonitor_DetectsRecovery(t *testing.T) {
 	var recoveryDetected int32
 	updater := &mockConfigUpdater{
 		onHealthChange: func(targets []Target) {
-			if len(targets) == 1 {
+			if len(targets) == 0 {
 				atomic.StoreInt32(&recoveryDetected, 1)
 			}
 		},
@@ -452,5 +452,18 @@ func TestHealthMonitor_DynamicTargets(t *testing.T) {
 
 	if len(healthy) != 2 {
 		t.Errorf("GetHealthyTargets returned %d targets after adding, want 2", len(healthy))
+	}
+}
+
+func TestEmptyRoundClearsUnhealthyExclusions(t *testing.T) {
+	updater := &mockConfigUpdater{}
+	monitor := NewHealthMonitor(Config{Fall: 1, Rise: 1}, &mockTargetProvider{}, updater, newTestLogger())
+	target := Target{ID: "gone"}
+	monitor.stateTracker.SyncTargets([]Target{target})
+	monitor.stateTracker.RecordResult(Result{Target: target})
+	monitor.runCheck()
+	monitor.runCheck()
+	if updater.GetCalls() != 1 || len(updater.GetLastUnhealthy()) != 0 {
+		t.Fatalf("calls %d, exclusions %v", updater.GetCalls(), updater.GetLastUnhealthy())
 	}
 }

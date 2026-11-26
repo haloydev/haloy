@@ -107,13 +107,15 @@ func (m *HealthMonitor) run() {
 func (m *HealthMonitor) runCheck() {
 	// Get current targets from provider
 	targets := m.targetProvider.GetHealthCheckTargets()
+	before := m.stateTracker.GetUnhealthyTargets()
+	m.stateTracker.SyncTargets(targets)
 	if len(targets) == 0 {
+		if len(before) > 0 {
+			m.configUpdater.OnHealthChange(nil)
+		}
 		m.logger.Debug("Health check: no targets to check")
 		return
 	}
-
-	// Sync state tracker with current targets
-	m.stateTracker.SyncTargets(targets)
 
 	// Create a context with timeout for the entire check round
 	ctx, cancel := context.WithTimeout(context.Background(), m.config.Interval)
@@ -139,9 +141,9 @@ func (m *HealthMonitor) runCheck() {
 		"unhealthy", unhealthy)
 
 	// If any state changed, notify the config updater
-	if stateChanged {
-		healthyTargets := m.stateTracker.GetHealthyTargets()
-		m.configUpdater.OnHealthChange(healthyTargets)
+	after := m.stateTracker.GetUnhealthyTargets()
+	if stateChanged || len(before) != len(after) {
+		m.configUpdater.OnHealthChange(after)
 	}
 }
 

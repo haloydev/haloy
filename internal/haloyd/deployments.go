@@ -262,6 +262,12 @@ func (dm *DeploymentManager) updateFailedDeployments(compareResult compareResult
 	return hasChanged
 }
 
+func (dm *DeploymentManager) Snapshot() (map[string]Deployment, map[string]Deployment) {
+	dm.deploymentsMutex.RLock()
+	defer dm.deploymentsMutex.RUnlock()
+	return maps.Clone(dm.deployments), maps.Clone(dm.failedDeployments)
+}
+
 func (dm *DeploymentManager) Deployments() map[string]Deployment {
 	dm.deploymentsMutex.RLock()
 	defer dm.deploymentsMutex.RUnlock()
@@ -395,13 +401,13 @@ func instancesEqual(a, b []DeploymentInstance) bool {
 		return false
 	}
 
-	mapA := make(map[string]bool)
+	mapA := make(map[DeploymentInstance]bool)
 	for _, instance := range a {
-		mapA[instance.ContainerID] = true
+		mapA[instance] = true
 	}
 
 	for _, instance := range b {
-		if !mapA[instance.ContainerID] {
+		if !mapA[instance] {
 			return false
 		}
 	}

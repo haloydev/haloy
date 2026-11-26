@@ -137,6 +137,24 @@ func StopContainersByDeploymentID(ctx context.Context, cli *client.Client, logge
 	return stopContainerList(ctx, cli, logger, containersToStop)
 }
 
+func summariesByID(ids []string) []container.Summary {
+	summaries := make([]container.Summary, len(ids))
+	for i, id := range ids {
+		summaries[i].ID = id
+	}
+	return summaries
+}
+
+func StopContainersByID(ctx context.Context, cli *client.Client, logger *slog.Logger, ids []string) error {
+	_, err := stopContainerList(ctx, cli, logger, summariesByID(ids))
+	return err
+}
+
+func RemoveContainersByID(ctx context.Context, cli *client.Client, logger *slog.Logger, ids []string) error {
+	_, err := removeContainerList(ctx, cli, logger, summariesByID(ids))
+	return err
+}
+
 func stopContainerList(ctx context.Context, cli *client.Client, logger *slog.Logger, containersToStop []container.Summary) (stoppedIDs []string, err error) {
 	if len(containersToStop) == 0 {
 		return stoppedIDs, nil
@@ -227,14 +245,14 @@ func stopSingleContainer(ctx context.Context, cli *client.Client, logger *slog.L
 	stopOptions := container.StopOptions{Timeout: new(20)}
 
 	err := cli.ContainerStop(ctx, containerID, stopOptions)
-	if err == nil {
+	if err == nil || client.IsErrNotFound(err) {
 		return nil
 	}
 
 	logger.Warn("Graceful stop failed, attempting force kill", "container_id", helpers.SafeIDPrefix(containerID), "error", err)
 
 	killErr := cli.ContainerKill(ctx, containerID, "SIGKILL")
-	if killErr != nil {
+	if killErr != nil && !client.IsErrNotFound(killErr) {
 		return fmt.Errorf("both stop and kill failed - stop: %v, kill: %v", err, killErr)
 	}
 

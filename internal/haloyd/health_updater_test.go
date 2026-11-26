@@ -9,6 +9,7 @@ import (
 
 	"github.com/haloydev/haloy/internal/config"
 	"github.com/haloydev/haloy/internal/constants"
+	"github.com/haloydev/haloy/internal/healthcheck"
 	"github.com/haloydev/haloy/internal/proxy"
 	"github.com/haloydev/haloy/internal/proxywire"
 )
@@ -64,8 +65,8 @@ func TestHealthUpdaterKeepsRoutesWithoutHealthyBackends(t *testing.T) {
 
 	deploymentManager.UpdateDeployments(healthy)
 
-	updater := NewHealthConfigUpdater(deploymentManager, newInProcessPusher(proxyServer), "api.example.com", logger)
-	updater.OnHealthChange(nil)
+	updater := &HealthConfigUpdater{publisher: &routePublisher{dm: deploymentManager, pusher: newInProcessPusher(proxyServer), apiDomain: "api.example.com"}, logger: logger}
+	updater.OnHealthChange([]healthcheck.Target{{ID: "container-1"}})
 
 	config := proxyServer.GetConfig()
 	if config == nil {
@@ -116,7 +117,7 @@ func TestHealthUpdaterKeepsRouteAfterDeploymentRemoved(t *testing.T) {
 		t.Fatal("expected app to be in FailedDeployments after removal")
 	}
 
-	updater := NewHealthConfigUpdater(deploymentManager, newInProcessPusher(proxyServer), "api.example.com", logger)
+	updater := &HealthConfigUpdater{publisher: &routePublisher{dm: deploymentManager, pusher: newInProcessPusher(proxyServer), apiDomain: "api.example.com"}, logger: logger}
 	updater.OnHealthChange(nil)
 
 	cfg := proxyServer.GetConfig()

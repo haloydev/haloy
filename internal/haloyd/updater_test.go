@@ -25,8 +25,8 @@ func healthyContainerFor(appName, deploymentID, containerID string) HealthyConta
 
 func TestShouldCleanupOldContainers(t *testing.T) {
 	const (
-		oldID = "01jd0000000000000000000old"
-		newID = "01jd0000000000000000000new"
+		oldID = "001"
+		newID = "002"
 	)
 
 	deploymentsWith := func(deploymentID string) map[string]Deployment {
@@ -44,7 +44,7 @@ func TestShouldCleanupOldContainers(t *testing.T) {
 		{
 			name:        "new deployment is healthy and current",
 			deployments: deploymentsWith(newID),
-			app:         &TriggeredByApp{appName: "myapp", deploymentID: newID},
+			app:         &TriggeredByApp{appName: "myapp", deploymentID: newID, startedSelected: true},
 			want:        true,
 		},
 		{
@@ -56,13 +56,13 @@ func TestShouldCleanupOldContainers(t *testing.T) {
 		{
 			name:        "new deployment failed while the old one is still healthy",
 			deployments: deploymentsWith(oldID),
-			app:         &TriggeredByApp{appName: "myapp", deploymentID: newID},
+			app:         &TriggeredByApp{appName: "myapp", deploymentID: newID, startedSelected: true},
 			want:        false,
 		},
 		{
 			name:        "app has no healthy deployment",
 			deployments: map[string]Deployment{},
-			app:         &TriggeredByApp{appName: "myapp", deploymentID: newID},
+			app:         &TriggeredByApp{appName: "myapp", deploymentID: newID, startedSelected: true},
 			want:        false,
 		},
 		{
@@ -89,8 +89,8 @@ func TestShouldCleanupOldContainers(t *testing.T) {
 // as the one to keep.
 func TestStaleBatchDoesNotCleanupCurrentDeployment(t *testing.T) {
 	const (
-		oldID = "01jd0000000000000000000old"
-		newID = "01jd0000000000000000000new"
+		oldID = "001"
+		newID = "002"
 	)
 
 	dm := NewDeploymentManager(nil, nil)
@@ -122,7 +122,7 @@ func TestStaleBatchDoesNotCleanupCurrentDeployment(t *testing.T) {
 		t.Fatal("update carrying the old deployment id must not clean up app-a's containers")
 	}
 
-	current := &TriggeredByApp{appName: "app-a", deploymentID: newID}
+	current := &TriggeredByApp{appName: "app-a", deploymentID: newID, startedSelected: true}
 	if !shouldCleanupOldContainers(deployments, current) {
 		t.Fatal("update carrying the current deployment id should clean up older containers")
 	}

@@ -175,6 +175,7 @@ func Run(debug bool) {
 		CertManager:       certManager,
 		ProxyPusher:       proxyClient,
 		APIDomain:         apiDomain,
+		Logger:            logger,
 	}
 
 	updater := NewUpdater(updaterConfig)
@@ -219,7 +220,7 @@ func Run(debug bool) {
 			healthConfig = healthcheck.DefaultConfig()
 		}
 
-		healthUpdater := NewHealthConfigUpdater(deploymentManager, proxyClient, apiDomain, logger)
+		healthUpdater := &HealthConfigUpdater{publisher: updater.publisher, logger: logger}
 		healthMonitor = healthcheck.NewHealthMonitor(healthConfig, deploymentManager, healthUpdater, logger)
 		healthMonitor.Start()
 	}
@@ -247,6 +248,7 @@ func Run(debug bool) {
 					appName:           de.AppName,
 					domains:           de.Domains,
 					deploymentID:      de.DeploymentID,
+					startedSelected:   de.StartedSelected,
 					dockerEventAction: de.EventAction,
 				}
 

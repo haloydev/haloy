@@ -6,22 +6,25 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/client"
 	"github.com/haloydev/haloy/internal/config"
-	"github.com/haloydev/haloy/internal/docker"
 	"github.com/haloydev/haloy/internal/helpers"
 	"github.com/haloydev/haloy/internal/proxyclient"
 )
 
+type certRefresher interface {
+	Refresh(*slog.Logger, []CertificatesDomain)
+	RefreshSync(*slog.Logger, []CertificatesDomain) error
+	CleanupExpiredCertificates(*slog.Logger, []CertificatesDomain)
+}
+
 type Updater struct {
-	cli               *client.Client
+	runtime           containerRuntime
 	deploymentManager *DeploymentManager
-	certManager       *CertificatesManager
-	proxyPusher       ProxyPusher
-	apiDomain         string
+	certManager       certRefresher
+	publisher         *routePublisher
 	// mu serializes Update calls. Concurrent updates would race on the
 	// deployments map: the slower one would overwrite newer state with its
 	// stale discovery snapshot and push a stale proxy config.
@@ -34,19 +37,23 @@ type UpdaterConfig struct {
 	CertManager       *CertificatesManager
 	ProxyPusher       ProxyPusher
 	APIDomain         string
+	// Logger receives publisher messages that concern the whole server, so
+	// they do not end up in the log stream of whichever deployment happened
+	// to trigger the publication.
+	Logger *slog.Logger
 }
 
 func NewUpdater(config UpdaterConfig) *Updater {
 	return &Updater{
-		cli:               config.Cli,
+		runtime:           dockerRuntime{config.Cli},
 		deploymentManager: config.DeploymentManager,
 		certManager:       config.CertManager,
-		proxyPusher:       config.ProxyPusher,
-		apiDomain:         config.APIDomain,
+		publisher:         &routePublisher{dm: config.DeploymentManager, pusher: config.ProxyPusher, apiDomain: config.APIDomain, logger: config.Logger},
 	}
 }
 
 type TriggeredByApp struct {
+	startedSelected   bool
 	appName           string
 	domains           []config.Domain
 	deploymentID      string
@@ -126,7 +133,10 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	// Log warnings for partial replica failures (some healthy, some failed for same app)
 	logPartialReplicaFailures(healthy, healthCheckFailed, logger)
 
-	// Step 3: Update deployments map from healthy containers
+	return result, u.reconcile(ctx, logger, reason, app, healthy)
+}
+
+func (u *Updater) reconcile(ctx context.Context, logger *slog.Logger, reason TriggerReason, app *TriggeredByApp, healthy []HealthyContainer) error {
 	deploymentsHasChanged := u.deploymentManager.UpdateDeployments(healthy)
 
 	// Certificate maintenance must run even when deployments are unchanged:
@@ -134,18 +144,21 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 	// ready yet after a domain change) is retried on later refreshes.
 	certDomains, err := u.deploymentManager.GetCertificateDomains()
 	if err != nil {
-		return result, fmt.Errorf("failed to get certificate domains: %w", err)
+		return fmt.Errorf("failed to get certificate domains: %w", err)
 	}
 
-	// Skip proxy and container work if no changes were detected and the reason is not an initial update.
-	// We'll still want to continue on the initial update to ensure the API domain is set up correctly.
-	if !deploymentsHasChanged && reason != TriggerReasonInitial {
-		logger.Debug("Updater: No changes detected in deployments, running certificate maintenance only")
+	deployments := u.deploymentManager.Deployments()
+	eligible := reason == TriggerReasonAppUpdated && shouldCleanupOldContainers(deployments, app)
+	publish := deploymentsHasChanged || reason == TriggerReasonInitial || !u.publisher.confirmed()
+	if !publish {
+		logger.Debug("Deployments unchanged, refreshing certificates")
 		u.certManager.Refresh(logger, certDomains)
 		if reason == TriggerPeriodicRefresh {
 			u.certManager.CleanupExpiredCertificates(logger, certDomains)
 		}
-		return result, nil
+		if !eligible {
+			return nil
+		}
 	}
 
 	// Log successful health checks
@@ -162,31 +175,47 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		}
 	}
 
-	deployments := u.deploymentManager.Deployments()
-
 	// Make discovered healthy containers routable before synchronous
 	// certificate renewal. Existing certificates can still serve traffic, ACME
 	// challenges are forwarded to haloyd regardless of the route table, and a
 	// transient ACME failure should not leave the proxy config stale or the
 	// route table empty on startup.
-	snapshot := buildSnapshot(deployments, u.deploymentManager.FailedDeployments(), u.apiDomain, nil)
-	if err := u.proxyPusher.Push(ctx, snapshot); err != nil {
-		if !errors.Is(err, proxyclient.ErrUnreachable) {
-			return result, fmt.Errorf("failed to push proxy config: %w", err)
+	unreachable := false
+	if publish {
+		if err := u.publisher.publish(ctx); err != nil {
+			if !errors.Is(err, proxyclient.ErrUnreachable) {
+				// An unconfirmed publisher republishes on every reconcile,
+				// so while pushes keep failing this is the only certificate
+				// maintenance that runs. Renewals must not wait for routing
+				// to recover.
+				if reason != TriggerReasonInitial {
+					u.certManager.Refresh(logger, certDomains)
+				}
+				return fmt.Errorf("failed to push proxy config: %w", err)
+			}
+			unreachable = true
+			if eligible {
+				logger.Warn("Proxy unreachable during config push. Skipped cleanup for this deployment. Older containers may still be running.",
+					"app", app.appName, "deployment_id", app.deploymentID, "error", err)
+			} else {
+				logger.Warn("Proxy unreachable during config push", "error", err)
+			}
 		}
-		// The snapshot is durably recorded; the proxy client's reconcile
-		// loop delivers it once the proxy is reachable again, so an
-		// unreachable proxy must not fail a deployment.
-		logger.Warn("Proxy unreachable during config push; config will be delivered when it is back", "error", err)
 	}
 
 	// Certificates refresh logic based on trigger reason.
 	// If an app is provided we refresh the certs synchronously so we can log the result.
 	// Otherwise, we refresh them asynchronously to avoid blocking the main update process.
 	// We also refresh the certs for that app only.
-	if app != nil && len(app.domains) > 0 {
-		appCanonicalDomains := make(map[string]struct{}, len(app.domains))
-		for _, domain := range app.domains {
+	var domains []config.Domain
+	if eligible {
+		domains = deployments[app.appName].Labels.Domains
+	} else if app != nil {
+		domains = app.domains
+	}
+	if len(domains) > 0 {
+		appCanonicalDomains := make(map[string]struct{}, len(domains))
+		for _, domain := range domains {
 			appCanonicalDomains[domain.Canonical] = struct{}{}
 		}
 
@@ -197,12 +226,12 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 			}
 		}
 		if err := u.certManager.RefreshSync(logger, appCertDomains); err != nil {
-			return result, fmt.Errorf("failed to refresh certificates for app %s: %w", app.appName, err)
+			return fmt.Errorf("failed to refresh certificates for app %s: %w", app.appName, err)
 		}
 	} else if reason == TriggerReasonInitial {
 		// Refresh synchronously on initial update so we can log api domain setup.
 		if err := u.certManager.RefreshSync(logger, certDomains); err != nil {
-			return result, err
+			return err
 		}
 	} else {
 		u.certManager.Refresh(logger, certDomains)
@@ -212,32 +241,10 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 		u.certManager.CleanupExpiredCertificates(logger, certDomains)
 	}
 
-	// If an app triggered the update and its deployment is the healthy current
-	// one, stop and remove the containers of its older deployments.
-	if app != nil && !shouldCleanupOldContainers(deployments, app) {
-		currentID := ""
-		if current, ok := deployments[app.appName]; ok && current.Labels != nil {
-			currentID = current.Labels.DeploymentID
-		}
-		logger.Debug("Updater: skipping old container cleanup, triggering deployment is not the healthy current one",
-			"app", app.appName,
-			"event_deployment_id", app.deploymentID,
-			"current_deployment_id", currentID)
+	if eligible && !unreachable {
+		return u.retire(ctx, logger, app)
 	}
-	if shouldCleanupOldContainers(deployments, app) {
-		stopCtx, cancelStop := context.WithTimeout(ctx, 10*time.Minute)
-		defer cancelStop()
-		_, err := docker.StopContainers(stopCtx, u.cli, logger, app.appName, app.deploymentID)
-		if err != nil {
-			return result, fmt.Errorf("failed to stop old containers: %w", err)
-		}
-		_, err = docker.RemoveContainers(stopCtx, u.cli, logger, app.appName, app.deploymentID)
-		if err != nil {
-			return result, fmt.Errorf("failed to remove old containers: %w", err)
-		}
-	}
-
-	return result, nil
+	return nil
 }
 
 // shouldCleanupOldContainers reports whether the containers of other
@@ -246,7 +253,7 @@ func (u *Updater) Update(ctx context.Context, logger *slog.Logger, reason Trigge
 // batch made of an old container's stop events carries the old id, and a
 // failed new deployment must not take the healthy old one down with it.
 func shouldCleanupOldContainers(deployments map[string]Deployment, app *TriggeredByApp) bool {
-	if app == nil {
+	if app == nil || !app.startedSelected {
 		return false
 	}
 	current, ok := deployments[app.appName]

@@ -65,5 +65,5 @@ type TargetProvider interface {
 
 // ConfigUpdater is an interface for updating proxy config when health state changes.
 type ConfigUpdater interface {
-	OnHealthChange(healthyTargets []Target)
+	OnHealthChange(unhealthyTargets []Target)
 }

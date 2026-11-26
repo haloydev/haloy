@@ -14,6 +14,7 @@ type debouncedAppEvent struct {
 	DeploymentID       string
 	Domains            []config.Domain
 	EventAction        events.Action
+	StartedSelected    bool
 	CapturedStartEvent bool
 }
 
@@ -95,11 +96,19 @@ func (d *appDebouncer) signalDone(appName string) {
 		}
 	}
 
+	var startedSelected bool
+	for _, e := range capturedEvents {
+		if e.Labels.DeploymentID == latestEvent.Labels.DeploymentID && e.Event.Action == events.ActionStart {
+			startedSelected = true
+			break
+		}
+	}
 	debouncedEvent := debouncedAppEvent{
 		AppName:            appName,
 		DeploymentID:       latestEvent.Labels.DeploymentID,
 		Domains:            latestEvent.Labels.Domains,
 		EventAction:        latestEvent.Event.Action,
+		StartedSelected:    startedSelected,
 		CapturedStartEvent: capturedStartEvent,
 	}
 
